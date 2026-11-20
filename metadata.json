@@ -1,0 +1,8 @@
+{
+  "name": "MideoCode",
+  "description": "Learn. Code. Build. Become. A unified programming education, IDE, AI assistant, labs, challenges, community, and career platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,1802 @@
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  serverTimestamp,
+  writeBatch,
+  increment,
+  deleteField,
+} from 'firebase/firestore';
+import type { User } from 'firebase/auth';
+import { db, handleFirestoreError, OperationType } from './firebase';
+import { fetchWithAuthAndRetry, getCountryInfoFromPhone } from './authService';
+import type {
+  UserProfile,
+  UserRole,
+  PublicProfile,
+  UserSettings,
+  CourseProgress,
+  Project,
+  ProjectFile,
+  ProjectVersion,
+  ProjectVersionSnapshot,
+  PlaygroundItem,
+  ChallengeAttempt,
+  CommunityPost,
+  CommunityComment,
+  BookmarkItem,
+  NoteItem,
+  NotificationItem,
+  AchievementItem,
+  AiConversation,
+  ModerationReport,
+  ExperienceLevel,
+  VersionChangeType,
+  ActivityCategory,
+} from '../types/mideocode';
+
+export function sanitizeForFirestore<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => item !== undefined)
+      .map((item) => sanitizeForFirestore(item)) as unknown as T;
+  }
+  if (
+    value !== null &&
+    typeof value === 'object' &&
+    Object.getPrototypeOf(value) === Object.prototype
+  ) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v !== undefined) {
+        out[k] = sanitizeForFirestore(v);
+      }
+    }
+    return out as T;
+  }
+  return value;
+}
+
+export function calculateLevelFromXp(xp: number): number {
+  return Math.max(1, Math.floor(xp / 250) + 1);
+}
+
+export function getTodayKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export async function recordDeveloperActivity(
+  uid: string,
+  input: {
+    category: ActivityCategory;
+    action: string;
+    language?: string;
+    technology?: string;
+    aiAssisted?: boolean;
+    durationSeconds?: number;
+    scorePct?: number;
+    projectId?: string;
+  },
+): Promise<void> {
+  if (!uid) return;
+  const eventId = `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  try {
+    const payload = sanitizeForFirestore<Record<string, unknown>>({
+      id: eventId,
+      userId: uid,
+      category: input.category,
+      action: input.action.trim().slice(0, 140),
+      language: input.language ? input.language.slice(0, 32) : undefined,
+      technology: input.technology ? input.technology.slice(0, 64) : undefined,
+      aiAssisted: Boolean(input.aiAssisted),
+      durationSeconds:
+        typeof input.durationSeconds === 'number' && input.durationSeconds >= 0
+          ? Math.min(86400, Math.round(input.durationSeconds))
+          : undefined,
+      scorePct:
+        typeof input.scorePct === 'number'
+          ? Math.max(0, Math.min(100, Math.round(input.scorePct)))
+          : undefined,
+      projectId: input.projectId ? input.projectId.slice(0, 128) : undefined,
+      dayKey: getTodayKey(),
+      createdAt: serverTimestamp(),
+    });
+    await setDoc(doc(db, 'activityEvents', eventId), payload);
+  } catch {
+    // Non-blocking activity logging
+  }
+}
+
+// ---------------------------------------------------------------------------
+// User Profiles, Public Profiles & Settings
+// ---------------------------------------------------------------------------
+export async function loadOrCreateUserProfile(firebaseUser: User): Promise<UserProfile> {
+  const userRef = doc(db, 'users', firebaseUser.uid);
+  try {
+    const snap = await getDoc(userRef);
+    let resolvedProfile: UserProfile | null = snap.exists() ? (snap.data() as UserProfile) : null;
+
+    const displayName =
+      resolvedProfile?.displayName?.trim() ||
+      firebaseUser.displayName?.trim() ||
+      firebaseUser.email?.split('@')[0] ||
+      (firebaseUser.phoneNumber ? `Developer ${firebaseUser.phoneNumber.slice(-4)}` : 'MideoCode Learner');
+
+    if (!resolvedProfile) {
+      const newProfile: Record<string, unknown> = {
+        uid: firebaseUser.uid,
+        displayName: displayName.slice(0, 80),
+        experienceLevel: 'beginner',
+        preferredLanguages: ['JavaScript', 'HTML/CSS'],
+        learningGoals: ['Build real-world projects'],
+        interests: ['Web Development'],
+        onboardingComplete: false,
+        xp: 0,
+        level: 1,
+        streak: 1,
+        lastActivityDate: getTodayKey(),
+        role: 'member',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      if (firebaseUser.photoURL) newProfile.photoURL = firebaseUser.photoURL.slice(0, 500);
+      if (firebaseUser.email) newProfile.email = firebaseUser.email.slice(0, 254);
+      if (firebaseUser.phoneNumber) newProfile.phoneNumber = firebaseUser.phoneNumber.slice(0, 32);
+
+      await setDoc(userRef, newProfile);
+      const createdSnap = await getDoc(userRef);
+      resolvedProfile = createdSnap.data() as UserProfile;
+    }
+
+    // Mirror non-PII public profile if missing
+    const publicRef = doc(db, 'publicProfiles', firebaseUser.uid);
+    const publicSnap = await getDoc(publicRef);
+    if (!publicSnap.exists()) {
+      const publicProfile: Record<string, unknown> = {
+        uid: firebaseUser.uid,
+        displayName: displayName.slice(0, 80),
+        level: resolvedProfile?.level ?? 1,
+        xp: resolvedProfile?.xp ?? 0,
+        streak: resolvedProfile?.streak ?? 1,
+        badgesCount: 0,
+        updatedAt: serverTimestamp(),
+      };
+      const photo = resolvedProfile?.photoURL || firebaseUser.photoURL;
+      if (photo) publicProfile.photoURL = photo.slice(0, 500);
+      await setDoc(publicRef, publicProfile);
+    }
+
+    // Create default user settings if missing
+    const settingsRef = doc(db, 'userSettings', firebaseUser.uid);
+    const settingsSnap = await getDoc(settingsRef);
+    if (!settingsSnap.exists()) {
+      await setDoc(settingsRef, {
+        userId: firebaseUser.uid,
+        theme: 'dark',
+        editorTheme: 'oneDark',
+        editorFontSize: 14,
+        tabSize: 2,
+        autosave: true,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    // Welcome notification if missing (only on brand-new user creation)
+    if (!snap.exists()) {
+      const notifId = `welcome_${firebaseUser.uid.slice(0, 20)}`;
+      const notifRef = doc(db, 'notifications', notifId);
+      const notifSnap = await getDoc(notifRef);
+      if (!notifSnap.exists()) {
+        await setDoc(notifRef, {
+          id: notifId,
+          userId: firebaseUser.uid,
+          title: 'Welcome to MideoCode',
+          body: 'Your workspace, cloud storage, and academy roadmap are ready.',
+          linkView: 'academy',
+          read: false,
+          createdAt: serverTimestamp(),
+        });
+      }
+    }
+
+    return resolvedProfile;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `users/${firebaseUser.uid}`);
+  }
+}
+
+export async function saveOnboardingProfile(
+  uid: string,
+  payload: {
+    displayName: string;
+    phoneNumber?: string;
+    country?: string;
+    photoURL?: string;
+    experienceLevel: ExperienceLevel;
+    preferredLanguages: string[];
+    learningGoals: string[];
+    interests: string[];
+    activeCareerPathId?: string;
+  },
+): Promise<void> {
+  const path = `users/${uid}`;
+  try {
+    const cleanName = payload.displayName.trim().slice(0, 80) || 'Developer';
+    const userPatch: Record<string, unknown> = {
+      displayName: cleanName,
+      experienceLevel: payload.experienceLevel,
+      preferredLanguages: payload.preferredLanguages.slice(0, 12),
+      learningGoals: payload.learningGoals.slice(0, 12),
+      interests: payload.interests.slice(0, 16),
+      activeCareerPathId: payload.activeCareerPathId || 'frontend-developer',
+      onboardingComplete: true,
+      updatedAt: serverTimestamp(),
+    };
+    if (payload.phoneNumber && payload.phoneNumber.trim()) {
+      const cleanPhone = payload.phoneNumber.trim().slice(0, 32);
+      userPatch.phoneNumber = cleanPhone;
+      const derivedCountry = payload.country?.trim() || getCountryInfoFromPhone(cleanPhone)?.name;
+      if (derivedCountry) {
+        userPatch.country = derivedCountry.slice(0, 80);
+      }
+    } else if (payload.country && payload.country.trim()) {
+      userPatch.country = payload.country.trim().slice(0, 80);
+    }
+    const publicPatch: Record<string, unknown> = {
+      displayName: cleanName,
+      updatedAt: serverTimestamp(),
+    };
+    if (payload.photoURL && payload.photoURL.trim()) {
+      const cleanPhoto = payload.photoURL.trim().slice(0, 500);
+      userPatch.photoURL = cleanPhoto;
+      publicPatch.photoURL = cleanPhoto;
+    }
+    await updateDoc(doc(db, 'users', uid), userPatch);
+    await updateDoc(doc(db, 'publicProfiles', uid), publicPatch);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+  }
+}
+
+export async function processAndUploadAvatar(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Please choose a valid image file (PNG, JPG, WebP, or GIF).');
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error('Selected image must be smaller than 10 MB.');
+  }
+
+  const imageDataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read selected image file.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Unsupported or corrupted image file.'));
+      img.onload = () => {
+        const size = 256;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas context unavailable for image resizing.'));
+          return;
+        }
+        const minDim = Math.min(img.width, img.height);
+        const sx = (img.width - minDim) / 2;
+        const sy = (img.height - minDim) / 2;
+        ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
+        resolve(canvas.toDataURL('image/jpeg', 0.86));
+      };
+      img.src = String(reader.result || '');
+    };
+    reader.readAsDataURL(file);
+  });
+
+  const res = await fetchWithAuthAndRetry('/api/profile/avatar', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ imageDataUrl }),
+  });
+  const data = (await res.json()) as { photoURL?: string; error?: string };
+  if (!res.ok || !data.photoURL) {
+    throw new Error(data.error || 'Failed to upload profile picture.');
+  }
+  return data.photoURL;
+}
+
+export async function updateUserAvatar(uid: string, photoURL: string | null): Promise<void> {
+  const path = `users/${uid}`;
+  try {
+    const clean = photoURL?.trim().slice(0, 500) || null;
+    await updateDoc(doc(db, 'users', uid), {
+      photoURL: clean ? clean : deleteField(),
+      updatedAt: serverTimestamp(),
+    });
+    await updateDoc(doc(db, 'publicProfiles', uid), {
+      photoURL: clean ? clean : deleteField(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+  }
+}
+
+export async function updateUserPhoneNumber(
+  uid: string,
+  phoneNumber: string | null,
+  country?: string | null,
+): Promise<void> {
+  const path = `users/${uid}`;
+  try {
+    const clean = phoneNumber?.trim().slice(0, 32) || null;
+    const cleanCountry = clean
+      ? (country?.trim() || getCountryInfoFromPhone(clean)?.name || '').slice(0, 80) || null
+      : null;
+    await updateDoc(doc(db, 'users', uid), {
+      phoneNumber: clean ? clean : deleteField(),
+      country: cleanCountry ? cleanCountry : deleteField(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+  }
+}
+
+export async function getUserSettings(uid: string): Promise<UserSettings | null> {
+  const path = `userSettings/${uid}`;
+  try {
+    const snap = await getDoc(doc(db, 'userSettings', uid));
+    return snap.exists() ? (snap.data() as UserSettings) : null;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.GET, path);
+  }
+}
+
+export async function saveUserSettings(
+  uid: string,
+  partial: Partial<Pick<UserSettings, 'theme' | 'editorTheme' | 'editorFontSize' | 'tabSize' | 'autosave'>>,
+): Promise<void> {
+  const path = `userSettings/${uid}`;
+  const ref = doc(db, 'userSettings', uid);
+  try {
+    const cleanPartial = sanitizeForFirestore(partial);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      await updateDoc(ref, {
+        ...cleanPartial,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(ref, {
+        userId: uid,
+        theme: 'dark',
+        editorTheme: 'oneDark',
+        editorFontSize: 14,
+        tabSize: 2,
+        autosave: true,
+        ...cleanPartial,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, path);
+  }
+}
+
+export async function listPublicLeaderboard(): Promise<PublicProfile[]> {
+  try {
+    const q = query(collection(db, 'publicProfiles'), orderBy('xp', 'desc'), limit(20));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as PublicProfile);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'publicProfiles');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Verified XP & Achievements (Backed by /api/xp/attest + Idempotent Ledger)
+// ---------------------------------------------------------------------------
+export async function listUserXpTransactions(
+  uid: string,
+): Promise<{ id: string; sourceType: string; sourceId: string; amount: number; reason: string }[]> {
+  try {
+    const q = query(collection(db, 'xpTransactions'), where('userId', '==', uid), limit(100));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as { id: string; sourceType: string; sourceId: string; amount: number; reason: string });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'xpTransactions');
+  }
+}
+
+export async function awardVerifiedXp(
+  uid: string,
+  sourceType: 'lesson' | 'quiz' | 'challenge' | 'project' | 'mission',
+  sourceId: string,
+  reason: string,
+): Promise<{ awarded: number; alreadyClaimed: boolean; newXp: number; newLevel: number }> {
+  const cleanSourceId = sourceId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
+  const txId = `${uid.slice(0, 32)}_${sourceType}_${cleanSourceId}`.slice(0, 120);
+  const txRef = doc(db, 'xpTransactions', txId);
+  const userRef = doc(db, 'users', uid);
+  const publicRef = doc(db, 'publicProfiles', uid);
+
+  let userData: UserProfile | undefined;
+  let userExists = false;
+  let publicExists = false;
+
+  try {
+    const [existingTx, userSnap, publicSnap] = await Promise.all([
+      getDoc(txRef),
+      getDoc(userRef),
+      getDoc(publicRef),
+    ]);
+    userExists = userSnap.exists();
+    publicExists = publicSnap.exists();
+    userData = userSnap.data() as UserProfile | undefined;
+    const currentXp = userData?.xp ?? 0;
+
+    if (existingTx.exists()) {
+      return {
+        awarded: 0,
+        alreadyClaimed: true,
+        newXp: currentXp,
+        newLevel: calculateLevelFromXp(currentXp),
+      };
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.GET, `xpTransactions/${txId}`);
+  }
+
+  // Keep backend HTTP attestation outside handleFirestoreError so network/API
+  // errors are never misclassified as Firestore permission or write failures.
+  let amount = 0;
+  try {
+    const res = await fetchWithAuthAndRetry('/api/xp/attest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceType, sourceId: cleanSourceId }),
+    });
+    if (!res.ok) {
+      let errMsg = 'Failed to verify XP reward on backend.';
+      try {
+        const errPayload = (await res.json()) as { error?: string };
+        if (errPayload?.error) errMsg = errPayload.error;
+      } catch {
+        // Use fallback error message
+      }
+      throw new Error(errMsg);
+    }
+    const attested = (await res.json()) as { amount: number };
+    amount = Math.min(250, Math.max(5, Number(attested.amount) || 25));
+  } catch (err) {
+    if (err instanceof TypeError || (err instanceof Error && /failed to fetch|network/i.test(err.message))) {
+      throw new Error('Unable to reach the XP verification server. Please check your connection and try again.');
+    }
+    throw err instanceof Error ? err : new Error('Failed to verify XP reward on backend.');
+  }
+
+  const currentXp = userData?.xp ?? 0;
+  const currentLevel = userData?.level ?? 1;
+  const newXp = currentXp + amount;
+  const newLevel = Math.min(500, Math.min(currentLevel + 2, Math.max(currentLevel, calculateLevelFromXp(newXp))));
+  const today = getTodayKey();
+  const prevDate = userData?.lastActivityDate;
+  let newStreak = userData?.streak ?? 1;
+  if (prevDate && prevDate !== today) {
+    const diffDays = Math.round((new Date(today).getTime() - new Date(prevDate).getTime()) / 86_400_000);
+    newStreak = diffDays === 1 ? newStreak + 1 : Math.max(1, newStreak);
+  }
+
+  try {
+    const batch = writeBatch(db);
+    batch.set(txRef, {
+      id: txId,
+      userId: uid,
+      sourceType,
+      sourceId: cleanSourceId,
+      amount,
+      reason: (reason || 'XP Reward').slice(0, 160),
+      createdAt: serverTimestamp(),
+    });
+    if (userExists) {
+      batch.update(userRef, {
+        xp: newXp,
+        level: newLevel,
+        streak: newStreak,
+        lastActivityDate: today,
+        updatedAt: serverTimestamp(),
+      });
+    }
+    if (publicExists) {
+      batch.update(publicRef, {
+        xp: newXp,
+        level: newLevel,
+        streak: newStreak,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      const publicDoc: Record<string, unknown> = {
+        uid,
+        displayName: (userData?.displayName || 'MideoCode Learner').slice(0, 80),
+        level: newLevel,
+        xp: newXp,
+        streak: newStreak,
+        badgesCount: 0,
+        updatedAt: serverTimestamp(),
+      };
+      if (userData?.photoURL) {
+        publicDoc.photoURL = userData.photoURL.slice(0, 500);
+      }
+      batch.set(publicRef, publicDoc);
+    }
+    await batch.commit();
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `xpTransactions/${txId}`);
+  }
+
+  // Unlock milestone achievements cleanly without jeopardizing XP commit
+  try {
+    await checkAndUnlockAchievement(uid, sourceType, newXp);
+  } catch {
+    // Non-blocking achievement check
+  }
+
+  return { awarded: amount, alreadyClaimed: false, newXp, newLevel };
+}
+
+async function checkAndUnlockAchievement(
+  uid: string,
+  sourceType: string,
+  totalXp: number,
+): Promise<void> {
+  const candidates: { badgeId: string; title: string; condition: boolean }[] = [
+    { badgeId: 'first_lesson', title: 'First Concept Mastered', condition: sourceType === 'lesson' },
+    { badgeId: 'challenge_solver', title: 'Algorithm Problem Solver', condition: sourceType === 'challenge' },
+    { badgeId: 'project_builder', title: 'Project Shipper', condition: sourceType === 'project' },
+    { badgeId: 'xp_250', title: 'Level 2 Engineer (250 XP)', condition: totalXp >= 250 },
+    { badgeId: 'xp_500', title: '500 XP Milestone', condition: totalXp >= 500 },
+  ];
+
+  for (const item of candidates) {
+    if (!item.condition) continue;
+    const achId = `${uid.slice(0, 40)}_${item.badgeId}`.slice(0, 120);
+    const achRef = doc(db, 'achievements', achId);
+    try {
+      const snap = await getDoc(achRef);
+      if (!snap.exists()) {
+        await setDoc(achRef, {
+          id: achId,
+          userId: uid,
+          badgeId: item.badgeId,
+          title: item.title,
+          unlockedAt: serverTimestamp(),
+        });
+        const publicRef = doc(db, 'publicProfiles', uid);
+        const publicSnap = await getDoc(publicRef);
+        if (publicSnap.exists()) {
+          await updateDoc(publicRef, {
+            badgesCount: increment(1),
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `achievements/${achId}`);
+    }
+  }
+}
+
+export async function unlockCustomAchievement(
+  uid: string,
+  badgeId: string,
+  title: string,
+): Promise<boolean> {
+  const cleanBadge = badgeId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  const achId = `${uid.slice(0, 40)}_${cleanBadge}`.slice(0, 120);
+  const achRef = doc(db, 'achievements', achId);
+  try {
+    const snap = await getDoc(achRef);
+    if (snap.exists()) return false;
+    await setDoc(achRef, {
+      id: achId,
+      userId: uid,
+      badgeId: cleanBadge,
+      title: title.slice(0, 120),
+      unlockedAt: serverTimestamp(),
+    });
+    const publicRef = doc(db, 'publicProfiles', uid);
+    const publicSnap = await getDoc(publicRef);
+    if (publicSnap.exists()) {
+      await updateDoc(publicRef, {
+        badgesCount: increment(1),
+        updatedAt: serverTimestamp(),
+      });
+    }
+    return true;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `achievements/${achId}`);
+  }
+}
+
+export async function listUserAchievements(uid: string): Promise<AchievementItem[]> {
+  try {
+    const q = query(collection(db, 'achievements'), where('userId', '==', uid));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as AchievementItem);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'achievements');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Academy Progress, Bookmarks, Notes
+// ---------------------------------------------------------------------------
+export async function listCourseProgress(uid: string): Promise<Record<string, CourseProgress>> {
+  const path = `userProgress/${uid}/courses`;
+  try {
+    const snap = await getDocs(collection(db, 'userProgress', uid, 'courses'));
+    const map: Record<string, CourseProgress> = {};
+    snap.docs.forEach((d) => {
+      const item = d.data() as CourseProgress;
+      map[item.courseId] = item;
+    });
+    return map;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, path);
+  }
+}
+
+export async function saveCourseProgress(
+  uid: string,
+  progress: Omit<CourseProgress, 'userId' | 'updatedAt'>,
+): Promise<void> {
+  const path = `userProgress/${uid}/courses/${progress.courseId}`;
+  try {
+    const ref = doc(db, 'userProgress', uid, 'courses', progress.courseId);
+    const snap = await getDoc(ref);
+    const payload = {
+      userId: uid,
+      courseId: progress.courseId,
+      completedLessonIds: progress.completedLessonIds,
+      completedExerciseIds: progress.completedExerciseIds,
+      quizScores: progress.quizScores,
+      lastLessonId: progress.lastLessonId || '',
+      progressPercent: progress.progressPercent,
+      updatedAt: serverTimestamp(),
+    };
+    if (snap.exists()) {
+      await updateDoc(ref, {
+        completedLessonIds: payload.completedLessonIds,
+        completedExerciseIds: payload.completedExerciseIds,
+        quizScores: payload.quizScores,
+        lastLessonId: payload.lastLessonId,
+        progressPercent: payload.progressPercent,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(ref, payload);
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, path);
+  }
+}
+
+export async function listBookmarks(uid: string): Promise<BookmarkItem[]> {
+  try {
+    const q = query(collection(db, 'bookmarks'), where('userId', '==', uid));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as BookmarkItem);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'bookmarks');
+  }
+}
+
+export async function toggleBookmark(
+  uid: string,
+  targetType: 'lesson' | 'doc' | 'post' | 'project' | 'mission',
+  targetId: string,
+  title: string,
+): Promise<boolean> {
+  const cleanTarget = targetId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
+  const id = `${uid.slice(0, 32)}_${targetType}_${cleanTarget}`.slice(0, 120);
+  const ref = doc(db, 'bookmarks', id);
+  try {
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      await deleteDoc(ref);
+      return false;
+    }
+    await setDoc(ref, {
+      id,
+      userId: uid,
+      targetType,
+      targetId: targetId.slice(0, 128),
+      title: title.slice(0, 160),
+      createdAt: serverTimestamp(),
+    });
+    return true;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `bookmarks/${id}`);
+  }
+}
+
+export async function listNotes(uid: string): Promise<NoteItem[]> {
+  try {
+    const q = query(collection(db, 'notes'), where('userId', '==', uid));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as NoteItem);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'notes');
+  }
+}
+
+export async function saveNote(
+  uid: string,
+  input: { id?: string; courseId?: string; lessonId?: string; title: string; content: string },
+): Promise<NoteItem> {
+  const id = input.id || `note_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const ref = doc(db, 'notes', id);
+  try {
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      await updateDoc(ref, {
+        title: input.title.trim().slice(0, 160) || 'Untitled Note',
+        content: input.content.slice(0, 10000),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      const payload: Record<string, unknown> = {
+        id,
+        userId: uid,
+        title: input.title.trim().slice(0, 160) || 'Untitled Note',
+        content: input.content.slice(0, 10000),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      if (input.courseId) payload.courseId = input.courseId.slice(0, 80);
+      if (input.lessonId) payload.lessonId = input.lessonId.slice(0, 80);
+      await setDoc(ref, payload);
+    }
+    const fresh = await getDoc(ref);
+    return fresh.data() as NoteItem;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `notes/${id}`);
+  }
+}
+
+export async function deleteNote(noteId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'notes', noteId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `notes/${noteId}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Projects, Files & Cloud Version History
+// ---------------------------------------------------------------------------
+export async function listUserProjects(uid: string): Promise<Project[]> {
+  try {
+    const q = query(collection(db, 'projects'), where('ownerId', '==', uid));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as Project);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'projects');
+  }
+}
+
+export async function listSharedProjects(uid: string): Promise<Project[]> {
+  try {
+    const q = query(collection(db, 'projects'), where('collaboratorIds', 'array-contains', uid), limit(30));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as Project);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'projects');
+  }
+}
+
+export async function listPublicProjects(): Promise<Project[]> {
+  try {
+    const q = query(collection(db, 'projects'), where('visibility', '==', 'public'), limit(24));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as Project);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'projects');
+  }
+}
+
+export async function createProjectWithFiles(
+  uid: string,
+  ownerName: string,
+  input: {
+    title: string;
+    description: string;
+    language: Project['language'];
+    guidedProjectId?: string;
+    architectureId?: string;
+    files: { name: string; folder: string; language: string; content: string }[];
+  },
+): Promise<{ project: Project; files: ProjectFile[] }> {
+  const projectId = `proj_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const totalBytes = input.files.reduce((acc, f) => acc + new Blob([f.content]).size, 0);
+
+  const projectPayload: Record<string, unknown> = {
+    id: projectId,
+    ownerId: uid,
+    ownerName: ownerName.slice(0, 80),
+    title: input.title.trim().slice(0, 120) || 'Untitled Workspace',
+    description: input.description.trim().slice(0, 1000),
+    language: input.language,
+    visibility: 'private',
+    isPortfolio: false,
+    milestonesCompleted: [],
+    status: 'active',
+    version: 1,
+    storageBytes: totalBytes,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+  if (input.guidedProjectId) {
+    projectPayload.guidedProjectId = input.guidedProjectId.slice(0, 80);
+  }
+  if (input.architectureId) {
+    projectPayload.architectureId = input.architectureId.slice(0, 128);
+  }
+
+  try {
+    await setDoc(doc(db, 'projects', projectId), projectPayload);
+
+    const createdFiles: ProjectFile[] = [];
+    for (let i = 0; i < input.files.length; i++) {
+      const f = input.files[i];
+      const fileId = `file_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`;
+      const fileDoc = {
+        id: fileId,
+        projectId,
+        ownerId: uid,
+        name: f.name.slice(0, 120),
+        folder: f.folder.slice(0, 120),
+        language: f.language.slice(0, 32),
+        visibility: 'private' as const,
+        content: f.content.slice(0, 150000),
+        updatedAt: serverTimestamp(),
+      };
+      await setDoc(doc(db, 'projects', projectId, 'files', fileId), fileDoc);
+      createdFiles.push(fileDoc as unknown as ProjectFile);
+    }
+
+    // Create initial version snapshot v1
+    const vId = `v1_${Date.now()}`;
+    await setDoc(doc(db, 'projects', projectId, 'versions', vId), {
+      id: vId,
+      projectId,
+      ownerId: uid,
+      versionNumber: 1,
+      label: 'Initial workspace snapshot',
+      authorId: uid,
+      authorName: ownerName.slice(0, 80),
+      changeType: input.architectureId ? 'ai_build' : 'manual',
+      changedFiles: input.files.map((f) => (f.folder ? `${f.folder}/${f.name}` : f.name)).slice(0, 50),
+      filesCount: input.files.length,
+      snapshot: input.files.slice(0, 30).map((f) => ({
+        name: f.name,
+        folder: f.folder,
+        language: f.language,
+        content: f.content.slice(0, 20000),
+      })),
+      createdAt: serverTimestamp(),
+    });
+
+    await recordDeveloperActivity(uid, {
+      category: 'project',
+      action: `Created project "${input.title}"`,
+      language: input.language,
+      aiAssisted: Boolean(input.architectureId),
+      projectId,
+    });
+
+    const projectSnap = await getDoc(doc(db, 'projects', projectId));
+    const filesSnap = await getDocs(collection(db, 'projects', projectId, 'files'));
+    return {
+      project: projectSnap.data() as Project,
+      files: filesSnap.docs.map((d) => d.data() as ProjectFile),
+    };
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `projects/${projectId}`);
+  }
+}
+
+export async function getProjectFiles(projectId: string): Promise<ProjectFile[]> {
+  try {
+    const snap = await getDocs(collection(db, 'projects', projectId, 'files'));
+    return snap.docs.map((d) => d.data() as ProjectFile);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, `projects/${projectId}/files`);
+  }
+}
+
+export async function saveProjectFileContent(
+  projectId: string,
+  fileId: string,
+  content: string,
+  expectedProjectVersion: number,
+  allFilesTotalBytes: number,
+  editorMeta?: { uid: string; name: string },
+): Promise<{
+  conflict: boolean;
+  serverVersion: number;
+  newVersion: number;
+  lastEditedByName?: string;
+  serverFileContent?: string;
+}> {
+  try {
+    const projRef = doc(db, 'projects', projectId);
+    const projSnap = await getDoc(projRef);
+    const serverProject = projSnap.data() as Project | undefined;
+    if (!serverProject) {
+      throw new Error('Project not found in cloud.');
+    }
+    if (serverProject.version > expectedProjectVersion) {
+      const serverFileSnap = await getDoc(doc(db, 'projects', projectId, 'files', fileId));
+      const serverFile = serverFileSnap.data() as ProjectFile | undefined;
+      return {
+        conflict: true,
+        serverVersion: serverProject.version,
+        newVersion: serverProject.version,
+        lastEditedByName: serverProject.lastEditedByName || serverProject.ownerName,
+        serverFileContent: serverFile?.content,
+      };
+    }
+    const fileUpdate: Record<string, unknown> = {
+      content: content.slice(0, 150000),
+      updatedAt: serverTimestamp(),
+    };
+    if (editorMeta) {
+      fileUpdate.lastEditedByUid = editorMeta.uid;
+      fileUpdate.lastEditedByName = editorMeta.name.slice(0, 80);
+    }
+    await updateDoc(doc(db, 'projects', projectId, 'files', fileId), fileUpdate);
+
+    const newVersion = serverProject.version + 1;
+    const projUpdate: Record<string, unknown> = {
+      version: newVersion,
+      storageBytes: allFilesTotalBytes,
+      updatedAt: serverTimestamp(),
+    };
+    if (editorMeta) {
+      projUpdate.lastEditedByUid = editorMeta.uid;
+      projUpdate.lastEditedByName = editorMeta.name.slice(0, 80);
+    }
+    await updateDoc(projRef, projUpdate);
+    return { conflict: false, serverVersion: newVersion, newVersion };
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `projects/${projectId}/files/${fileId}`);
+  }
+}
+
+export async function forceOverwriteProjectFile(
+  projectId: string,
+  fileId: string,
+  content: string,
+  serverVersion: number,
+  allFilesTotalBytes: number,
+  editorMeta?: { uid: string; name: string },
+): Promise<number> {
+  try {
+    const filePatch: Record<string, unknown> = {
+      content: content.slice(0, 150000),
+      updatedAt: serverTimestamp(),
+    };
+    if (editorMeta) {
+      filePatch.lastEditedByUid = editorMeta.uid;
+      filePatch.lastEditedByName = editorMeta.name.slice(0, 80);
+    }
+    await updateDoc(doc(db, 'projects', projectId, 'files', fileId), filePatch);
+    const newVersion = serverVersion + 1;
+    const projPatch: Record<string, unknown> = {
+      version: newVersion,
+      storageBytes: allFilesTotalBytes,
+      updatedAt: serverTimestamp(),
+    };
+    if (editorMeta) {
+      projPatch.lastEditedByUid = editorMeta.uid;
+      projPatch.lastEditedByName = editorMeta.name.slice(0, 80);
+    }
+    await updateDoc(doc(db, 'projects', projectId), projPatch);
+    return newVersion;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `projects/${projectId}/files/${fileId}`);
+  }
+}
+
+export async function addProjectFile(
+  uid: string,
+  projectId: string,
+  file: { name: string; folder: string; language: string; content: string; visibility: 'private' | 'public' },
+): Promise<ProjectFile> {
+  const fileId = `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const ref = doc(db, 'projects', projectId, 'files', fileId);
+  try {
+    const projSnap = await getDoc(doc(db, 'projects', projectId));
+    const proj = projSnap.data() as Project | undefined;
+    const ownerId = proj?.ownerId || uid;
+    const payload = sanitizeForFirestore<Record<string, unknown>>({
+      id: fileId,
+      projectId,
+      ownerId,
+      name: file.name.slice(0, 120),
+      folder: file.folder.slice(0, 120),
+      language: file.language.slice(0, 32),
+      visibility: file.visibility,
+      content: file.content.slice(0, 150000),
+      collaboratorIds: proj?.collaboratorIds && proj.collaboratorIds.length > 0 ? proj.collaboratorIds : undefined,
+      lastEditedByUid: uid,
+      updatedAt: serverTimestamp(),
+    });
+    await setDoc(ref, payload);
+    const snap = await getDoc(ref);
+    return snap.data() as ProjectFile;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, `projects/${projectId}/files/${fileId}`);
+  }
+}
+
+export async function renameProjectFile(
+  projectId: string,
+  fileId: string,
+  newName: string,
+  nextFolder?: string,
+): Promise<void> {
+  try {
+    const patch: Record<string, unknown> = {
+      name: newName.trim().slice(0, 120),
+      updatedAt: serverTimestamp(),
+    };
+    if (nextFolder !== undefined) {
+      patch.folder = nextFolder.trim().slice(0, 120);
+    }
+    await updateDoc(doc(db, 'projects', projectId, 'files', fileId), patch);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `projects/${projectId}/files/${fileId}`);
+  }
+}
+
+export async function deleteProjectFile(projectId: string, fileId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'projects', projectId, 'files', fileId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `projects/${projectId}/files/${fileId}`);
+  }
+}
+
+export async function updateProjectMeta(
+  projectId: string,
+  patch: Partial<
+    Pick<
+      Project,
+      'title' | 'description' | 'visibility' | 'isPortfolio' | 'milestonesCompleted' | 'status' | 'architectureId'
+    >
+  >,
+  filesForVisibilitySync?: ProjectFile[],
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'projects', projectId), {
+      ...patch,
+      updatedAt: serverTimestamp(),
+    });
+    if (patch.visibility && filesForVisibilitySync) {
+      for (const f of filesForVisibilitySync) {
+        await updateDoc(doc(db, 'projects', projectId, 'files', f.id), {
+          visibility: patch.visibility,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `projects/${projectId}`);
+  }
+}
+
+export async function createProjectVersionSnapshot(
+  uid: string,
+  projectId: string,
+  versionNumber: number,
+  label: string,
+  files: ProjectFile[],
+  options?: {
+    ownerId?: string;
+    authorName?: string;
+    description?: string;
+    changeType?: VersionChangeType;
+    aiOperation?: string;
+    changedFiles?: string[];
+    parentVersionId?: string;
+    collaboratorIds?: string[];
+  },
+): Promise<ProjectVersion> {
+  const versionId = `ver_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const ref = doc(db, 'projects', projectId, 'versions', versionId);
+  try {
+    const snapshot: ProjectVersionSnapshot[] = files.slice(0, 30).map((f) => ({
+      name: f.name,
+      folder: f.folder,
+      language: f.language,
+      content: f.content.slice(0, 20000),
+    }));
+    const payload = sanitizeForFirestore<Record<string, unknown>>({
+      id: versionId,
+      projectId,
+      ownerId: options?.ownerId || uid,
+      versionNumber,
+      label: label.trim().slice(0, 120) || `Snapshot v${versionNumber}`,
+      description: options?.description?.trim().slice(0, 500) || undefined,
+      authorId: uid,
+      authorName: options?.authorName?.slice(0, 80) || undefined,
+      changeType: options?.changeType || 'manual',
+      aiOperation: options?.aiOperation?.slice(0, 240) || undefined,
+      changedFiles: options?.changedFiles?.slice(0, 50) || undefined,
+      parentVersionId: options?.parentVersionId?.slice(0, 128) || undefined,
+      collaboratorIds:
+        options?.collaboratorIds && options.collaboratorIds.length > 0
+          ? options.collaboratorIds
+          : undefined,
+      filesCount: files.length,
+      snapshot,
+      createdAt: serverTimestamp(),
+    });
+    await setDoc(ref, payload);
+    await recordDeveloperActivity(uid, {
+      category: 'version',
+      action: `Created snapshot "${label.trim().slice(0, 60)}"`,
+      aiAssisted: options?.changeType === 'ai_build' || options?.changeType === 'ai_fix',
+      projectId,
+    });
+    const snap = await getDoc(ref);
+    return snap.data() as ProjectVersion;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, `projects/${projectId}/versions/${versionId}`);
+  }
+}
+
+export async function listProjectVersions(projectId: string): Promise<ProjectVersion[]> {
+  try {
+    const q = query(collection(db, 'projects', projectId, 'versions'), orderBy('versionNumber', 'desc'));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as ProjectVersion);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, `projects/${projectId}/versions`);
+  }
+}
+
+export async function restoreProjectVersionSnapshot(
+  uid: string,
+  projectId: string,
+  version: ProjectVersion,
+  currentFiles: ProjectFile[],
+  options?: {
+    preserveCurrentState?: boolean;
+    selectedPaths?: string[];
+    authorName?: string;
+  },
+): Promise<ProjectFile[]> {
+  try {
+    const projSnap = await getDoc(doc(db, 'projects', projectId));
+    const proj = projSnap.data() as Project | undefined;
+    const visibility = proj?.visibility ?? 'private';
+    const ownerId = proj?.ownerId || uid;
+    const collaboratorIds = proj?.collaboratorIds;
+    const currentVersionNum = proj?.version ?? 1;
+
+    // Auto-preserve current state before destructive restore
+    if (options?.preserveCurrentState !== false && currentFiles.length > 0) {
+      await createProjectVersionSnapshot(
+        uid,
+        projectId,
+        currentVersionNum,
+        `Pre-restore backup (before v${version.versionNumber})`,
+        currentFiles,
+        {
+          ownerId,
+          authorName: options?.authorName,
+          changeType: 'autosave',
+          description: `Automatic safety snapshot created before restoring "${version.label}".`,
+          collaboratorIds,
+        },
+      );
+    }
+
+    const getPath = (f: { folder?: string; name: string }) => (f.folder ? `${f.folder}/${f.name}` : f.name);
+    const selectiveSet = options?.selectedPaths && options.selectedPaths.length > 0
+      ? new Set(options.selectedPaths)
+      : null;
+
+    if (selectiveSet) {
+      // Partial / file-level restore: replace only selected file paths
+      for (const item of version.snapshot) {
+        const p = getPath(item);
+        if (!selectiveSet.has(p)) continue;
+        const existingMatch = currentFiles.find((f) => getPath(f) === p);
+        if (existingMatch) {
+          await updateDoc(doc(db, 'projects', projectId, 'files', existingMatch.id), {
+            content: item.content,
+            language: item.language,
+            lastEditedByUid: uid,
+            lastEditedByName: options?.authorName || 'Restore',
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          const fileId = `restored_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+          await setDoc(
+            doc(db, 'projects', projectId, 'files', fileId),
+            sanitizeForFirestore({
+              id: fileId,
+              projectId,
+              ownerId,
+              name: item.name,
+              folder: item.folder,
+              language: item.language,
+              visibility,
+              content: item.content,
+              collaboratorIds: collaboratorIds && collaboratorIds.length > 0 ? collaboratorIds : undefined,
+              lastEditedByUid: uid,
+              lastEditedByName: options?.authorName,
+              updatedAt: serverTimestamp(),
+            }),
+          );
+        }
+      }
+    } else {
+      // Full snapshot restore
+      for (const f of currentFiles) {
+        await deleteDoc(doc(db, 'projects', projectId, 'files', f.id));
+      }
+      for (let i = 0; i < version.snapshot.length; i++) {
+        const item = version.snapshot[i];
+        const fileId = `restored_${Date.now()}_${i}`;
+        await setDoc(
+          doc(db, 'projects', projectId, 'files', fileId),
+          sanitizeForFirestore({
+            id: fileId,
+            projectId,
+            ownerId,
+            name: item.name,
+            folder: item.folder,
+            language: item.language,
+            visibility,
+            content: item.content,
+            collaboratorIds: collaboratorIds && collaboratorIds.length > 0 ? collaboratorIds : undefined,
+            lastEditedByUid: uid,
+            lastEditedByName: options?.authorName,
+            updatedAt: serverTimestamp(),
+          }),
+        );
+      }
+    }
+
+    const freshFiles = await getProjectFiles(projectId);
+    const totalBytes = freshFiles.reduce((s, f) => s + new Blob([f.content || '']).size, 0);
+    const nextVersion = currentVersionNum + 1;
+
+    await updateDoc(doc(db, 'projects', projectId), {
+      version: nextVersion,
+      storageBytes: totalBytes,
+      lastEditedByUid: uid,
+      lastEditedByName: options?.authorName || 'Restore',
+      updatedAt: serverTimestamp(),
+    });
+
+    await createProjectVersionSnapshot(
+      uid,
+      projectId,
+      nextVersion,
+      `Restored from v${version.versionNumber}: ${version.label}`.slice(0, 120),
+      freshFiles,
+      {
+        ownerId,
+        authorName: options?.authorName,
+        changeType: 'restore',
+        parentVersionId: version.id,
+        changedFiles: selectiveSet ? Array.from(selectiveSet) : freshFiles.map(getPath),
+        collaboratorIds,
+      },
+    );
+
+    return freshFiles;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `projects/${projectId}/versions`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Playgrounds
+// ---------------------------------------------------------------------------
+export async function listUserPlaygrounds(uid: string): Promise<PlaygroundItem[]> {
+  try {
+    const q = query(collection(db, 'playgrounds'), where('ownerId', '==', uid));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as PlaygroundItem);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'playgrounds');
+  }
+}
+
+export async function listPublicPlaygrounds(): Promise<PlaygroundItem[]> {
+  try {
+    const q = query(collection(db, 'playgrounds'), where('visibility', '==', 'public'), limit(20));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as PlaygroundItem);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'playgrounds');
+  }
+}
+
+export async function savePlayground(
+  uid: string,
+  ownerName: string,
+  input: {
+    id?: string;
+    title: string;
+    templateId: string;
+    html: string;
+    css: string;
+    js: string;
+    visibility: 'private' | 'public';
+    forkedFrom?: string;
+  },
+): Promise<PlaygroundItem> {
+  const id = input.id || `pg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const ref = doc(db, 'playgrounds', id);
+  try {
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      await updateDoc(ref, {
+        title: input.title.trim().slice(0, 120),
+        html: input.html.slice(0, 100000),
+        css: input.css.slice(0, 100000),
+        js: input.js.slice(0, 100000),
+        visibility: input.visibility,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      const payload: Record<string, unknown> = {
+        id,
+        ownerId: uid,
+        ownerName: ownerName.slice(0, 80),
+        title: input.title.trim().slice(0, 120),
+        templateId: input.templateId.slice(0, 64),
+        html: input.html.slice(0, 100000),
+        css: input.css.slice(0, 100000),
+        js: input.js.slice(0, 100000),
+        visibility: input.visibility,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      if (input.forkedFrom) payload.forkedFrom = input.forkedFrom.slice(0, 128);
+      await setDoc(ref, payload);
+    }
+    const fresh = await getDoc(ref);
+    return fresh.data() as PlaygroundItem;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `playgrounds/${id}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Challenges
+// ---------------------------------------------------------------------------
+export async function saveChallengeAttempt(
+  uid: string,
+  attempt: Omit<ChallengeAttempt, 'id' | 'userId' | 'createdAt'>,
+): Promise<ChallengeAttempt> {
+  const id = `att_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const ref = doc(db, 'challengeAttempts', id);
+  try {
+    await setDoc(ref, {
+      id,
+      userId: uid,
+      challengeId: attempt.challengeId,
+      language: attempt.language,
+      code: attempt.code.slice(0, 50000),
+      passed: attempt.passed,
+      passedCount: attempt.passedCount,
+      totalCount: attempt.totalCount,
+      executionMs: attempt.executionMs,
+      createdAt: serverTimestamp(),
+    });
+    const fresh = await getDoc(ref);
+    return fresh.data() as ChallengeAttempt;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, `challengeAttempts/${id}`);
+  }
+}
+
+export async function listChallengeAttempts(uid: string): Promise<ChallengeAttempt[]> {
+  try {
+    const q = query(collection(db, 'challengeAttempts'), where('userId', '==', uid), limit(50));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as ChallengeAttempt);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'challengeAttempts');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Community & Moderation
+// ---------------------------------------------------------------------------
+export async function listCommunityPosts(): Promise<CommunityPost[]> {
+  try {
+    const q = query(collection(db, 'communityPosts'), where('visibility', '==', 'public'), limit(40));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as CommunityPost);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'communityPosts');
+  }
+}
+
+export async function createCommunityPost(
+  uid: string,
+  authorName: string,
+  input: {
+    title: string;
+    body: string;
+    category: CommunityPost['category'];
+    tags: string[];
+    codeSnippet?: string;
+    authorRole?: UserRole;
+  },
+): Promise<CommunityPost> {
+  const id = `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const ref = doc(db, 'communityPosts', id);
+  try {
+    const payload: Record<string, unknown> = {
+      id,
+      authorId: uid,
+      authorName: authorName.slice(0, 80),
+      title: input.title.trim().slice(0, 180),
+      body: input.body.trim().slice(0, 12000),
+      category: input.category,
+      tags: input.tags.slice(0, 8),
+      visibility: 'public',
+      likesCount: 0,
+      commentsCount: 0,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    if (input.authorRole) {
+      payload.authorRole = input.authorRole;
+    }
+    if (input.codeSnippet?.trim()) {
+      payload.codeSnippet = input.codeSnippet.slice(0, 8000);
+    }
+    await setDoc(ref, sanitizeForFirestore(payload));
+    const snap = await getDoc(ref);
+    return snap.data() as CommunityPost;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, `communityPosts/${id}`);
+  }
+}
+
+export async function likeCommunityPost(postId: string, currentLikes: number): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'communityPosts', postId), {
+      likesCount: currentLikes + 1,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `communityPosts/${postId}`);
+  }
+}
+
+export async function listPostComments(postId: string): Promise<CommunityComment[]> {
+  try {
+    const q = query(collection(db, 'communityPosts', postId, 'comments'), where('postId', '==', postId));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as CommunityComment);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, `communityPosts/${postId}/comments`);
+  }
+}
+
+export async function addPostComment(
+  uid: string,
+  authorName: string,
+  postId: string,
+  body: string,
+  currentCommentsCount: number,
+  authorRole?: UserRole,
+): Promise<CommunityComment> {
+  const commentId = `cmt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const commentRef = doc(db, 'communityPosts', postId, 'comments', commentId);
+  try {
+    const commentDoc: Record<string, unknown> = {
+      id: commentId,
+      postId,
+      authorId: uid,
+      authorName: authorName.slice(0, 80),
+      body: body.trim().slice(0, 4000),
+      createdAt: serverTimestamp(),
+    };
+    if (authorRole) {
+      commentDoc.authorRole = authorRole;
+    }
+    await setDoc(commentRef, sanitizeForFirestore(commentDoc));
+    await updateDoc(doc(db, 'communityPosts', postId), {
+      commentsCount: currentCommentsCount + 1,
+      updatedAt: serverTimestamp(),
+    });
+    const snap = await getDoc(commentRef);
+    return snap.data() as CommunityComment;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, `communityPosts/${postId}/comments/${commentId}`);
+  }
+}
+
+export async function submitModerationReport(
+  uid: string,
+  targetType: 'post' | 'comment' | 'user',
+  targetId: string,
+  reason: ModerationReport['reason'],
+  details: string,
+): Promise<void> {
+  const id = `rep_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  try {
+    await setDoc(doc(db, 'reports', id), {
+      id,
+      reporterId: uid,
+      targetType,
+      targetId: targetId.slice(0, 128),
+      reason,
+      details: details.trim().slice(0, 1000),
+      status: 'open',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, `reports/${id}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Career Progress, AI Conversations, Notifications, Admin
+// ---------------------------------------------------------------------------
+export async function getCareerProgress(uid: string): Promise<{
+  selectedPathId: string;
+  completedSkillIds: string[];
+  completedProjectIds: string[];
+} | null> {
+  try {
+    const snap = await getDoc(doc(db, 'userCareerProgress', uid));
+    return snap.exists()
+      ? (snap.data() as { selectedPathId: string; completedSkillIds: string[]; completedProjectIds: string[] })
+      : null;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.GET, `userCareerProgress/${uid}`);
+  }
+}
+
+export async function saveCareerProgress(
+  uid: string,
+  data: { selectedPathId: string; completedSkillIds: string[]; completedProjectIds: string[] },
+): Promise<void> {
+  const ref = doc(db, 'userCareerProgress', uid);
+  try {
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      await updateDoc(ref, {
+        selectedPathId: data.selectedPathId,
+        completedSkillIds: data.completedSkillIds.slice(0, 100),
+        completedProjectIds: data.completedProjectIds.slice(0, 100),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(ref, {
+        userId: uid,
+        selectedPathId: data.selectedPathId,
+        completedSkillIds: data.completedSkillIds.slice(0, 100),
+        completedProjectIds: data.completedProjectIds.slice(0, 100),
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `userCareerProgress/${uid}`);
+  }
+}
+
+export async function listAiConversations(uid: string): Promise<AiConversation[]> {
+  try {
+    const q = query(collection(db, 'aiConversations'), where('userId', '==', uid), limit(25));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as AiConversation);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'aiConversations');
+  }
+}
+
+export async function saveAiConversation(
+  uid: string,
+  conv: Omit<AiConversation, 'userId' | 'createdAt' | 'updatedAt'>,
+): Promise<void> {
+  const convId = String(conv.id || `conv_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
+  const ref = doc(db, 'aiConversations', convId);
+  const validModes = ['learn', 'debug', 'explain', 'practice', 'build', 'review'] as const;
+  const safeMode = validModes.includes(conv.mode) ? conv.mode : 'learn';
+  const sanitizedMessages = (conv.messages || []).map((m) => {
+    const msg: Record<string, unknown> = {
+      id: m.id || `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: typeof m.content === 'string' ? m.content : String(m.content || ''),
+      createdAt: m.createdAt || new Date().toISOString(),
+    };
+    if (m.proposedCode && typeof m.proposedCode === 'object') {
+      const pc = m.proposedCode as { filename?: string; language?: string; code?: string };
+      msg.proposedCode = {
+        filename: typeof pc.filename === 'string' && pc.filename ? pc.filename : 'solution.js',
+        language: typeof pc.language === 'string' && pc.language ? pc.language : 'javascript',
+        code: typeof pc.code === 'string' ? pc.code : String(pc.code || ''),
+      };
+    }
+    return msg;
+  });
+
+  const payload = sanitizeForFirestore<Record<string, unknown>>({
+    id: convId,
+    userId: uid,
+    title: (conv.title || 'AI Chat').trim().slice(0, 140) || 'AI Chat',
+    mode: safeMode,
+    messages: sanitizedMessages.slice(-100),
+    updatedAt: serverTimestamp(),
+  });
+
+  try {
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      await updateDoc(ref, {
+        title: payload.title,
+        mode: payload.mode,
+        messages: payload.messages,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(ref, {
+        ...payload,
+        createdAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `aiConversations/${convId}`);
+  }
+}
+
+export async function deleteAiConversation(conversationId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'aiConversations', conversationId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `aiConversations/${conversationId}`);
+  }
+}
+
+export async function listNotifications(uid: string): Promise<NotificationItem[]> {
+  try {
+    const q = query(collection(db, 'notifications'), where('userId', '==', uid), limit(25));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as NotificationItem);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'notifications');
+  }
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'notifications', id), { read: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `notifications/${id}`);
+  }
+}
+
+// Admin operations (protected by Firestore rules isAdmin())
+export async function adminListUsers(): Promise<UserProfile[]> {
+  try {
+    const q = query(collection(db, 'users'), limit(200));
+    const snap = await getDocs(q);
+    const toMs = (val: unknown): number => {
+      if (!val) return 0;
+      if (typeof val === 'object' && val !== null && 'toMillis' in val && typeof (val as { toMillis: () => number }).toMillis === 'function') {
+        return (val as { toMillis: () => number }).toMillis();
+      }
+      if (typeof val === 'string' || typeof val === 'number') {
+        const parsed = new Date(val).getTime();
+        return Number.isFinite(parsed) ? parsed : 0;
+      }
+      return 0;
+    };
+    return snap.docs
+      .map((d) => d.data() as UserProfile)
+      .sort((a, b) => (toMs(b.updatedAt) || toMs(b.createdAt)) - (toMs(a.updatedAt) || toMs(a.createdAt)));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'users');
+  }
+}
+
+export async function adminListReports(): Promise<ModerationReport[]> {
+  try {
+    const q = query(collection(db, 'reports'), limit(50));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as ModerationReport);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'reports');
+  }
+}
+
+export async function adminResolveReport(
+  adminId: string,
+  reportId: string,
+  status: ModerationReport['status'],
+  hideTargetPostId?: string,
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'reports', reportId), {
+      status,
+      updatedAt: serverTimestamp(),
+    });
+    if (hideTargetPostId) {
+      await updateDoc(doc(db, 'communityPosts', hideTargetPostId), {
+        visibility: 'hidden',
+        updatedAt: serverTimestamp(),
+      });
+    }
+    const logId = `audit_${Date.now()}`;
+    await setDoc(doc(db, 'adminAuditLogs', logId), {
+      id: logId,
+      adminId,
+      action: `report_${status}`,
+      targetPath: `reports/${reportId}`,
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `reports/${reportId}`);
+  }
+}
+
+export async function adminSendCommunityAnnouncement(
+  adminId: string,
+  authorName: string,
+  input: {
+    title: string;
+    body: string;
+    tags?: string[];
+    codeSnippet?: string;
+  },
+): Promise<CommunityPost> {
+  const post = await createCommunityPost(adminId, authorName || 'MideoCode Admin', {
+    title: input.title,
+    body: input.body,
+    category: 'announcement',
+    tags: input.tags && input.tags.length > 0 ? input.tags : ['announcement', 'official'],
+    codeSnippet: input.codeSnippet,
+    authorRole: 'admin',
+  });
+  try {
+    const logId = `audit_announce_${Date.now()}`;
+    await setDoc(doc(db, 'adminAuditLogs', logId), {
+      id: logId,
+      adminId,
+      action: 'community_announcement',
+      targetPath: `communityPosts/${post.id}`,
+      createdAt: serverTimestamp(),
+    });
+  } catch {
+    // Non-blocking audit log write
+  }
+  return post;
+}

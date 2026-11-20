@@ -1,0 +1,1052 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private MideoCode user profile, onboarding data, and progression summary.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "email": { "type": "string", "maxLength": 254 },
+        "phoneNumber": { "type": "string", "maxLength": 32 },
+        "country": { "type": "string", "maxLength": 80 },
+        "experienceLevel": { "type": "string", "enum": ["beginner", "intermediate", "advanced"] },
+        "preferredLanguages": { "type": "array" },
+        "learningGoals": { "type": "array" },
+        "interests": { "type": "array" },
+        "onboardingComplete": { "type": "boolean" },
+        "activeCareerPathId": { "type": "string", "maxLength": 64 },
+        "xp": { "type": "number" },
+        "level": { "type": "number" },
+        "streak": { "type": "number" },
+        "lastActivityDate": { "type": "string", "maxLength": 32 },
+        "role": { "type": "string", "enum": ["member", "moderator", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "experienceLevel", "onboardingComplete", "xp", "level", "streak", "role", "createdAt", "updatedAt"]
+    },
+    "PublicProfile": {
+      "title": "PublicProfile",
+      "description": "Non-PII public profile visible in Community and Leaderboards.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "level": { "type": "number" },
+        "xp": { "type": "number" },
+        "streak": { "type": "number" },
+        "badgesCount": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "level", "xp", "streak", "badgesCount", "updatedAt"]
+    },
+    "UserSettings": {
+      "title": "UserSettings",
+      "description": "User workspace, theme, and editor preferences.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "theme": { "type": "string", "enum": ["dark", "light"] },
+        "editorTheme": { "type": "string", "enum": ["oneDark", "githubLight"] },
+        "editorFontSize": { "type": "number" },
+        "tabSize": { "type": "number" },
+        "autosave": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "theme", "editorTheme", "editorFontSize", "tabSize", "autosave", "updatedAt"]
+    },
+    "CourseProgress": {
+      "title": "CourseProgress",
+      "description": "Verified lesson, module, and quiz completion per user and course.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "courseId": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "completedLessonIds": { "type": "array" },
+        "completedExerciseIds": { "type": "array" },
+        "quizScores": { "type": "object" },
+        "lastLessonId": { "type": "string", "maxLength": 80 },
+        "progressPercent": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "courseId", "completedLessonIds", "completedExerciseIds", "progressPercent", "updatedAt"]
+    },
+    "Bookmark": {
+      "title": "Bookmark",
+      "description": "User bookmark for lessons, docs, or community posts.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "targetType": { "type": "string", "enum": ["lesson", "doc", "post", "project", "mission"] },
+        "targetId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "targetType", "targetId", "title", "createdAt"]
+    },
+    "Note": {
+      "title": "Note",
+      "description": "Personal study notes attached to a lesson or course.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "courseId": { "type": "string", "maxLength": 80 },
+        "lessonId": { "type": "string", "maxLength": 80 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "content": { "type": "string", "maxLength": 10000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title", "content", "createdAt", "updatedAt"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Cloud-synced IDE project workspace with explicit visibility controls.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "language": { "type": "string", "enum": ["web", "javascript", "typescript", "python", "sql", "html", "css"] },
+        "guidedProjectId": { "type": "string", "maxLength": 80 },
+        "architectureId": { "type": "string", "maxLength": 128 },
+        "visibility": { "type": "string", "enum": ["private", "public"] },
+        "isPortfolio": { "type": "boolean" },
+        "milestonesCompleted": { "type": "array" },
+        "status": { "type": "string", "enum": ["active", "submitted", "completed"] },
+        "version": { "type": "number" },
+        "storageBytes": { "type": "number" },
+        "collaboratorIds": { "type": "array" },
+        "collaboratorRoles": { "type": "object" },
+        "collaboratorNames": { "type": "object" },
+        "lastEditedByUid": { "type": "string", "maxLength": 128 },
+        "lastEditedByName": { "type": "string", "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "ownerName", "title", "description", "language", "visibility", "isPortfolio", "status", "version", "storageBytes", "createdAt", "updatedAt"]
+    },
+    "ProjectFile": {
+      "title": "ProjectFile",
+      "description": "Source file stored within a Cloud IDE project.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "folder": { "type": "string", "maxLength": 120 },
+        "language": { "type": "string", "maxLength": 32 },
+        "visibility": { "type": "string", "enum": ["private", "public"] },
+        "content": { "type": "string", "maxLength": 150000 },
+        "collaboratorIds": { "type": "array" },
+        "lastEditedByUid": { "type": "string", "maxLength": 128 },
+        "lastEditedByName": { "type": "string", "maxLength": 80 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "projectId", "ownerId", "name", "folder", "language", "visibility", "content", "updatedAt"]
+    },
+    "ProjectVersion": {
+      "title": "ProjectVersion",
+      "description": "Immutable snapshot version for Mideo Cloud version history and restore.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "versionNumber": { "type": "number" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 500 },
+        "authorId": { "type": "string", "maxLength": 128 },
+        "authorName": { "type": "string", "maxLength": 80 },
+        "changeType": { "type": "string", "enum": ["manual", "autosave", "ai_build", "ai_fix", "restore", "collab"] },
+        "aiOperation": { "type": "string", "maxLength": 240 },
+        "changedFiles": { "type": "array" },
+        "parentVersionId": { "type": "string", "maxLength": 128 },
+        "collaboratorIds": { "type": "array" },
+        "filesCount": { "type": "number" },
+        "snapshot": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "projectId", "ownerId", "versionNumber", "label", "filesCount", "snapshot", "createdAt"]
+    },
+    "Playground": {
+      "title": "Playground",
+      "description": "Interactive HTML/CSS/JS playground workspace with optional explicit public sharing.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "templateId": { "type": "string", "maxLength": 64 },
+        "html": { "type": "string", "maxLength": 100000 },
+        "css": { "type": "string", "maxLength": 100000 },
+        "js": { "type": "string", "maxLength": 100000 },
+        "visibility": { "type": "string", "enum": ["private", "public"] },
+        "forkedFrom": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "ownerName", "title", "templateId", "html", "css", "js", "visibility", "createdAt", "updatedAt"]
+    },
+    "ChallengeAttempt": {
+      "title": "ChallengeAttempt",
+      "description": "Verified submission attempt for Mideo Challenges.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "challengeId": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "language": { "type": "string", "enum": ["javascript", "typescript", "python"] },
+        "code": { "type": "string", "maxLength": 50000 },
+        "passed": { "type": "boolean" },
+        "passedCount": { "type": "number" },
+        "totalCount": { "type": "number" },
+        "executionMs": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "challengeId", "language", "code", "passed", "passedCount", "totalCount", "executionMs", "createdAt"]
+    },
+    "XpTransaction": {
+      "title": "XpTransaction",
+      "description": "Idempotent XP ledger entry tied to a verified learning activity.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sourceType": { "type": "string", "enum": ["lesson", "quiz", "challenge", "project", "mission"] },
+        "sourceId": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "amount": { "type": "number" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "sourceType", "sourceId", "amount", "reason", "createdAt"]
+    },
+    "Achievement": {
+      "title": "Achievement",
+      "description": "Unlocked user achievement badge.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "badgeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "unlockedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "badgeId", "title", "unlockedAt"]
+    },
+    "CommunityPost": {
+      "title": "CommunityPost",
+      "description": "Moderated developer community post, Q&A, or project showcase.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "authorRole": { "type": "string", "enum": ["member", "moderator", "admin"] },
+        "title": { "type": "string", "minLength": 3, "maxLength": 180 },
+        "body": { "type": "string", "minLength": 5, "maxLength": 12000 },
+        "category": { "type": "string", "enum": ["question", "showcase", "discussion", "tip", "announcement"] },
+        "tags": { "type": "array" },
+        "codeSnippet": { "type": "string", "maxLength": 8000 },
+        "visibility": { "type": "string", "enum": ["public", "hidden"] },
+        "likesCount": { "type": "number" },
+        "commentsCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "authorId", "authorName", "title", "body", "category", "tags", "visibility", "likesCount", "commentsCount", "createdAt", "updatedAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "Reply or answer on a community post.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "postId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "authorRole": { "type": "string", "enum": ["member", "moderator", "admin"] },
+        "body": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "postId", "authorId", "authorName", "body", "createdAt"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Moderation report filed by a community user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "reporterId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "targetType": { "type": "string", "enum": ["post", "comment", "user"] },
+        "targetId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "reason": { "type": "string", "enum": ["spam", "harassment", "misinformation", "unsafe_code", "other"] },
+        "details": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["open", "reviewed", "resolved", "dismissed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "reporterId", "targetType", "targetId", "reason", "status", "createdAt", "updatedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User notification item.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "linkView": { "type": "string", "maxLength": 64 },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title", "body", "read", "createdAt"]
+    },
+    "CareerProgress": {
+      "title": "CareerProgress",
+      "description": "Career roadmap progress and skill-gap tracking per user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "selectedPathId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "completedSkillIds": { "type": "array" },
+        "completedProjectIds": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "selectedPathId", "completedSkillIds", "completedProjectIds", "updatedAt"]
+    },
+    "AiConversation": {
+      "title": "AiConversation",
+      "description": "Saved Mideo AI conversation thread.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "mode": { "type": "string", "enum": ["learn", "debug", "explain", "practice", "build", "review"] },
+        "messages": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title", "mode", "messages", "createdAt", "updatedAt"]
+    },
+    "AdminAuditLog": {
+      "title": "AdminAuditLog",
+      "description": "Administrative action audit trail.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "adminId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "action": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "targetPath": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "adminId", "action", "targetPath", "createdAt"]
+    },
+    "Mission": {
+      "title": "Mission",
+      "description": "Practical programming mission managed by admins and surfaced in Mission Mode.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 3, "maxLength": 140 },
+        "description": { "type": "string", "minLength": 10, "maxLength": 800 },
+        "category": { "type": "string", "enum": ["HTML and CSS", "JavaScript", "Python", "Frontend Development", "Backend Development", "Full-Stack Development", "Database Development", "Algorithms and Data Structures", "API Development", "Software Engineering"] },
+        "difficulty": { "type": "string", "enum": ["Beginner", "Intermediate", "Advanced", "Expert"] },
+        "language": { "type": "string", "enum": ["web", "javascript", "python", "sql"] },
+        "supportedLanguages": { "type": "array" },
+        "requiredSkills": { "type": "array" },
+        "prerequisiteMissionIds": { "type": "array" },
+        "prerequisiteSummary": { "type": "string", "maxLength": 300 },
+        "prerequisitesOptional": { "type": "boolean" },
+        "relatedLessonIds": { "type": "array" },
+        "learningObjectives": { "type": "array" },
+        "estimatedMinutes": { "type": "number" },
+        "scenario": { "type": "string", "minLength": 10, "maxLength": 3000 },
+        "clientName": { "type": "string", "maxLength": 140 },
+        "userRole": { "type": "string", "maxLength": 140 },
+        "projectObjective": { "type": "string", "maxLength": 1000 },
+        "constraints": { "type": "array" },
+        "requirements": { "type": "array" },
+        "instructions": { "type": "array" },
+        "hints": { "type": "array" },
+        "completionCriteria": { "type": "string", "minLength": 5, "maxLength": 1000 },
+        "xpReward": { "type": "number" },
+        "badgeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "badgeTitle": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "isFeatured": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["draft", "published", "archived"] },
+        "qualityStatus": { "type": "string", "enum": ["draft", "testing", "approved"] },
+        "qualityReport": { "type": "object" },
+        "readinessQuestions": { "type": "array" },
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "description", "category", "difficulty", "language", "supportedLanguages", "requiredSkills", "prerequisiteMissionIds", "prerequisitesOptional", "relatedLessonIds", "learningObjectives", "estimatedMinutes", "scenario", "requirements", "instructions", "hints", "completionCriteria", "xpReward", "badgeId", "badgeTitle", "isFeatured", "status", "authorId", "createdAt", "updatedAt"]
+    },
+    "MissionCheckpoint": {
+      "title": "MissionCheckpoint",
+      "description": "Structured checkpoint inside a Mission with optional dependency ordering.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "order": { "type": "number" },
+        "title": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "instructions": { "type": "string", "minLength": 5, "maxLength": 2000 },
+        "requirements": { "type": "array" },
+        "completionCriteria": { "type": "string", "minLength": 3, "maxLength": 600 },
+        "validationMethod": { "type": "string", "enum": ["html", "css", "javascript", "python", "sql", "hybrid", "instructional"] },
+        "dependsOn": { "type": "array" },
+        "hint": { "type": "string", "maxLength": 1000 },
+        "isAssessed": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "missionId", "order", "title", "instructions", "requirements", "completionCriteria", "validationMethod", "dependsOn", "isAssessed", "status", "updatedAt"]
+    },
+    "MissionTemplate": {
+      "title": "MissionTemplate",
+      "description": "Starter file template associated with a mission.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "language": { "type": "string", "enum": ["web", "javascript", "python", "sql"] },
+        "files": { "type": "array" },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "missionId", "language", "files", "status", "updatedAt"]
+    },
+    "MissionReward": {
+      "title": "MissionReward",
+      "description": "Reward definition (XP, achievement badge, demonstrated skills) for a mission.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "xpAmount": { "type": "number" },
+        "badgeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "badgeTitle": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "skillsAwarded": { "type": "array" },
+        "portfolioEligible": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "missionId", "xpAmount", "badgeId", "badgeTitle", "skillsAwarded", "portfolioEligible", "status", "updatedAt"]
+    },
+    "MissionAttempt": {
+      "title": "MissionAttempt",
+      "description": "Per-user mission attempt storing workspace files, checkpoint progress, and verified completion state.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "status": { "type": "string", "enum": ["in_progress", "submitted", "needs_improvement", "completed", "archived"] },
+        "currentCheckpointId": { "type": "string", "maxLength": 128 },
+        "completedCheckpointIds": { "type": "array" },
+        "acknowledgedStepIds": { "type": "array" },
+        "files": { "type": "array" },
+        "version": { "type": "number" },
+        "checkpointFeedback": { "type": "object" },
+        "rewardsGranted": { "type": "boolean" },
+        "xpAwarded": { "type": "number" },
+        "unlockedBadgeIds": { "type": "array" },
+        "addedToPassport": { "type": "boolean" },
+        "portfolioProjectId": { "type": "string", "maxLength": 128 },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "lastActivityAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "missionId", "status", "currentCheckpointId", "completedCheckpointIds", "acknowledgedStepIds", "files", "version", "checkpointFeedback", "rewardsGranted", "xpAwarded", "unlockedBadgeIds", "addedToPassport", "startedAt", "lastActivityAt"]
+    },
+    "MissionSubmission": {
+      "title": "MissionSubmission",
+      "description": "Immutable submission snapshot linked to user, mission, attempt, and workspace version.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "attemptId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectVersion": { "type": "number" },
+        "language": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "filesSnapshot": { "type": "array" },
+        "status": { "type": "string", "enum": ["passed", "failed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "missionId", "attemptId", "projectVersion", "language", "filesSnapshot", "status", "createdAt"]
+    },
+    "MissionEvaluation": {
+      "title": "MissionEvaluation",
+      "description": "Immutable server-verified evaluation report for a mission submission.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "attemptId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "submissionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "passed": { "type": "boolean" },
+        "passedCount": { "type": "number" },
+        "totalCount": { "type": "number" },
+        "requirementsSatisfied": { "type": "array" },
+        "requirementsMissing": { "type": "array" },
+        "testResults": { "type": "array" },
+        "runtimeErrors": { "type": "array" },
+        "suggestions": { "type": "array" },
+        "executionMs": { "type": "number" },
+        "attestation": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "missionId", "attemptId", "submissionId", "passed", "passedCount", "totalCount", "requirementsSatisfied", "requirementsMissing", "testResults", "runtimeErrors", "suggestions", "executionMs", "attestation", "createdAt"]
+    },
+    "MissionHintHistory": {
+      "title": "MissionHintHistory",
+      "description": "Tracks which progressive hints a learner opened inside a mission attempt.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "attemptId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "hintIndex": { "type": "number" },
+        "hintId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "openedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "missionId", "attemptId", "hintIndex", "hintId", "openedAt"]
+    },
+    "AdaptiveDifficultyConfig": {
+      "title": "AdaptiveDifficultyConfig",
+      "description": "Admin-managed adaptive difficulty weighting rules and mastery thresholds.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "checkpointPassWeight": { "type": "number" },
+        "evaluationPassWeight": { "type": "number" },
+        "attemptEfficiencyWeight": { "type": "number" },
+        "intermediateThreshold": { "type": "number" },
+        "advancedThreshold": { "type": "number" },
+        "expertThreshold": { "type": "number" },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "checkpointPassWeight", "evaluationPassWeight", "attemptEfficiencyWeight", "intermediateThreshold", "advancedThreshold", "expertThreshold", "updatedAt"]
+    },
+    "MissionReadinessResult": {
+      "title": "MissionReadinessResult",
+      "description": "Recorded readiness assessment score and weak-skill remediation lessons per user and mission.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "scorePct": { "type": "number" },
+        "passedCount": { "type": "number" },
+        "totalCount": { "type": "number" },
+        "ready": { "type": "boolean" },
+        "weakSkills": { "type": "array" },
+        "recommendedLessons": { "type": "array" },
+        "answers": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "missionId", "scorePct", "passedCount", "totalCount", "ready", "weakSkills", "recommendedLessons", "answers", "createdAt"]
+    },
+    "MissionAttemptVersion": {
+      "title": "MissionAttemptVersion",
+      "description": "Immutable workspace snapshot created automatically before validation or manual savepoint.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "attemptId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "versionNumber": { "type": "number" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "filesSnapshot": { "type": "array" },
+        "completedCheckpointIds": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "attemptId", "userId", "missionId", "versionNumber", "label", "filesSnapshot", "completedCheckpointIds", "createdAt"]
+    },
+    "MissionRating": {
+      "title": "MissionRating",
+      "description": "Optional post-completion mission quality rating (never affects grading, one per user per mission).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "difficultyRating": { "type": "number" },
+        "clarityRating": { "type": "number" },
+        "usefulnessRating": { "type": "number" },
+        "starterQualityRating": { "type": "number" },
+        "overallRating": { "type": "number" },
+        "comment": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "missionId", "userId", "difficultyRating", "clarityRating", "usefulnessRating", "starterQualityRating", "overallRating", "comment", "createdAt", "updatedAt"]
+    },
+    "CustomMission": {
+      "title": "CustomMission",
+      "description": "User-authored practice mission clearly isolated from official XP, Quest, and Skill Passport rewards.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "title": { "type": "string", "minLength": 3, "maxLength": 140 },
+        "description": { "type": "string", "minLength": 5, "maxLength": 800 },
+        "scenario": { "type": "string", "minLength": 5, "maxLength": 3000 },
+        "category": { "type": "string", "maxLength": 64 },
+        "language": { "type": "string", "enum": ["web", "javascript", "python", "sql"] },
+        "difficulty": { "type": "string", "enum": ["Beginner", "Intermediate", "Advanced", "Expert"] },
+        "skills": { "type": "array" },
+        "learningObjectives": { "type": "array" },
+        "requirements": { "type": "array" },
+        "checkpoints": { "type": "array" },
+        "starterFiles": { "type": "array" },
+        "hints": { "type": "array" },
+        "completionCriteria": { "type": "string", "minLength": 3, "maxLength": 1000 },
+        "personalDeadline": { "type": "string", "maxLength": 40 },
+        "visibility": { "type": "string", "enum": ["private", "shared"] },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "reportedCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "authorId", "authorName", "title", "description", "scenario", "category", "language", "difficulty", "skills", "learningObjectives", "requirements", "checkpoints", "starterFiles", "hints", "completionCriteria", "visibility", "status", "createdAt", "updatedAt"]
+    },
+    "MissionTeam": {
+      "title": "MissionTeam",
+      "description": "Collaborative team mission workspace with role permissions, assignments, and contribution tracking.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionTitle": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "memberIds": { "type": "array" },
+        "memberRoles": { "type": "object" },
+        "memberNames": { "type": "object" },
+        "checkpointAssignments": { "type": "object" },
+        "files": { "type": "array" },
+        "version": { "type": "number" },
+        "completedCheckpointIds": { "type": "array" },
+        "contributions": { "type": "object" },
+        "status": { "type": "string", "enum": ["active", "submitted", "completed"] },
+        "lastEditedByUid": { "type": "string", "maxLength": 128 },
+        "lastEditedByName": { "type": "string", "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "missionId", "missionTitle", "title", "ownerId", "ownerName", "memberIds", "memberRoles", "memberNames", "checkpointAssignments", "files", "version", "completedCheckpointIds", "contributions", "status", "createdAt", "updatedAt"]
+    },
+    "MissionTeamInvite": {
+      "title": "MissionTeamInvite",
+      "description": "Team mission invitation sent to a registered MideoCode user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "teamId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionTitle": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "teamTitle": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "inviterId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "inviterName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "inviteeUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "inviteeName": { "type": "string", "maxLength": 80 },
+        "role": { "type": "string", "enum": ["editor", "viewer"] },
+        "inviteCode": { "type": "string", "minLength": 4, "maxLength": 32 },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "teamId", "missionId", "missionTitle", "teamTitle", "inviterId", "inviterName", "inviteeUid", "role", "inviteCode", "status", "createdAt", "updatedAt"]
+    },
+    "MissionLeaderboardEntry": {
+      "title": "MissionLeaderboardEntry",
+      "description": "Public non-PII Mission Mode leaderboard entry ranked by speed and code efficiency.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "xpAwarded": { "type": "number" },
+        "durationSeconds": { "type": "number" },
+        "version": { "type": "number" },
+        "efficiencyScore": { "type": "number" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "missionId", "userId", "displayName", "xpAwarded", "durationSeconds", "version", "efficiencyScore", "completedAt", "updatedAt"]
+    },
+    "ProjectInvitation": {
+      "title": "ProjectInvitation",
+      "description": "Email-targeted collaboration invitation for a Smart Workspace project.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "projectTitle": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "inviterId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "inviterName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "inviteeEmail": { "type": "string", "minLength": 3, "maxLength": 254 },
+        "role": { "type": "string", "enum": ["editor", "viewer"] },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined", "cancelled"] },
+        "inviteSignature": { "type": "string", "minLength": 8, "maxLength": 128 },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "projectId", "projectTitle", "inviterId", "inviterName", "inviteeEmail", "role", "status", "inviteSignature", "expiresAt", "createdAt", "updatedAt"]
+    },
+    "ProjectComment": {
+      "title": "ProjectComment",
+      "description": "Threaded collaboration comment attached to a project or file line range.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "filePath": { "type": "string", "maxLength": 180 },
+        "lineStart": { "type": "number" },
+        "lineEnd": { "type": "number" },
+        "parentCommentId": { "type": "string", "maxLength": 128 },
+        "mentions": { "type": "array" },
+        "body": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "status": { "type": "string", "enum": ["open", "resolved"] },
+        "resolvedBy": { "type": "string", "maxLength": 80 },
+        "collaboratorIds": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "projectId", "authorId", "authorName", "mentions", "body", "status", "createdAt", "updatedAt"]
+    },
+    "ProjectActivityEvent": {
+      "title": "ProjectActivityEvent",
+      "description": "Immutable collaboration timeline event within a project.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "actorId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "actorName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "action": { "type": "string", "minLength": 1, "maxLength": 48 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "targetName": { "type": "string", "maxLength": 160 },
+        "collaboratorIds": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "projectId", "actorId", "actorName", "action", "summary", "createdAt"]
+    },
+    "TestSuite": {
+      "title": "TestSuite",
+      "description": "Approved project test suite stored in TestLab.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "projectTitle": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "language": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "framework": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "testType": { "type": "string", "enum": ["unit", "integration", "functional", "api", "regression", "component", "edge_case"] },
+        "cases": { "type": "array" },
+        "approved": { "type": "boolean" },
+        "collaboratorIds": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "projectId", "projectTitle", "title", "language", "framework", "testType", "cases", "approved", "createdAt", "updatedAt"]
+    },
+    "TestRunSession": {
+      "title": "TestRunSession",
+      "description": "Immutable TestLab test execution session with real results and honest coverage metadata.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "projectTitle": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "suiteId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "suiteTitle": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "language": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "testType": { "type": "string", "enum": ["unit", "integration", "functional", "api", "regression", "component", "edge_case"] },
+        "status": { "type": "string", "enum": ["passed", "failed", "error"] },
+        "totalTests": { "type": "number" },
+        "passedTests": { "type": "number" },
+        "failedTests": { "type": "number" },
+        "skippedTests": { "type": "number" },
+        "errorTests": { "type": "number" },
+        "durationMs": { "type": "number" },
+        "results": { "type": "array" },
+        "coverage": { "type": "object" },
+        "aiAssisted": { "type": "boolean" },
+        "collaboratorIds": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "projectId", "projectTitle", "suiteId", "suiteTitle", "language", "testType", "status", "totalTests", "passedTests", "failedTests", "skippedTests", "errorTests", "durationMs", "results", "coverage", "aiAssisted", "createdAt"]
+    },
+    "ArchitecturePlan": {
+      "title": "ArchitecturePlan",
+      "description": "Structured software architecture, diagrams, database schema, and API specification.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "projectId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "prompt": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "overview": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "frontendSpec": { "type": "string", "maxLength": 4000 },
+        "backendSpec": { "type": "string", "maxLength": 4000 },
+        "authSpec": { "type": "string", "maxLength": 4000 },
+        "techStack": { "type": "array" },
+        "modules": { "type": "array" },
+        "databaseTables": { "type": "array" },
+        "apiEndpoints": { "type": "array" },
+        "diagrams": { "type": "array" },
+        "versionNumber": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "approved", "sent_to_build"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title", "prompt", "overview", "frontendSpec", "backendSpec", "authSpec", "techStack", "modules", "databaseTables", "apiEndpoints", "diagrams", "versionNumber", "status", "createdAt", "updatedAt"]
+    },
+    "ArchitectureVersion": {
+      "title": "ArchitectureVersion",
+      "description": "Immutable architecture plan version snapshot.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "architectureId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "versionNumber": { "type": "number" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "changeSummary": { "type": "string", "maxLength": 500 },
+        "snapshot": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "architectureId", "userId", "versionNumber", "label", "changeSummary", "snapshot", "createdAt"]
+    },
+    "ActivityEvent": {
+      "title": "ActivityEvent",
+      "description": "Personal developer activity event used exclusively for user-scoped Developer Insights.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "category": { "type": "string", "enum": ["lesson", "exercise", "challenge", "project", "ide", "version", "testlab", "architect", "ai"] },
+        "action": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "language": { "type": "string", "maxLength": 32 },
+        "technology": { "type": "string", "maxLength": 64 },
+        "aiAssisted": { "type": "boolean" },
+        "durationSeconds": { "type": "number" },
+        "scorePct": { "type": "number" },
+        "projectId": { "type": "string", "maxLength": 128 },
+        "dayKey": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "category", "action", "aiAssisted", "dayKey", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user account profiles (owner and admin only)."
+    },
+    "/publicProfiles/{userId}": {
+      "schema": { "$ref": "#/entities/PublicProfile" },
+      "description": "Non-PII public developer profiles for Community and Leaderboards."
+    },
+    "/userSettings/{userId}": {
+      "schema": { "$ref": "#/entities/UserSettings" },
+      "description": "Per-user workspace theme and editor settings."
+    },
+    "/userProgress/{userId}/courses/{courseId}": {
+      "schema": { "$ref": "#/entities/CourseProgress" },
+      "description": "Per-course learning progress for each user."
+    },
+    "/bookmarks/{bookmarkId}": {
+      "schema": { "$ref": "#/entities/Bookmark" },
+      "description": "User bookmarks across lessons, docs, projects, missions, and posts."
+    },
+    "/notes/{noteId}": {
+      "schema": { "$ref": "#/entities/Note" },
+      "description": "Personal study notes created by the user."
+    },
+    "/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/Project" },
+      "description": "Mideo IDE & Mideo Cloud projects."
+    },
+    "/projects/{projectId}/files/{fileId}": {
+      "schema": { "$ref": "#/entities/ProjectFile" },
+      "description": "Files belonging to a project."
+    },
+    "/projects/{projectId}/versions/{versionId}": {
+      "schema": { "$ref": "#/entities/ProjectVersion" },
+      "description": "Version snapshots belonging to a project."
+    },
+    "/playgrounds/{playgroundId}": {
+      "schema": { "$ref": "#/entities/Playground" },
+      "description": "HTML/CSS/JS playgrounds with private-by-default visibility."
+    },
+    "/challengeAttempts/{attemptId}": {
+      "schema": { "$ref": "#/entities/ChallengeAttempt" },
+      "description": "Evaluated coding challenge submission records."
+    },
+    "/xpTransactions/{txId}": {
+      "schema": { "$ref": "#/entities/XpTransaction" },
+      "description": "Idempotent XP transactions."
+    },
+    "/achievements/{achievementId}": {
+      "schema": { "$ref": "#/entities/Achievement" },
+      "description": "Unlocked user achievement badges."
+    },
+    "/communityPosts/{postId}": {
+      "schema": { "$ref": "#/entities/CommunityPost" },
+      "description": "Public developer community posts and project showcases."
+    },
+    "/communityPosts/{postId}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/Comment" },
+      "description": "Comments and answers on community posts."
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/Report" },
+      "description": "Content moderation reports."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Per-user notifications."
+    },
+    "/userCareerProgress/{userId}": {
+      "schema": { "$ref": "#/entities/CareerProgress" },
+      "description": "Per-user career roadmap progress."
+    },
+    "/aiConversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/AiConversation" },
+      "description": "Per-user Mideo AI chat histories."
+    },
+    "/adminAuditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AdminAuditLog" },
+      "description": "Admin-only audit log records."
+    },
+    "/missions/{missionId}": {
+      "schema": { "$ref": "#/entities/Mission" },
+      "description": "Admin-managed programming missions catalog."
+    },
+    "/missionCheckpoints/{checkpointId}": {
+      "schema": { "$ref": "#/entities/MissionCheckpoint" },
+      "description": "Structured checkpoint definitions for missions."
+    },
+    "/missionTemplates/{templateId}": {
+      "schema": { "$ref": "#/entities/MissionTemplate" },
+      "description": "Starter project templates for missions."
+    },
+    "/missionRewards/{rewardId}": {
+      "schema": { "$ref": "#/entities/MissionReward" },
+      "description": "Reward schedule definitions for missions."
+    },
+    "/missionAttempts/{attemptId}": {
+      "schema": { "$ref": "#/entities/MissionAttempt" },
+      "description": "User mission attempts, files, and checkpoint progress."
+    },
+    "/missionAttempts/{attemptId}/versions/{versionId}": {
+      "schema": { "$ref": "#/entities/MissionAttemptVersion" },
+      "description": "Immutable workspace snapshot versions inside a mission attempt."
+    },
+    "/missionSubmissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/MissionSubmission" },
+      "description": "Immutable submission snapshots linked to mission attempts."
+    },
+    "/missionEvaluations/{evaluationId}": {
+      "schema": { "$ref": "#/entities/MissionEvaluation" },
+      "description": "Immutable verified evaluation reports for mission submissions."
+    },
+    "/missionHintHistory/{hintRecordId}": {
+      "schema": { "$ref": "#/entities/MissionHintHistory" },
+      "description": "Progressive hints opened by learners during mission attempts."
+    },
+    "/platformConfig/{configId}": {
+      "schema": { "$ref": "#/entities/AdaptiveDifficultyConfig" },
+      "description": "Admin-managed adaptive difficulty configuration."
+    },
+    "/missionReadinessResults/{resultId}": {
+      "schema": { "$ref": "#/entities/MissionReadinessResult" },
+      "description": "Recorded readiness assessments and weak-skill lesson links."
+    },
+    "/missionRatings/{ratingId}": {
+      "schema": { "$ref": "#/entities/MissionRating" },
+      "description": "Optional quality ratings and learner feedback per mission."
+    },
+    "/customMissions/{missionId}": {
+      "schema": { "$ref": "#/entities/CustomMission" },
+      "description": "User-authored practice missions isolated from official progression rewards."
+    },
+    "/missionTeams/{teamId}": {
+      "schema": { "$ref": "#/entities/MissionTeam" },
+      "description": "Collaborative team mission workspaces."
+    },
+    "/missionTeamInvites/{inviteId}": {
+      "schema": { "$ref": "#/entities/MissionTeamInvite" },
+      "description": "Invitations for collaborative team missions."
+    },
+    "/missionLeaderboard/{entryId}": {
+      "schema": { "$ref": "#/entities/MissionLeaderboardEntry" },
+      "description": "Real-time non-PII Mission Mode leaderboard entries ranked by speed and efficiency."
+    },
+    "/projects/{projectId}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/ProjectComment" },
+      "description": "Threaded collaboration comments on a project or specific file/line."
+    },
+    "/projects/{projectId}/activity/{activityId}": {
+      "schema": { "$ref": "#/entities/ProjectActivityEvent" },
+      "description": "Immutable collaboration & version activity timeline for a project."
+    },
+    "/projectInvitations/{inviteId}": {
+      "schema": { "$ref": "#/entities/ProjectInvitation" },
+      "description": "Pending and resolved email invitations for shared project collaboration."
+    },
+    "/testSuites/{suiteId}": {
+      "schema": { "$ref": "#/entities/TestSuite" },
+      "description": "Project test suites approved in TestLab."
+    },
+    "/testRuns/{runId}": {
+      "schema": { "$ref": "#/entities/TestRunSession" },
+      "description": "Immutable historical TestLab test execution sessions and results."
+    },
+    "/architectures/{archId}": {
+      "schema": { "$ref": "#/entities/ArchitecturePlan" },
+      "description": "Software architecture designs with diagrams, DB schemas, and API specs."
+    },
+    "/architectures/{archId}/versions/{versionId}": {
+      "schema": { "$ref": "#/entities/ArchitectureVersion" },
+      "description": "Immutable version snapshots of software architectures."
+    },
+    "/activityEvents/{eventId}": {
+      "schema": { "$ref": "#/entities/ActivityEvent" },
+      "description": "Private per-user activity events backing Developer Insights analytics."
+    }
+  }
+}

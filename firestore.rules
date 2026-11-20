@@ -1,0 +1,2291 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 3: Global Primitives & Helpers
+    // -------------------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isVerifiedCommunityActor() {
+      return isSignedIn() && (
+        request.auth.token.email_verified == true ||
+        request.auth.token.phone_number != null
+      );
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (
+          request.auth.token.email == 'enochayomide2013@gmail.com' &&
+          request.auth.token.email_verified == true
+        ) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidOptionalString(data, key, maxLen) {
+      return !(key in data) || (data[key] is string && data[key].size() <= maxLen);
+    }
+
+    function isValidStringArray(arr, maxItems) {
+      return arr is list && arr.size() <= maxItems && (arr.size() == 0 || arr[0] is string);
+    }
+
+    function hasAuthEmail() {
+      return isSignedIn() && ('email' in request.auth.token) && request.auth.token.email is string && request.auth.token.email.size() >= 3;
+    }
+
+    function authEmailLower() {
+      return request.auth.token.email.lower();
+    }
+
+    function authEmailSlug() {
+      return request.auth.token.email.lower().replace('[^a-z0-9]', '_');
+    }
+
+    function isProjectMember(projData) {
+      return isSignedIn() && (
+        projData.ownerId == request.auth.uid ||
+        ('collaboratorIds' in projData && projData.collaboratorIds is list && request.auth.uid in projData.collaboratorIds)
+      );
+    }
+
+    function isProjectEditor(projData) {
+      return isSignedIn() && (
+        projData.ownerId == request.auth.uid ||
+        (
+          'collaboratorIds' in projData &&
+          projData.collaboratorIds is list &&
+          request.auth.uid in projData.collaboratorIds &&
+          'collaboratorRoles' in projData &&
+          projData.collaboratorRoles is map &&
+          request.auth.uid in projData.collaboratorRoles &&
+          projData.collaboratorRoles[request.auth.uid] in ['owner', 'editor']
+        )
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 2: Validation Blueprints (Anti-Update-Gap)
+    // -------------------------------------------------------------------------
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll([
+        'uid', 'displayName', 'experienceLevel', 'preferredLanguages',
+        'learningGoals', 'interests', 'onboardingComplete', 'xp', 'level',
+        'streak', 'role', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'uid', 'displayName', 'photoURL', 'email', 'phoneNumber', 'country',
+        'experienceLevel', 'preferredLanguages', 'learningGoals', 'interests',
+        'onboardingComplete', 'activeCareerPathId', 'xp', 'level', 'streak',
+        'lastActivityDate', 'role', 'createdAt', 'updatedAt'
+      ]) &&
+      data.uid == userId &&
+      isValidId(data.uid) &&
+      isValidString(data.displayName, 1, 80) &&
+      isValidOptionalString(data, 'photoURL', 500) &&
+      isValidOptionalString(data, 'email', 254) &&
+      isValidOptionalString(data, 'phoneNumber', 32) &&
+      isValidOptionalString(data, 'country', 80) &&
+      isValidOptionalString(data, 'activeCareerPathId', 64) &&
+      isValidOptionalString(data, 'lastActivityDate', 32) &&
+      data.experienceLevel in ['beginner', 'intermediate', 'advanced'] &&
+      isValidStringArray(data.preferredLanguages, 12) &&
+      isValidStringArray(data.learningGoals, 12) &&
+      isValidStringArray(data.interests, 16) &&
+      data.onboardingComplete is bool &&
+      data.xp is number && data.xp >= 0 && data.xp <= 10000000 &&
+      data.level is number && data.level >= 1 && data.level <= 500 &&
+      data.streak is number && data.streak >= 0 && data.streak <= 10000 &&
+      data.role in ['member', 'moderator', 'admin'] &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidPublicProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'level', 'xp', 'streak', 'badgesCount', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'displayName', 'photoURL', 'level', 'xp', 'streak', 'badgesCount', 'updatedAt']) &&
+        data.uid == userId &&
+        isValidId(data.uid) &&
+        isValidString(data.displayName, 1, 80) &&
+        isValidOptionalString(data, 'photoURL', 500) &&
+        data.level is number && data.level >= 1 && data.level <= 500 &&
+        data.xp is number && data.xp >= 0 && data.xp <= 10000000 &&
+        data.streak is number && data.streak >= 0 && data.streak <= 10000 &&
+        data.badgesCount is number && data.badgesCount >= 0 && data.badgesCount <= 500 &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidUserSettings(data, userId) {
+      return data.keys().hasAll(['userId', 'theme', 'editorTheme', 'editorFontSize', 'tabSize', 'autosave', 'updatedAt']) &&
+        data.keys().hasOnly(['userId', 'theme', 'editorTheme', 'editorFontSize', 'tabSize', 'autosave', 'updatedAt']) &&
+        data.userId == userId &&
+        data.theme in ['dark', 'light'] &&
+        data.editorTheme in ['oneDark', 'githubLight'] &&
+        data.editorFontSize is number && data.editorFontSize >= 11 && data.editorFontSize <= 24 &&
+        data.tabSize is number && (data.tabSize == 2 || data.tabSize == 4) &&
+        data.autosave is bool &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCourseProgress(data, userId, courseId) {
+      return data.keys().hasAll(['userId', 'courseId', 'completedLessonIds', 'completedExerciseIds', 'quizScores', 'progressPercent', 'updatedAt']) &&
+        data.keys().hasOnly(['userId', 'courseId', 'completedLessonIds', 'completedExerciseIds', 'quizScores', 'lastLessonId', 'progressPercent', 'updatedAt']) &&
+        data.userId == userId &&
+        data.courseId == courseId &&
+        isValidId(data.courseId) &&
+        isValidStringArray(data.completedLessonIds, 200) &&
+        isValidStringArray(data.completedExerciseIds, 200) &&
+        data.quizScores is map && data.quizScores.size() <= 50 &&
+        isValidOptionalString(data, 'lastLessonId', 80) &&
+        data.progressPercent is number && data.progressPercent >= 0 && data.progressPercent <= 100 &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidBookmark(data, bookmarkId) {
+      return data.keys().hasAll(['id', 'userId', 'targetType', 'targetId', 'title', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'targetType', 'targetId', 'title', 'createdAt']) &&
+        data.id == bookmarkId &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        data.targetType in ['lesson', 'doc', 'post', 'project', 'mission'] &&
+        isValidString(data.targetId, 1, 128) &&
+        isValidString(data.title, 1, 160) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidNote(data, noteId) {
+      return data.keys().hasAll(['id', 'userId', 'title', 'content', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'courseId', 'lessonId', 'title', 'content', 'createdAt', 'updatedAt']) &&
+        data.id == noteId &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        isValidOptionalString(data, 'courseId', 80) &&
+        isValidOptionalString(data, 'lessonId', 80) &&
+        isValidString(data.title, 1, 160) &&
+        isValidString(data.content, 0, 10000) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidProject(data, projectId) {
+      return data.keys().hasAll(['id', 'ownerId', 'ownerName', 'title', 'description', 'language', 'visibility', 'isPortfolio', 'milestonesCompleted', 'status', 'version', 'storageBytes', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'ownerName', 'title', 'description', 'language', 'guidedProjectId', 'architectureId',
+          'visibility', 'isPortfolio', 'milestonesCompleted', 'status', 'version', 'storageBytes',
+          'collaboratorIds', 'collaboratorRoles', 'collaboratorNames', 'lastEditedByUid', 'lastEditedByName',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.id == projectId &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isValidString(data.ownerName, 1, 80) &&
+        isValidString(data.title, 1, 120) &&
+        isValidString(data.description, 0, 1000) &&
+        data.language in ['web', 'javascript', 'typescript', 'python', 'sql', 'html', 'css'] &&
+        isValidOptionalString(data, 'guidedProjectId', 80) &&
+        isValidOptionalString(data, 'architectureId', 128) &&
+        data.visibility in ['private', 'public'] &&
+        data.isPortfolio is bool &&
+        isValidStringArray(data.milestonesCompleted, 30) &&
+        data.status in ['active', 'submitted', 'completed'] &&
+        data.version is number && data.version >= 1 && data.version <= 10000 &&
+        data.storageBytes is number && data.storageBytes >= 0 && data.storageBytes <= 5000000 &&
+        (!('collaboratorIds' in data) || isValidStringArray(data.collaboratorIds, 20)) &&
+        (!('collaboratorRoles' in data) || (data.collaboratorRoles is map && data.collaboratorRoles.size() <= 20)) &&
+        (!('collaboratorNames' in data) || (data.collaboratorNames is map && data.collaboratorNames.size() <= 20)) &&
+        isValidOptionalString(data, 'lastEditedByUid', 128) &&
+        isValidOptionalString(data, 'lastEditedByName', 80) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidProjectFile(data, projectId, fileId) {
+      return data.keys().hasAll(['id', 'projectId', 'ownerId', 'name', 'folder', 'language', 'visibility', 'content', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'id', 'projectId', 'ownerId', 'name', 'folder', 'language', 'visibility', 'content',
+          'collaboratorIds', 'lastEditedByUid', 'lastEditedByName', 'updatedAt'
+        ]) &&
+        data.id == fileId &&
+        data.projectId == projectId &&
+        isValidId(data.id) &&
+        isValidId(data.projectId) &&
+        isValidId(data.ownerId) &&
+        isValidString(data.name, 1, 120) &&
+        isValidString(data.folder, 0, 120) &&
+        isValidString(data.language, 1, 32) &&
+        data.visibility in ['private', 'public'] &&
+        isValidString(data.content, 0, 150000) &&
+        (!('collaboratorIds' in data) || isValidStringArray(data.collaboratorIds, 20)) &&
+        isValidOptionalString(data, 'lastEditedByUid', 128) &&
+        isValidOptionalString(data, 'lastEditedByName', 80) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidProjectVersion(data, projectId, versionId) {
+      return data.keys().hasAll(['id', 'projectId', 'ownerId', 'versionNumber', 'label', 'filesCount', 'snapshot', 'createdAt']) &&
+        data.keys().hasOnly([
+          'id', 'projectId', 'ownerId', 'versionNumber', 'label', 'description',
+          'authorId', 'authorName', 'changeType', 'aiOperation', 'changedFiles',
+          'parentVersionId', 'collaboratorIds', 'filesCount', 'snapshot', 'createdAt'
+        ]) &&
+        data.id == versionId &&
+        data.projectId == projectId &&
+        isValidId(data.id) &&
+        isValidId(data.projectId) &&
+        isValidId(data.ownerId) &&
+        data.versionNumber is number && data.versionNumber >= 1 && data.versionNumber <= 10000 &&
+        isValidString(data.label, 1, 120) &&
+        isValidOptionalString(data, 'description', 500) &&
+        isValidOptionalString(data, 'authorId', 128) &&
+        isValidOptionalString(data, 'authorName', 80) &&
+        (!('changeType' in data) || data.changeType in ['manual', 'autosave', 'ai_build', 'ai_fix', 'restore', 'collab']) &&
+        isValidOptionalString(data, 'aiOperation', 240) &&
+        (!('changedFiles' in data) || isValidStringArray(data.changedFiles, 50)) &&
+        isValidOptionalString(data, 'parentVersionId', 128) &&
+        (!('collaboratorIds' in data) || isValidStringArray(data.collaboratorIds, 20)) &&
+        data.filesCount is number && data.filesCount >= 0 && data.filesCount <= 100 &&
+        data.snapshot is list && data.snapshot.size() <= 50 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidPlayground(data, playgroundId) {
+      return data.keys().hasAll(['id', 'ownerId', 'ownerName', 'title', 'templateId', 'html', 'css', 'js', 'visibility', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'ownerName', 'title', 'templateId', 'html', 'css', 'js', 'visibility', 'forkedFrom', 'createdAt', 'updatedAt']) &&
+        data.id == playgroundId &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isValidString(data.ownerName, 1, 80) &&
+        isValidString(data.title, 1, 120) &&
+        isValidString(data.templateId, 1, 64) &&
+        isValidString(data.html, 0, 100000) &&
+        isValidString(data.css, 0, 100000) &&
+        isValidString(data.js, 0, 100000) &&
+        data.visibility in ['private', 'public'] &&
+        isValidOptionalString(data, 'forkedFrom', 128) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidChallengeAttempt(data, attemptId) {
+      return data.keys().hasAll(['id', 'userId', 'challengeId', 'language', 'code', 'passed', 'passedCount', 'totalCount', 'executionMs', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'challengeId', 'language', 'code', 'passed', 'passedCount', 'totalCount', 'executionMs', 'createdAt']) &&
+        data.id == attemptId &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        isValidString(data.challengeId, 1, 80) &&
+        data.language in ['javascript', 'typescript', 'python'] &&
+        isValidString(data.code, 1, 50000) &&
+        data.passed is bool &&
+        data.passedCount is number && data.passedCount >= 0 && data.passedCount <= 100 &&
+        data.totalCount is number && data.totalCount >= 1 && data.totalCount <= 100 &&
+        data.executionMs is number && data.executionMs >= 0 && data.executionMs <= 30000 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidXpTransaction(data, txId) {
+      return data.keys().hasAll(['id', 'userId', 'sourceType', 'sourceId', 'amount', 'reason', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'sourceType', 'sourceId', 'amount', 'reason', 'createdAt']) &&
+        data.id == txId &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        data.sourceType in ['lesson', 'quiz', 'challenge', 'project', 'mission'] &&
+        isValidString(data.sourceId, 1, 100) &&
+        !(data.sourceType == 'mission' && data.sourceId.matches('^(custom_|mission-custom).*')) &&
+        data.amount is number && data.amount >= 5 && data.amount <= 250 &&
+        isValidString(data.reason, 1, 160) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidAchievement(data, achievementId) {
+      return data.keys().hasAll(['id', 'userId', 'badgeId', 'title', 'unlockedAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'badgeId', 'title', 'unlockedAt']) &&
+        data.id == achievementId &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        isValidString(data.badgeId, 1, 64) &&
+        isValidString(data.title, 1, 120) &&
+        data.unlockedAt is timestamp;
+    }
+
+    function isValidCommunityPost(data, postId) {
+      return data.keys().hasAll(['id', 'authorId', 'authorName', 'title', 'body', 'category', 'tags', 'visibility', 'likesCount', 'commentsCount', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'authorId', 'authorName', 'authorRole', 'title', 'body', 'category', 'tags', 'codeSnippet', 'visibility', 'likesCount', 'commentsCount', 'createdAt', 'updatedAt']) &&
+        data.id == postId &&
+        isValidId(data.id) &&
+        isValidId(data.authorId) &&
+        isValidString(data.authorName, 1, 80) &&
+        (!('authorRole' in data) || data.authorRole in ['member', 'moderator', 'admin']) &&
+        isValidString(data.title, 3, 180) &&
+        isValidString(data.body, 5, 12000) &&
+        data.category in ['question', 'showcase', 'discussion', 'tip', 'announcement'] &&
+        isValidStringArray(data.tags, 8) &&
+        isValidOptionalString(data, 'codeSnippet', 8000) &&
+        data.visibility in ['public', 'hidden'] &&
+        data.likesCount is number && data.likesCount >= 0 && data.likesCount <= 1000000 &&
+        data.commentsCount is number && data.commentsCount >= 0 && data.commentsCount <= 1000000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidComment(data, postId, commentId) {
+      return data.keys().hasAll(['id', 'postId', 'authorId', 'authorName', 'body', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'postId', 'authorId', 'authorName', 'authorRole', 'body', 'createdAt']) &&
+        data.id == commentId &&
+        data.postId == postId &&
+        isValidId(data.id) &&
+        isValidId(data.postId) &&
+        isValidId(data.authorId) &&
+        isValidString(data.authorName, 1, 80) &&
+        (!('authorRole' in data) || data.authorRole in ['member', 'moderator', 'admin']) &&
+        isValidString(data.body, 1, 4000) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidReport(data, reportId) {
+      return data.keys().hasAll(['id', 'reporterId', 'targetType', 'targetId', 'reason', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'reporterId', 'targetType', 'targetId', 'reason', 'details', 'status', 'createdAt', 'updatedAt']) &&
+        data.id == reportId &&
+        isValidId(data.id) &&
+        isValidId(data.reporterId) &&
+        data.targetType in ['post', 'comment', 'user'] &&
+        isValidString(data.targetId, 1, 128) &&
+        data.reason in ['spam', 'harassment', 'misinformation', 'unsafe_code', 'other'] &&
+        isValidOptionalString(data, 'details', 1000) &&
+        data.status in ['open', 'reviewed', 'resolved', 'dismissed'] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidNotification(data, notificationId) {
+      return data.keys().hasAll(['id', 'userId', 'title', 'body', 'read', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'title', 'body', 'linkView', 'read', 'createdAt']) &&
+        data.id == notificationId &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        isValidString(data.title, 1, 140) &&
+        isValidString(data.body, 1, 500) &&
+        isValidOptionalString(data, 'linkView', 64) &&
+        data.read is bool &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidCareerProgress(data, userId) {
+      return data.keys().hasAll(['userId', 'selectedPathId', 'completedSkillIds', 'completedProjectIds', 'updatedAt']) &&
+        data.keys().hasOnly(['userId', 'selectedPathId', 'completedSkillIds', 'completedProjectIds', 'updatedAt']) &&
+        data.userId == userId &&
+        isValidString(data.selectedPathId, 1, 64) &&
+        isValidStringArray(data.completedSkillIds, 100) &&
+        isValidStringArray(data.completedProjectIds, 100) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAiConversation(data, conversationId) {
+      return data.keys().hasAll(['id', 'userId', 'title', 'mode', 'messages', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'title', 'mode', 'messages', 'createdAt', 'updatedAt']) &&
+        data.id == conversationId &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        isValidString(data.title, 1, 140) &&
+        data.mode in ['learn', 'debug', 'explain', 'practice', 'build', 'review'] &&
+        data.messages is list && data.messages.size() <= 100 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAdminAuditLog(data, logId) {
+      return data.keys().hasAll(['id', 'adminId', 'action', 'targetPath', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'adminId', 'action', 'targetPath', 'createdAt']) &&
+        data.id == logId &&
+        isValidId(data.id) &&
+        isValidId(data.adminId) &&
+        isValidString(data.action, 1, 120) &&
+        isValidString(data.targetPath, 1, 200) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidMissionLeaderboardEntry(data, entryId) {
+      return data.keys().hasAll(['id', 'missionId', 'userId', 'displayName', 'xpAwarded', 'durationSeconds', 'version', 'efficiencyScore', 'completedAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'missionId', 'userId', 'displayName', 'photoURL', 'xpAwarded', 'durationSeconds', 'version', 'efficiencyScore', 'completedAt', 'updatedAt']) &&
+        data.id == entryId &&
+        isValidId(data.id) &&
+        isValidId(data.missionId) &&
+        isValidId(data.userId) &&
+        isValidString(data.displayName, 1, 80) &&
+        isValidOptionalString(data, 'photoURL', 500) &&
+        data.xpAwarded is number && data.xpAwarded >= 0 && data.xpAwarded <= 250 &&
+        data.durationSeconds is number && data.durationSeconds >= 1 && data.durationSeconds <= 864000 &&
+        data.version is number && data.version >= 1 && data.version <= 10000 &&
+        data.efficiencyScore is number && data.efficiencyScore >= 0 && data.efficiencyScore <= 10000 &&
+        data.completedAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Mission Mode Validation Blueprints
+    // -------------------------------------------------------------------------
+    function isValidMission(data, missionId) {
+      return data.keys().hasAll([
+        'id', 'title', 'description', 'category', 'difficulty', 'language',
+        'supportedLanguages', 'requiredSkills', 'prerequisiteMissionIds',
+        'prerequisitesOptional', 'relatedLessonIds', 'learningObjectives',
+        'estimatedMinutes', 'scenario', 'requirements', 'instructions', 'hints',
+        'completionCriteria', 'xpReward', 'badgeId', 'badgeTitle', 'isFeatured',
+        'status', 'authorId', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'title', 'description', 'category', 'difficulty', 'language',
+        'supportedLanguages', 'requiredSkills', 'prerequisiteMissionIds',
+        'prerequisiteSummary', 'prerequisitesOptional', 'relatedLessonIds',
+        'learningObjectives', 'estimatedMinutes', 'scenario', 'clientName',
+        'userRole', 'projectObjective', 'constraints', 'requirements',
+        'instructions', 'hints', 'completionCriteria', 'xpReward', 'badgeId',
+        'badgeTitle', 'isFeatured', 'status', 'qualityStatus', 'qualityReport',
+        'readinessQuestions', 'authorId', 'createdAt', 'updatedAt'
+      ]) &&
+      data.id == missionId &&
+      isValidId(data.id) &&
+      isValidId(data.authorId) &&
+      isValidString(data.title, 3, 140) &&
+      isValidString(data.description, 10, 800) &&
+      data.category in [
+        'HTML and CSS', 'JavaScript', 'Python', 'Frontend Development',
+        'Backend Development', 'Full-Stack Development', 'Database Development',
+        'Algorithms and Data Structures', 'API Development', 'Software Engineering'
+      ] &&
+      data.difficulty in ['Beginner', 'Intermediate', 'Advanced', 'Expert'] &&
+      data.language in ['web', 'javascript', 'python', 'sql'] &&
+      isValidStringArray(data.supportedLanguages, 6) &&
+      isValidStringArray(data.requiredSkills, 12) &&
+      isValidStringArray(data.prerequisiteMissionIds, 10) &&
+      isValidOptionalString(data, 'prerequisiteSummary', 300) &&
+      data.prerequisitesOptional is bool &&
+      isValidStringArray(data.relatedLessonIds, 12) &&
+      isValidStringArray(data.learningObjectives, 10) &&
+      data.estimatedMinutes is number && data.estimatedMinutes >= 5 && data.estimatedMinutes <= 600 &&
+      isValidString(data.scenario, 10, 3000) &&
+      isValidOptionalString(data, 'clientName', 140) &&
+      isValidOptionalString(data, 'userRole', 140) &&
+      isValidOptionalString(data, 'projectObjective', 1000) &&
+      (!('constraints' in data) || isValidStringArray(data.constraints, 15)) &&
+      isValidStringArray(data.requirements, 20) &&
+      isValidStringArray(data.instructions, 25) &&
+      data.hints is list && data.hints.size() <= 10 &&
+      isValidString(data.completionCriteria, 5, 1000) &&
+      data.xpReward is number && data.xpReward >= 25 && data.xpReward <= 250 &&
+      isValidString(data.badgeId, 1, 64) &&
+      isValidString(data.badgeTitle, 1, 120) &&
+      data.isFeatured is bool &&
+      data.status in ['draft', 'published', 'archived'] &&
+      (!('qualityStatus' in data) || data.qualityStatus in ['draft', 'testing', 'approved']) &&
+      (!('qualityReport' in data) || data.qualityReport is map) &&
+      (!('readinessQuestions' in data) || (data.readinessQuestions is list && data.readinessQuestions.size() <= 10)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidMissionCheckpoint(data, checkpointId) {
+      return data.keys().hasAll([
+        'id', 'missionId', 'order', 'title', 'instructions', 'requirements',
+        'completionCriteria', 'validationMethod', 'dependsOn', 'isAssessed',
+        'status', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'missionId', 'order', 'title', 'instructions', 'requirements',
+        'completionCriteria', 'validationMethod', 'dependsOn', 'hint', 'isAssessed',
+        'status', 'updatedAt'
+      ]) &&
+      data.id == checkpointId &&
+      isValidId(data.id) &&
+      isValidId(data.missionId) &&
+      data.order is number && data.order >= 1 && data.order <= 50 &&
+      isValidString(data.title, 2, 140) &&
+      isValidString(data.instructions, 5, 2000) &&
+      isValidStringArray(data.requirements, 15) &&
+      isValidString(data.completionCriteria, 3, 600) &&
+      data.validationMethod in ['html', 'css', 'javascript', 'python', 'sql', 'hybrid', 'instructional'] &&
+      isValidStringArray(data.dependsOn, 10) &&
+      isValidOptionalString(data, 'hint', 1000) &&
+      data.isAssessed is bool &&
+      data.status in ['active', 'archived'] &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidMissionTemplate(data, templateId) {
+      return data.keys().hasAll(['id', 'missionId', 'language', 'files', 'status', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'missionId', 'language', 'files', 'status', 'updatedAt']) &&
+        data.id == templateId &&
+        isValidId(data.id) &&
+        isValidId(data.missionId) &&
+        data.language in ['web', 'javascript', 'python', 'sql'] &&
+        data.files is list && data.files.size() >= 1 && data.files.size() <= 20 &&
+        data.status in ['active', 'archived'] &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidMissionReward(data, rewardId) {
+      return data.keys().hasAll(['id', 'missionId', 'xpAmount', 'badgeId', 'badgeTitle', 'skillsAwarded', 'portfolioEligible', 'status', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'missionId', 'xpAmount', 'badgeId', 'badgeTitle', 'skillsAwarded', 'portfolioEligible', 'status', 'updatedAt']) &&
+        data.id == rewardId &&
+        isValidId(data.id) &&
+        isValidId(data.missionId) &&
+        data.xpAmount is number && data.xpAmount >= 25 && data.xpAmount <= 250 &&
+        isValidString(data.badgeId, 1, 64) &&
+        isValidString(data.badgeTitle, 1, 120) &&
+        isValidStringArray(data.skillsAwarded, 12) &&
+        data.portfolioEligible is bool &&
+        data.status in ['active', 'archived'] &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidMissionAttempt(data, attemptId) {
+      return data.keys().hasAll([
+        'id', 'userId', 'missionId', 'status', 'currentCheckpointId',
+        'completedCheckpointIds', 'acknowledgedStepIds', 'files', 'version',
+        'checkpointFeedback', 'rewardsGranted', 'xpAwarded', 'unlockedBadgeIds',
+        'addedToPassport', 'startedAt', 'lastActivityAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'userId', 'missionId', 'status', 'currentCheckpointId',
+        'completedCheckpointIds', 'acknowledgedStepIds', 'files', 'version',
+        'checkpointFeedback', 'rewardsGranted', 'xpAwarded', 'unlockedBadgeIds',
+        'addedToPassport', 'portfolioProjectId', 'startedAt', 'lastActivityAt', 'completedAt'
+      ]) &&
+      data.id == attemptId &&
+      isValidId(data.id) &&
+      isValidId(data.userId) &&
+      isValidId(data.missionId) &&
+      data.status in ['in_progress', 'submitted', 'needs_improvement', 'completed', 'archived'] &&
+      isValidString(data.currentCheckpointId, 0, 128) &&
+      isValidStringArray(data.completedCheckpointIds, 30) &&
+      isValidStringArray(data.acknowledgedStepIds, 30) &&
+      data.files is list && data.files.size() >= 1 && data.files.size() <= 25 &&
+      data.version is number && data.version >= 1 && data.version <= 10000 &&
+      data.checkpointFeedback is map && data.checkpointFeedback.size() <= 30 &&
+      data.rewardsGranted is bool &&
+      data.xpAwarded is number && data.xpAwarded >= 0 && data.xpAwarded <= 250 &&
+      isValidStringArray(data.unlockedBadgeIds, 10) &&
+      data.addedToPassport is bool &&
+      isValidOptionalString(data, 'portfolioProjectId', 128) &&
+      data.startedAt is timestamp &&
+      data.lastActivityAt is timestamp &&
+      (!('completedAt' in data) || data.completedAt is timestamp);
+    }
+
+    function isValidMissionSubmission(data, submissionId) {
+      return data.keys().hasAll(['id', 'userId', 'missionId', 'attemptId', 'projectVersion', 'language', 'filesSnapshot', 'status', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'missionId', 'attemptId', 'projectVersion', 'language', 'filesSnapshot', 'status', 'createdAt']) &&
+        data.id == submissionId &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        isValidId(data.missionId) &&
+        isValidId(data.attemptId) &&
+        data.projectVersion is number && data.projectVersion >= 1 && data.projectVersion <= 10000 &&
+        isValidString(data.language, 1, 32) &&
+        data.filesSnapshot is list && data.filesSnapshot.size() >= 1 && data.filesSnapshot.size() <= 25 &&
+        data.status in ['passed', 'failed'] &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidMissionEvaluation(data, evaluationId) {
+      return data.keys().hasAll([
+        'id', 'userId', 'missionId', 'attemptId', 'submissionId', 'passed',
+        'passedCount', 'totalCount', 'requirementsSatisfied', 'requirementsMissing',
+        'testResults', 'runtimeErrors', 'suggestions', 'executionMs', 'attestation', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'userId', 'missionId', 'attemptId', 'submissionId', 'passed',
+        'passedCount', 'totalCount', 'requirementsSatisfied', 'requirementsMissing',
+        'testResults', 'runtimeErrors', 'suggestions', 'executionMs', 'attestation', 'createdAt'
+      ]) &&
+      data.id == evaluationId &&
+      isValidId(data.id) &&
+      isValidId(data.userId) &&
+      isValidId(data.missionId) &&
+      isValidId(data.attemptId) &&
+      isValidId(data.submissionId) &&
+      data.passed is bool &&
+      data.passedCount is number && data.passedCount >= 0 && data.passedCount <= 100 &&
+      data.totalCount is number && data.totalCount >= 1 && data.totalCount <= 100 &&
+      isValidStringArray(data.requirementsSatisfied, 30) &&
+      isValidStringArray(data.requirementsMissing, 30) &&
+      data.testResults is list && data.testResults.size() <= 40 &&
+      isValidStringArray(data.runtimeErrors, 20) &&
+      isValidStringArray(data.suggestions, 20) &&
+      data.executionMs is number && data.executionMs >= 0 && data.executionMs <= 30000 &&
+      isValidString(data.attestation, 1, 128) &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidMissionHintHistory(data, hintRecordId) {
+      return data.keys().hasAll(['id', 'userId', 'missionId', 'attemptId', 'hintIndex', 'hintId', 'openedAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'missionId', 'attemptId', 'hintIndex', 'hintId', 'openedAt']) &&
+        data.id == hintRecordId &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        isValidId(data.missionId) &&
+        isValidId(data.attemptId) &&
+        data.hintIndex is number && data.hintIndex >= 0 && data.hintIndex <= 20 &&
+        isValidString(data.hintId, 1, 128) &&
+        data.openedAt is timestamp;
+    }
+
+    function isValidAdaptiveDifficultyConfig(data, configId) {
+      return data.keys().hasAll([
+        'id', 'checkpointPassWeight', 'evaluationPassWeight', 'attemptEfficiencyWeight',
+        'intermediateThreshold', 'advancedThreshold', 'expertThreshold', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'checkpointPassWeight', 'evaluationPassWeight', 'attemptEfficiencyWeight',
+        'intermediateThreshold', 'advancedThreshold', 'expertThreshold', 'updatedBy', 'updatedAt'
+      ]) &&
+      data.id == configId &&
+      isValidId(data.id) &&
+      data.checkpointPassWeight is number && data.checkpointPassWeight >= 0 && data.checkpointPassWeight <= 100 &&
+      data.evaluationPassWeight is number && data.evaluationPassWeight >= 0 && data.evaluationPassWeight <= 100 &&
+      data.attemptEfficiencyWeight is number && data.attemptEfficiencyWeight >= 0 && data.attemptEfficiencyWeight <= 100 &&
+      data.intermediateThreshold is number && data.intermediateThreshold >= 10 && data.intermediateThreshold <= 95 &&
+      data.advancedThreshold is number && data.advancedThreshold >= 20 && data.advancedThreshold <= 98 &&
+      data.expertThreshold is number && data.expertThreshold >= 30 && data.expertThreshold <= 100 &&
+      isValidOptionalString(data, 'updatedBy', 128) &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidMissionReadinessResult(data, resultId) {
+      return data.keys().hasAll([
+        'id', 'userId', 'missionId', 'scorePct', 'passedCount', 'totalCount',
+        'ready', 'weakSkills', 'recommendedLessons', 'answers', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'userId', 'missionId', 'scorePct', 'passedCount', 'totalCount',
+        'ready', 'weakSkills', 'recommendedLessons', 'answers', 'createdAt'
+      ]) &&
+      data.id == resultId &&
+      isValidId(data.id) &&
+      isValidId(data.userId) &&
+      isValidId(data.missionId) &&
+      data.scorePct is number && data.scorePct >= 0 && data.scorePct <= 100 &&
+      data.passedCount is number && data.passedCount >= 0 && data.passedCount <= 20 &&
+      data.totalCount is number && data.totalCount >= 1 && data.totalCount <= 20 &&
+      data.ready is bool &&
+      isValidStringArray(data.weakSkills, 12) &&
+      data.recommendedLessons is list && data.recommendedLessons.size() <= 12 &&
+      data.answers is list && data.answers.size() <= 20 &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidMissionAttemptVersion(data, attemptId, versionId) {
+      return data.keys().hasAll([
+        'id', 'attemptId', 'userId', 'missionId', 'versionNumber',
+        'label', 'filesSnapshot', 'completedCheckpointIds', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'attemptId', 'userId', 'missionId', 'versionNumber',
+        'label', 'filesSnapshot', 'completedCheckpointIds', 'createdAt'
+      ]) &&
+      data.id == versionId &&
+      data.attemptId == attemptId &&
+      isValidId(data.id) &&
+      isValidId(data.attemptId) &&
+      isValidId(data.userId) &&
+      isValidId(data.missionId) &&
+      data.versionNumber is number && data.versionNumber >= 1 && data.versionNumber <= 10000 &&
+      isValidString(data.label, 1, 140) &&
+      data.filesSnapshot is list && data.filesSnapshot.size() >= 1 && data.filesSnapshot.size() <= 25 &&
+      isValidStringArray(data.completedCheckpointIds, 30) &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidMissionRating(data, ratingId) {
+      return data.keys().hasAll([
+        'id', 'missionId', 'userId', 'difficultyRating', 'clarityRating',
+        'usefulnessRating', 'starterQualityRating', 'overallRating', 'comment',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'missionId', 'userId', 'difficultyRating', 'clarityRating',
+        'usefulnessRating', 'starterQualityRating', 'overallRating', 'comment',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.id == ratingId &&
+      isValidId(data.missionId) &&
+      isValidId(data.userId) &&
+      data.id == data.missionId + '_' + data.userId &&
+      data.difficultyRating is number && data.difficultyRating >= 1 && data.difficultyRating <= 5 &&
+      data.clarityRating is number && data.clarityRating >= 1 && data.clarityRating <= 5 &&
+      data.usefulnessRating is number && data.usefulnessRating >= 1 && data.usefulnessRating <= 5 &&
+      data.starterQualityRating is number && data.starterQualityRating >= 1 && data.starterQualityRating <= 5 &&
+      data.overallRating is number && data.overallRating >= 1 && data.overallRating <= 5 &&
+      isValidString(data.comment, 0, 2000) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidCustomMission(data, missionId) {
+      return data.keys().hasAll([
+        'id', 'authorId', 'authorName', 'title', 'description', 'scenario',
+        'category', 'language', 'difficulty', 'skills', 'learningObjectives',
+        'requirements', 'checkpoints', 'starterFiles', 'hints',
+        'completionCriteria', 'visibility', 'status', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'authorId', 'authorName', 'title', 'description', 'scenario',
+        'category', 'language', 'difficulty', 'skills', 'learningObjectives',
+        'requirements', 'checkpoints', 'starterFiles', 'hints',
+        'completionCriteria', 'personalDeadline', 'visibility', 'status',
+        'reportedCount', 'createdAt', 'updatedAt'
+      ]) &&
+      data.id == missionId &&
+      isValidId(data.id) &&
+      isValidId(data.authorId) &&
+      isValidString(data.authorName, 1, 80) &&
+      isValidString(data.title, 3, 140) &&
+      isValidString(data.description, 5, 800) &&
+      isValidString(data.scenario, 5, 3000) &&
+      isValidString(data.category, 2, 64) &&
+      data.language in ['web', 'javascript', 'python', 'sql'] &&
+      data.difficulty in ['Beginner', 'Intermediate', 'Advanced', 'Expert'] &&
+      isValidStringArray(data.skills, 12) &&
+      isValidStringArray(data.learningObjectives, 10) &&
+      isValidStringArray(data.requirements, 20) &&
+      data.checkpoints is list && data.checkpoints.size() >= 1 && data.checkpoints.size() <= 15 &&
+      data.starterFiles is list && data.starterFiles.size() >= 1 && data.starterFiles.size() <= 15 &&
+      isValidStringArray(data.hints, 10) &&
+      isValidString(data.completionCriteria, 3, 1000) &&
+      isValidOptionalString(data, 'personalDeadline', 40) &&
+      data.visibility in ['private', 'shared'] &&
+      data.status in ['active', 'archived'] &&
+      (!('reportedCount' in data) || (data.reportedCount is number && data.reportedCount >= 0 && data.reportedCount <= 10000)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidMissionTeam(data, teamId) {
+      return data.keys().hasAll([
+        'id', 'missionId', 'missionTitle', 'title', 'ownerId', 'ownerName',
+        'memberIds', 'memberRoles', 'memberNames', 'checkpointAssignments',
+        'files', 'version', 'completedCheckpointIds', 'contributions',
+        'status', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'missionId', 'missionTitle', 'title', 'ownerId', 'ownerName',
+        'memberIds', 'memberRoles', 'memberNames', 'checkpointAssignments',
+        'files', 'version', 'completedCheckpointIds', 'contributions',
+        'status', 'lastEditedByUid', 'lastEditedByName', 'createdAt', 'updatedAt'
+      ]) &&
+      data.id == teamId &&
+      isValidId(data.id) &&
+      isValidId(data.missionId) &&
+      isValidString(data.missionTitle, 1, 140) &&
+      isValidString(data.title, 2, 140) &&
+      isValidId(data.ownerId) &&
+      isValidString(data.ownerName, 1, 80) &&
+      isValidStringArray(data.memberIds, 12) &&
+      data.ownerId in data.memberIds &&
+      data.memberRoles is map && data.memberRoles.size() <= 12 &&
+      data.memberNames is map && data.memberNames.size() <= 12 &&
+      data.checkpointAssignments is map && data.checkpointAssignments.size() <= 30 &&
+      data.files is list && data.files.size() >= 1 && data.files.size() <= 25 &&
+      data.version is number && data.version >= 1 && data.version <= 10000 &&
+      isValidStringArray(data.completedCheckpointIds, 30) &&
+      data.contributions is map && data.contributions.size() <= 12 &&
+      data.status in ['active', 'submitted', 'completed'] &&
+      isValidOptionalString(data, 'lastEditedByUid', 128) &&
+      isValidOptionalString(data, 'lastEditedByName', 80) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidMissionTeamInvite(data, inviteId) {
+      return data.keys().hasAll([
+        'id', 'teamId', 'missionId', 'missionTitle', 'teamTitle',
+        'inviterId', 'inviterName', 'inviteeUid', 'role', 'inviteCode',
+        'status', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'teamId', 'missionId', 'missionTitle', 'teamTitle',
+        'inviterId', 'inviterName', 'inviteeUid', 'inviteeName', 'role',
+        'inviteCode', 'status', 'createdAt', 'updatedAt'
+      ]) &&
+      data.id == inviteId &&
+      isValidId(data.teamId) &&
+      isValidId(data.missionId) &&
+      isValidId(data.inviterId) &&
+      isValidId(data.inviteeUid) &&
+      data.id == data.teamId + '_' + data.inviteeUid &&
+      isValidString(data.missionTitle, 1, 140) &&
+      isValidString(data.teamTitle, 1, 140) &&
+      isValidString(data.inviterName, 1, 80) &&
+      isValidOptionalString(data, 'inviteeName', 80) &&
+      data.role in ['editor', 'viewer'] &&
+      isValidString(data.inviteCode, 4, 32) &&
+      data.status in ['pending', 'accepted', 'declined'] &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Five Core Systems Validation Blueprints
+    // -------------------------------------------------------------------------
+    function isValidProjectInvitation(data, inviteId) {
+      return data.keys().hasAll([
+        'id', 'projectId', 'projectTitle', 'inviterId', 'inviterName',
+        'inviteeEmail', 'role', 'status', 'inviteSignature', 'expiresAt',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'projectId', 'projectTitle', 'inviterId', 'inviterName',
+        'inviteeEmail', 'role', 'status', 'inviteSignature', 'expiresAt',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.id == inviteId &&
+      isValidId(data.id) &&
+      isValidId(data.projectId) &&
+      data.id == data.projectId + '_' + data.inviteeEmail.lower().replace('[^a-z0-9]', '_') &&
+      isValidString(data.projectTitle, 1, 120) &&
+      isValidId(data.inviterId) &&
+      isValidString(data.inviterName, 1, 80) &&
+      isValidString(data.inviteeEmail, 3, 254) &&
+      data.role in ['editor', 'viewer'] &&
+      data.status in ['pending', 'accepted', 'declined', 'cancelled'] &&
+      isValidString(data.inviteSignature, 8, 128) &&
+      isValidString(data.expiresAt, 10, 40) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidProjectComment(data, projectId, commentId) {
+      return data.keys().hasAll([
+        'id', 'projectId', 'authorId', 'authorName', 'mentions',
+        'body', 'status', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'projectId', 'authorId', 'authorName', 'filePath', 'lineStart',
+        'lineEnd', 'parentCommentId', 'mentions', 'body', 'status', 'resolvedBy',
+        'collaboratorIds', 'createdAt', 'updatedAt'
+      ]) &&
+      data.id == commentId &&
+      data.projectId == projectId &&
+      isValidId(data.id) &&
+      isValidId(data.projectId) &&
+      isValidId(data.authorId) &&
+      isValidString(data.authorName, 1, 80) &&
+      isValidOptionalString(data, 'filePath', 180) &&
+      (!('lineStart' in data) || (data.lineStart is number && data.lineStart >= 1 && data.lineStart <= 100000)) &&
+      (!('lineEnd' in data) || (data.lineEnd is number && data.lineEnd >= 1 && data.lineEnd <= 100000)) &&
+      isValidOptionalString(data, 'parentCommentId', 128) &&
+      isValidStringArray(data.mentions, 10) &&
+      isValidString(data.body, 1, 2000) &&
+      data.status in ['open', 'resolved'] &&
+      isValidOptionalString(data, 'resolvedBy', 80) &&
+      (!('collaboratorIds' in data) || isValidStringArray(data.collaboratorIds, 20)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidProjectActivityEvent(data, projectId, activityId) {
+      return data.keys().hasAll([
+        'id', 'projectId', 'actorId', 'actorName', 'action', 'summary', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'projectId', 'actorId', 'actorName', 'action', 'summary',
+        'targetName', 'collaboratorIds', 'createdAt'
+      ]) &&
+      data.id == activityId &&
+      data.projectId == projectId &&
+      isValidId(data.id) &&
+      isValidId(data.projectId) &&
+      isValidId(data.actorId) &&
+      isValidString(data.actorName, 1, 80) &&
+      data.action in [
+        'invite_sent', 'invite_accepted', 'invite_declined', 'invite_cancelled',
+        'role_changed', 'member_removed', 'file_saved', 'file_created',
+        'file_deleted', 'version_created', 'version_restored', 'comment_added',
+        'comment_resolved', 'ai_applied', 'tests_run'
+      ] &&
+      isValidString(data.summary, 1, 300) &&
+      isValidOptionalString(data, 'targetName', 160) &&
+      (!('collaboratorIds' in data) || isValidStringArray(data.collaboratorIds, 20)) &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidTestSuite(data, suiteId) {
+      return data.keys().hasAll([
+        'id', 'userId', 'projectId', 'projectTitle', 'title',
+        'language', 'framework', 'testType', 'cases', 'approved',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'userId', 'projectId', 'projectTitle', 'title',
+        'language', 'framework', 'testType', 'cases', 'approved',
+        'collaboratorIds', 'createdAt', 'updatedAt'
+      ]) &&
+      data.id == suiteId &&
+      isValidId(data.id) &&
+      isValidId(data.userId) &&
+      isValidId(data.projectId) &&
+      isValidString(data.projectTitle, 1, 120) &&
+      isValidString(data.title, 1, 140) &&
+      isValidString(data.language, 1, 32) &&
+      isValidString(data.framework, 1, 64) &&
+      data.testType in ['unit', 'integration', 'functional', 'api', 'regression', 'component', 'edge_case'] &&
+      data.cases is list && data.cases.size() <= 50 &&
+      data.approved is bool &&
+      (!('collaboratorIds' in data) || isValidStringArray(data.collaboratorIds, 20)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidTestRunSession(data, runId) {
+      return data.keys().hasAll([
+        'id', 'userId', 'projectId', 'projectTitle', 'suiteId', 'suiteTitle',
+        'language', 'testType', 'status', 'totalTests', 'passedTests',
+        'failedTests', 'skippedTests', 'errorTests', 'durationMs', 'results',
+        'coverage', 'aiAssisted', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'userId', 'projectId', 'projectTitle', 'suiteId', 'suiteTitle',
+        'language', 'testType', 'status', 'totalTests', 'passedTests',
+        'failedTests', 'skippedTests', 'errorTests', 'durationMs', 'results',
+        'coverage', 'aiAssisted', 'collaboratorIds', 'createdAt'
+      ]) &&
+      data.id == runId &&
+      isValidId(data.id) &&
+      isValidId(data.userId) &&
+      isValidId(data.projectId) &&
+      isValidString(data.projectTitle, 1, 120) &&
+      isValidId(data.suiteId) &&
+      isValidString(data.suiteTitle, 1, 140) &&
+      isValidString(data.language, 1, 32) &&
+      data.testType in ['unit', 'integration', 'functional', 'api', 'regression', 'component', 'edge_case'] &&
+      data.status in ['passed', 'failed', 'error'] &&
+      data.totalTests is number && data.totalTests >= 0 && data.totalTests <= 200 &&
+      data.passedTests is number && data.passedTests >= 0 && data.passedTests <= 200 &&
+      data.failedTests is number && data.failedTests >= 0 && data.failedTests <= 200 &&
+      data.skippedTests is number && data.skippedTests >= 0 && data.skippedTests <= 200 &&
+      data.errorTests is number && data.errorTests >= 0 && data.errorTests <= 200 &&
+      data.durationMs is number && data.durationMs >= 0 && data.durationMs <= 120000 &&
+      data.results is list && data.results.size() <= 50 &&
+      data.coverage is map &&
+      data.aiAssisted is bool &&
+      (!('collaboratorIds' in data) || isValidStringArray(data.collaboratorIds, 20)) &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidArchitecturePlan(data, archId) {
+      return data.keys().hasAll([
+        'id', 'userId', 'title', 'prompt', 'overview', 'frontendSpec',
+        'backendSpec', 'authSpec', 'techStack', 'modules', 'databaseTables',
+        'apiEndpoints', 'diagrams', 'versionNumber', 'status',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'userId', 'projectId', 'title', 'prompt', 'overview',
+        'frontendSpec', 'backendSpec', 'authSpec', 'techStack', 'modules',
+        'databaseTables', 'apiEndpoints', 'diagrams', 'versionNumber', 'status',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.id == archId &&
+      isValidId(data.id) &&
+      isValidId(data.userId) &&
+      isValidOptionalString(data, 'projectId', 128) &&
+      isValidString(data.title, 1, 140) &&
+      isValidString(data.prompt, 1, 4000) &&
+      isValidString(data.overview, 1, 4000) &&
+      isValidString(data.frontendSpec, 0, 4000) &&
+      isValidString(data.backendSpec, 0, 4000) &&
+      isValidString(data.authSpec, 0, 4000) &&
+      data.techStack is list && data.techStack.size() <= 15 &&
+      data.modules is list && data.modules.size() <= 30 &&
+      data.databaseTables is list && data.databaseTables.size() <= 30 &&
+      data.apiEndpoints is list && data.apiEndpoints.size() <= 40 &&
+      data.diagrams is list && data.diagrams.size() <= 10 &&
+      data.versionNumber is number && data.versionNumber >= 1 && data.versionNumber <= 1000 &&
+      data.status in ['draft', 'approved', 'sent_to_build'] &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidArchitectureVersion(data, archId, versionId) {
+      return data.keys().hasAll([
+        'id', 'architectureId', 'userId', 'versionNumber', 'label',
+        'changeSummary', 'snapshot', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'architectureId', 'userId', 'versionNumber', 'label',
+        'changeSummary', 'snapshot', 'createdAt'
+      ]) &&
+      data.id == versionId &&
+      data.architectureId == archId &&
+      isValidId(data.id) &&
+      isValidId(data.architectureId) &&
+      isValidId(data.userId) &&
+      data.versionNumber is number && data.versionNumber >= 1 && data.versionNumber <= 1000 &&
+      isValidString(data.label, 1, 140) &&
+      isValidString(data.changeSummary, 0, 500) &&
+      data.snapshot is map &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidActivityEvent(data, eventId) {
+      return data.keys().hasAll([
+        'id', 'userId', 'category', 'action', 'aiAssisted', 'dayKey', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'userId', 'category', 'action', 'language', 'technology',
+        'aiAssisted', 'durationSeconds', 'scorePct', 'projectId', 'dayKey', 'createdAt'
+      ]) &&
+      data.id == eventId &&
+      isValidId(data.id) &&
+      isValidId(data.userId) &&
+      data.category in ['lesson', 'exercise', 'challenge', 'project', 'ide', 'version', 'testlab', 'architect', 'ai'] &&
+      isValidString(data.action, 1, 140) &&
+      isValidOptionalString(data, 'language', 32) &&
+      isValidOptionalString(data, 'technology', 64) &&
+      data.aiAssisted is bool &&
+      (!('durationSeconds' in data) || (data.durationSeconds is number && data.durationSeconds >= 0 && data.durationSeconds <= 86400)) &&
+      (!('scorePct' in data) || (data.scorePct is number && data.scorePct >= 0 && data.scorePct <= 100)) &&
+      isValidOptionalString(data, 'projectId', 128) &&
+      isValidString(data.dayKey, 10, 10) &&
+      data.createdAt is timestamp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Match Rules
+    // -------------------------------------------------------------------------
+
+    // Connection check document (read-only)
+    match /test/connection {
+      allow get: if true;
+    }
+
+    // Admins registry
+    match /admins/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow write: if false;
+    }
+
+    // Private user profiles (PII protected)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && isOwner(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().role == 'member' &&
+        incoming().xp == 0 &&
+        incoming().level == 1 &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) && isValidUserProfile(incoming(), userId) && (
+        isAdmin() ||
+        (
+          isOwner(userId) &&
+          incoming().uid == existing().uid &&
+          incoming().role == existing().role &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().xp >= existing().xp &&
+          incoming().xp <= existing().xp + 250 &&
+          incoming().level >= existing().level &&
+          incoming().level <= existing().level + 2 &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'displayName', 'photoURL', 'email', 'phoneNumber', 'country',
+            'experienceLevel', 'preferredLanguages', 'learningGoals', 'interests',
+            'onboardingComplete', 'activeCareerPathId', 'xp', 'level', 'streak',
+            'lastActivityDate', 'updatedAt'
+          ])
+        )
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Non-PII public profiles
+    match /publicProfiles/{userId} {
+      allow get: if isValidId(userId) && isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isValidId(userId) && isOwner(userId) &&
+        isValidPublicProfile(incoming(), userId) &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) && isValidPublicProfile(incoming(), userId) && (
+        isAdmin() ||
+        (
+          isOwner(userId) &&
+          incoming().uid == existing().uid &&
+          incoming().updatedAt == request.time &&
+          incoming().xp >= existing().xp &&
+          incoming().xp <= existing().xp + 250 &&
+          incoming().level >= existing().level &&
+          incoming().level <= existing().level + 2 &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'displayName', 'photoURL', 'level', 'xp', 'streak', 'badgesCount', 'updatedAt'
+          ])
+        )
+      );
+      allow delete: if isAdmin();
+    }
+
+    // User settings
+    match /userSettings/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow create: if isValidId(userId) && isOwner(userId) &&
+        isValidUserSettings(incoming(), userId) &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) && isOwner(userId) &&
+        isValidUserSettings(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'theme', 'editorTheme', 'editorFontSize', 'tabSize', 'autosave', 'updatedAt'
+        ]);
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // User course progress
+    match /userProgress/{userId}/courses/{courseId} {
+      allow get: if isValidId(userId) && isValidId(courseId) && (isOwner(userId) || isAdmin());
+      allow list: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow create: if isValidId(userId) && isValidId(courseId) && isOwner(userId) &&
+        isValidCourseProgress(incoming(), userId, courseId) &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) && isValidId(courseId) && isOwner(userId) &&
+        isValidCourseProgress(incoming(), userId, courseId) &&
+        incoming().userId == existing().userId &&
+        incoming().courseId == existing().courseId &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'completedLessonIds', 'completedExerciseIds', 'quizScores', 'lastLessonId', 'progressPercent', 'updatedAt'
+        ]);
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // Bookmarks
+    match /bookmarks/{bookmarkId} {
+      allow get: if isValidId(bookmarkId) && isSignedIn() && (resource == null || existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(bookmarkId) && isSignedIn() &&
+        isValidBookmark(incoming(), bookmarkId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(bookmarkId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Notes
+    match /notes/{noteId} {
+      allow get: if isValidId(noteId) && isSignedIn() && (resource == null || existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(noteId) && isSignedIn() &&
+        isValidNote(incoming(), noteId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(noteId) && isSignedIn() &&
+        isValidNote(incoming(), noteId) &&
+        existing().userId == request.auth.uid &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'updatedAt']);
+      allow delete: if isValidId(noteId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Projects (Private-by-default with Collaborator RBAC)
+    match /projects/{projectId} {
+      allow get: if isValidId(projectId) && (
+        (isSignedIn() && resource == null) ||
+        existing().visibility == 'public' ||
+        isProjectMember(existing()) ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.ownerId == request.auth.uid ||
+        ('collaboratorIds' in resource.data && request.auth.uid in resource.data.collaboratorIds) ||
+        resource.data.visibility == 'public' ||
+        isAdmin()
+      );
+      allow create: if isValidId(projectId) && isSignedIn() &&
+        isValidProject(incoming(), projectId) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(projectId) && isSignedIn() &&
+        isValidProject(incoming(), projectId) && (
+          isAdmin() ||
+          (
+            existing().ownerId == request.auth.uid &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'description', 'visibility', 'isPortfolio',
+              'milestonesCompleted', 'status', 'version', 'storageBytes',
+              'architectureId', 'collaboratorIds', 'collaboratorRoles',
+              'collaboratorNames', 'lastEditedByUid', 'lastEditedByName', 'updatedAt'
+            ])
+          ) ||
+          (
+            isProjectEditor(existing()) &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'version', 'storageBytes', 'lastEditedByUid', 'lastEditedByName', 'updatedAt'
+            ])
+          ) ||
+          (
+            hasAuthEmail() &&
+            (!('collaboratorIds' in existing()) || !(request.auth.uid in existing().collaboratorIds)) &&
+            exists(/databases/$(database)/documents/projectInvitations/$(projectId + '_' + authEmailSlug())) &&
+            get(/databases/$(database)/documents/projectInvitations/$(projectId + '_' + authEmailSlug())).data.status == 'pending' &&
+            get(/databases/$(database)/documents/projectInvitations/$(projectId + '_' + authEmailSlug())).data.inviteeEmail == authEmailLower() &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            ('collaboratorIds' in incoming()) &&
+            request.auth.uid in incoming().collaboratorIds &&
+            ('collaboratorRoles' in incoming()) &&
+            incoming().collaboratorRoles[request.auth.uid] == get(/databases/$(database)/documents/projectInvitations/$(projectId + '_' + authEmailSlug())).data.role &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'collaboratorIds', 'collaboratorRoles', 'collaboratorNames', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(projectId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+
+      // Master Gate on Project Files (no get() in list queries)
+      match /files/{fileId} {
+        allow get: if isValidId(projectId) && isValidId(fileId) && (
+          get(/databases/$(database)/documents/projects/$(projectId)).data.visibility == 'public' ||
+          isProjectMember(get(/databases/$(database)/documents/projects/$(projectId)).data) ||
+          isAdmin()
+        );
+        allow list: if isValidId(projectId) && (
+          resource.data.visibility == 'public' ||
+          (isSignedIn() && resource.data.ownerId == request.auth.uid) ||
+          (isSignedIn() && 'collaboratorIds' in resource.data && request.auth.uid in resource.data.collaboratorIds) ||
+          isAdmin()
+        );
+        allow create: if isValidId(projectId) && isValidId(fileId) && isSignedIn() &&
+          isValidProjectFile(incoming(), projectId, fileId) &&
+          incoming().updatedAt == request.time &&
+          isProjectEditor(get(/databases/$(database)/documents/projects/$(projectId)).data) &&
+          incoming().ownerId == get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId;
+        allow update: if isValidId(projectId) && isValidId(fileId) && isSignedIn() &&
+          isValidProjectFile(incoming(), projectId, fileId) &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().projectId == existing().projectId && (
+            (
+              get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['collaboratorIds'])
+            ) ||
+            (
+              incoming().updatedAt == request.time &&
+              isProjectEditor(get(/databases/$(database)/documents/projects/$(projectId)).data) &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'name', 'folder', 'language', 'visibility', 'content',
+                'collaboratorIds', 'lastEditedByUid', 'lastEditedByName', 'updatedAt'
+              ])
+            )
+          );
+        allow delete: if isValidId(projectId) && isValidId(fileId) && isSignedIn() && (
+          isProjectEditor(get(/databases/$(database)/documents/projects/$(projectId)).data) || isAdmin()
+        );
+      }
+
+      // Master Gate on Project Versions (Snapshot payload strictly immutable)
+      match /versions/{versionId} {
+        allow get: if isValidId(projectId) && isValidId(versionId) && isSignedIn() && (
+          isProjectMember(get(/databases/$(database)/documents/projects/$(projectId)).data) || isAdmin()
+        );
+        allow list: if isValidId(projectId) && isSignedIn() && (
+          resource.data.ownerId == request.auth.uid ||
+          ('collaboratorIds' in resource.data && request.auth.uid in resource.data.collaboratorIds) ||
+          isAdmin()
+        );
+        allow create: if isValidId(projectId) && isValidId(versionId) && isSignedIn() &&
+          isValidProjectVersion(incoming(), projectId, versionId) &&
+          incoming().createdAt == request.time &&
+          isProjectEditor(get(/databases/$(database)/documents/projects/$(projectId)).data) &&
+          incoming().ownerId == get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId;
+        allow update: if isValidId(projectId) && isValidId(versionId) && isSignedIn() &&
+          isValidProjectVersion(incoming(), projectId, versionId) && (
+            isAdmin() ||
+            (
+              get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['collaboratorIds'])
+            )
+          );
+        allow delete: if isValidId(projectId) && isValidId(versionId) && isSignedIn() && (
+          get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid || isAdmin()
+        );
+      }
+
+      // Project Collaboration Comments (Viewer is strictly read-only)
+      match /comments/{commentId} {
+        allow get: if isValidId(projectId) && isValidId(commentId) && isSignedIn() && (
+          isProjectMember(get(/databases/$(database)/documents/projects/$(projectId)).data) || isAdmin()
+        );
+        allow list: if isValidId(projectId) && isSignedIn() && (
+          resource.data.authorId == request.auth.uid ||
+          ('collaboratorIds' in resource.data && request.auth.uid in resource.data.collaboratorIds) ||
+          isAdmin()
+        );
+        allow create: if isValidId(projectId) && isValidId(commentId) && isSignedIn() &&
+          isValidProjectComment(incoming(), projectId, commentId) &&
+          incoming().authorId == request.auth.uid &&
+          incoming().status == 'open' &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          isProjectEditor(get(/databases/$(database)/documents/projects/$(projectId)).data);
+        allow update: if isValidId(projectId) && isValidId(commentId) && isSignedIn() &&
+          isValidProjectComment(incoming(), projectId, commentId) && (
+            isAdmin() ||
+            (
+              isProjectEditor(get(/databases/$(database)/documents/projects/$(projectId)).data) &&
+              incoming().authorId == existing().authorId &&
+              incoming().projectId == existing().projectId &&
+              incoming().createdAt == existing().createdAt &&
+              incoming().updatedAt == request.time &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['body', 'status', 'resolvedBy', 'updatedAt'])
+            ) ||
+            (
+              get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['collaboratorIds'])
+            )
+          );
+        allow delete: if isValidId(projectId) && isValidId(commentId) && isSignedIn() && (
+          existing().authorId == request.auth.uid ||
+          get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid ||
+          isAdmin()
+        );
+      }
+
+      // Project Collaboration Activity Timeline (Immutable log)
+      match /activity/{activityId} {
+        allow get: if isValidId(projectId) && isValidId(activityId) && isSignedIn() && (
+          isProjectMember(get(/databases/$(database)/documents/projects/$(projectId)).data) || isAdmin()
+        );
+        allow list: if isValidId(projectId) && isSignedIn() && (
+          resource.data.actorId == request.auth.uid ||
+          ('collaboratorIds' in resource.data && request.auth.uid in resource.data.collaboratorIds) ||
+          isAdmin()
+        );
+        allow create: if isValidId(projectId) && isValidId(activityId) && isSignedIn() &&
+          isValidProjectActivityEvent(incoming(), projectId, activityId) &&
+          incoming().actorId == request.auth.uid &&
+          incoming().createdAt == request.time &&
+          isProjectMember(get(/databases/$(database)/documents/projects/$(projectId)).data);
+        allow update: if false;
+        allow delete: if isValidId(projectId) && isValidId(activityId) && isSignedIn() && (
+          get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid || isAdmin()
+        );
+      }
+    }
+
+    // Playgrounds (Private-by-default)
+    match /playgrounds/{playgroundId} {
+      allow get: if isValidId(playgroundId) && (
+        (isSignedIn() && resource == null) ||
+        existing().visibility == 'public' ||
+        (isSignedIn() && existing().ownerId == request.auth.uid) ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.visibility == 'public' ||
+        isAdmin()
+      );
+      allow create: if isValidId(playgroundId) && isSignedIn() &&
+        isValidPlayground(incoming(), playgroundId) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(playgroundId) && isSignedIn() &&
+        isValidPlayground(incoming(), playgroundId) && (
+          isAdmin() ||
+          (
+            existing().ownerId == request.auth.uid &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'html', 'css', 'js', 'visibility', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(playgroundId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    // Challenge Attempts
+    match /challengeAttempts/{attemptId} {
+      allow get: if isValidId(attemptId) && isSignedIn() && (resource == null || existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(attemptId) && isSignedIn() &&
+        isValidChallengeAttempt(incoming(), attemptId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // Idempotent XP Transactions
+    match /xpTransactions/{txId} {
+      allow get: if isValidId(txId) && isSignedIn() && (resource == null || existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(txId) && isSignedIn() &&
+        isValidXpTransaction(incoming(), txId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // Achievements
+    match /achievements/{achievementId} {
+      allow get: if isValidId(achievementId) && isSignedIn() && (resource == null || existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(achievementId) && isSignedIn() &&
+        isValidAchievement(incoming(), achievementId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().unlockedAt == request.time;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // Community Posts
+    match /communityPosts/{postId} {
+      allow get: if isValidId(postId) && isSignedIn() && (
+        resource == null ||
+        existing().visibility == 'public' ||
+        existing().authorId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.visibility == 'public' ||
+        resource.data.authorId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isValidId(postId) && isVerifiedCommunityActor() &&
+        isValidCommunityPost(incoming(), postId) &&
+        incoming().authorId == request.auth.uid &&
+        ((incoming().category != 'announcement' && (!('authorRole' in incoming()) || incoming().authorRole == 'member')) || isAdmin()) &&
+        incoming().likesCount == 0 &&
+        incoming().commentsCount == 0 &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(postId) && isSignedIn() &&
+        isValidCommunityPost(incoming(), postId) && (
+          isAdmin() ||
+          (
+            existing().authorId == request.auth.uid &&
+            incoming().authorId == existing().authorId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'body', 'tags', 'codeSnippet', 'visibility', 'updatedAt'])
+          ) ||
+          (
+            isVerifiedCommunityActor() &&
+            incoming().authorId == existing().authorId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().likesCount >= 0 &&
+            incoming().likesCount <= existing().likesCount + 1 &&
+            incoming().commentsCount >= existing().commentsCount &&
+            incoming().commentsCount <= existing().commentsCount + 1 &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['likesCount', 'commentsCount', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(postId) && isSignedIn() && (existing().authorId == request.auth.uid || isAdmin());
+
+      // Community Post Comments
+      match /comments/{commentId} {
+        allow get: if isValidId(postId) && isValidId(commentId) && isSignedIn() && (
+          get(/databases/$(database)/documents/communityPosts/$(postId)).data.visibility == 'public' ||
+          get(/databases/$(database)/documents/communityPosts/$(postId)).data.authorId == request.auth.uid ||
+          isAdmin()
+        );
+        allow list: if isValidId(postId) && isSignedIn() && resource.data.postId == postId;
+        allow create: if isValidId(postId) && isValidId(commentId) && isVerifiedCommunityActor() &&
+          isValidComment(incoming(), postId, commentId) &&
+          incoming().authorId == request.auth.uid &&
+          ((!('authorRole' in incoming()) || incoming().authorRole == 'member') || isAdmin()) &&
+          incoming().createdAt == request.time &&
+          exists(/databases/$(database)/documents/communityPosts/$(postId));
+        allow update: if false;
+        allow delete: if isValidId(postId) && isValidId(commentId) && isSignedIn() && (existing().authorId == request.auth.uid || isAdmin());
+      }
+    }
+
+    // Moderation Reports
+    match /reports/{reportId} {
+      allow get: if isValidId(reportId) && isSignedIn() && (resource == null || existing().reporterId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.reporterId == request.auth.uid || isAdmin());
+      allow create: if isValidId(reportId) && isVerifiedCommunityActor() &&
+        isValidReport(incoming(), reportId) &&
+        incoming().reporterId == request.auth.uid &&
+        incoming().status == 'open' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(reportId) && isAdmin() &&
+        isValidReport(incoming(), reportId) &&
+        incoming().updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId) && isSignedIn() && (resource == null || existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(notificationId) && isSignedIn() &&
+        isValidNotification(incoming(), notificationId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if isValidId(notificationId) && isSignedIn() &&
+        isValidNotification(incoming(), notificationId) &&
+        existing().userId == request.auth.uid &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isValidId(notificationId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Career Progress
+    match /userCareerProgress/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow create: if isValidId(userId) && isOwner(userId) &&
+        isValidCareerProgress(incoming(), userId) &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) && isOwner(userId) &&
+        isValidCareerProgress(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'selectedPathId', 'completedSkillIds', 'completedProjectIds', 'updatedAt'
+        ]);
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // AI Conversations
+    match /aiConversations/{conversationId} {
+      allow get: if isValidId(conversationId) && isSignedIn() && (resource == null || existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(conversationId) && isSignedIn() &&
+        isValidAiConversation(incoming(), conversationId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(conversationId) && isSignedIn() &&
+        isValidAiConversation(incoming(), conversationId) &&
+        existing().userId == request.auth.uid &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'mode', 'messages', 'updatedAt']);
+      allow delete: if isValidId(conversationId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Admin Audit Logs
+    match /adminAuditLogs/{logId} {
+      allow get, list: if isAdmin();
+      allow create: if isValidId(logId) && isAdmin() &&
+        isValidAdminAuditLog(incoming(), logId) &&
+        incoming().adminId == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Mission Mode Collections
+    // -------------------------------------------------------------------------
+
+    // Missions catalog (published readable by signed-in learners, Quality Gate enforced)
+    match /missions/{missionId} {
+      allow get: if isValidId(missionId) && isSignedIn() && (
+        resource == null ||
+        existing().status == 'published' ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.status == 'published' ||
+        isAdmin()
+      );
+      allow create: if isValidId(missionId) && isAdmin() &&
+        isValidMission(incoming(), missionId) &&
+        (incoming().status != 'published' || ('qualityStatus' in incoming() && incoming().qualityStatus == 'approved')) &&
+        incoming().authorId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(missionId) && isAdmin() &&
+        isValidMission(incoming(), missionId) &&
+        (incoming().status != 'published' || ('qualityStatus' in incoming() && incoming().qualityStatus == 'approved')) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(missionId) && isAdmin();
+    }
+
+    // Mission Checkpoints
+    match /missionCheckpoints/{checkpointId} {
+      allow get: if isValidId(checkpointId) && isSignedIn() && (
+        resource == null ||
+        existing().status == 'active' ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.status == 'active' ||
+        isAdmin()
+      );
+      allow create: if isValidId(checkpointId) && isAdmin() &&
+        isValidMissionCheckpoint(incoming(), checkpointId) &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(checkpointId) && isAdmin() &&
+        isValidMissionCheckpoint(incoming(), checkpointId) &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(checkpointId) && isAdmin();
+    }
+
+    // Mission Starter Templates
+    match /missionTemplates/{templateId} {
+      allow get: if isValidId(templateId) && isSignedIn() && (
+        resource == null ||
+        existing().status == 'active' ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.status == 'active' ||
+        isAdmin()
+      );
+      allow create: if isValidId(templateId) && isAdmin() &&
+        isValidMissionTemplate(incoming(), templateId) &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(templateId) && isAdmin() &&
+        isValidMissionTemplate(incoming(), templateId) &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(templateId) && isAdmin();
+    }
+
+    // Mission Rewards Schedule
+    match /missionRewards/{rewardId} {
+      allow get: if isValidId(rewardId) && isSignedIn() && (
+        resource == null ||
+        existing().status == 'active' ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.status == 'active' ||
+        isAdmin()
+      );
+      allow create: if isValidId(rewardId) && isAdmin() &&
+        isValidMissionReward(incoming(), rewardId) &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(rewardId) && isAdmin() &&
+        isValidMissionReward(incoming(), rewardId) &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(rewardId) && isAdmin();
+    }
+
+    // User Mission Attempts (Private per user, terminal completion locking)
+    match /missionAttempts/{attemptId} {
+      allow get: if isValidId(attemptId) && isSignedIn() && (
+        resource == null ||
+        existing().userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isValidId(attemptId) && isSignedIn() &&
+        isValidMissionAttempt(incoming(), attemptId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().status == 'in_progress' &&
+        incoming().rewardsGranted == false &&
+        incoming().xpAwarded == 0 &&
+        incoming().addedToPassport == false &&
+        incoming().startedAt == request.time &&
+        incoming().lastActivityAt == request.time;
+      allow update: if isValidId(attemptId) && isSignedIn() &&
+        isValidMissionAttempt(incoming(), attemptId) && (
+          isAdmin() ||
+          (
+            existing().userId == request.auth.uid &&
+            incoming().userId == existing().userId &&
+            incoming().missionId == existing().missionId &&
+            incoming().startedAt == existing().startedAt &&
+            incoming().lastActivityAt == request.time &&
+            (
+              // Action 1: Workspace edits & checkpoint progression (only while not yet completed)
+              (
+                existing().status != 'completed' &&
+                incoming().status in ['in_progress', 'submitted', 'needs_improvement', 'archived'] &&
+                incoming().rewardsGranted == false &&
+                incoming().xpAwarded == 0 &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'status', 'currentCheckpointId', 'completedCheckpointIds',
+                  'acknowledgedStepIds', 'files', 'version', 'checkpointFeedback',
+                  'lastActivityAt'
+                ])
+              ) ||
+              // Action 2: Verified completion transition
+              (
+                existing().status != 'completed' &&
+                incoming().status == 'completed' &&
+                incoming().completedAt == request.time &&
+                incoming().xpAwarded >= 0 &&
+                incoming().xpAwarded <= 250 &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'status', 'currentCheckpointId', 'completedCheckpointIds',
+                  'acknowledgedStepIds', 'files', 'version', 'checkpointFeedback',
+                  'rewardsGranted', 'xpAwarded', 'unlockedBadgeIds',
+                  'lastActivityAt', 'completedAt'
+                ])
+              ) ||
+              // Action 3: Export completed project to Skill Passport / Portfolio (terminal state preserved)
+              (
+                existing().status == 'completed' &&
+                incoming().status == 'completed' &&
+                incoming().rewardsGranted == existing().rewardsGranted &&
+                incoming().xpAwarded == existing().xpAwarded &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'addedToPassport', 'portfolioProjectId', 'lastActivityAt'
+                ])
+              )
+            )
+          )
+        );
+      allow delete: if isValidId(attemptId) && isAdmin();
+    }
+
+    // Mission Submissions (Strictly immutable historical snapshots)
+    match /missionSubmissions/{submissionId} {
+      allow get: if isValidId(submissionId) && isSignedIn() && (
+        resource == null ||
+        existing().userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isValidId(submissionId) && isSignedIn() &&
+        isValidMissionSubmission(incoming(), submissionId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(submissionId) && isAdmin();
+    }
+
+    // Mission Evaluations (Strictly immutable server evaluation reports)
+    match /missionEvaluations/{evaluationId} {
+      allow get: if isValidId(evaluationId) && isSignedIn() && (
+        resource == null ||
+        existing().userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isValidId(evaluationId) && isSignedIn() &&
+        isValidMissionEvaluation(incoming(), evaluationId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(evaluationId) && isAdmin();
+    }
+
+    // Mission Attempt Workspace Version Snapshots
+    match /missionAttempts/{attemptId}/versions/{versionId} {
+      allow get: if isValidId(attemptId) && isValidId(versionId) && isSignedIn() && (
+        get(/databases/$(database)/documents/missionAttempts/$(attemptId)).data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isValidId(attemptId) && isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isValidId(attemptId) && isValidId(versionId) && isSignedIn() &&
+        isValidMissionAttemptVersion(incoming(), attemptId, versionId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        get(/databases/$(database)/documents/missionAttempts/$(attemptId)).data.userId == request.auth.uid;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // Mission Hint History
+    match /missionHintHistory/{hintRecordId} {
+      allow get: if isValidId(hintRecordId) && isSignedIn() && (
+        resource == null ||
+        existing().userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isValidId(hintRecordId) && isSignedIn() &&
+        isValidMissionHintHistory(incoming(), hintRecordId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().openedAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(hintRecordId) && isSignedIn() && (
+        existing().userId == request.auth.uid || isAdmin()
+      );
+    }
+
+    // Platform Config (Adaptive Difficulty Rules - Admin Managed)
+    match /platformConfig/{configId} {
+      allow get: if isValidId(configId) && isSignedIn();
+      allow create, update: if isValidId(configId) && isAdmin() &&
+        isValidAdaptiveDifficultyConfig(incoming(), configId) &&
+        incoming().updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    // Mission Readiness Assessment Results (Owner & Admin Only)
+    match /missionReadinessResults/{resultId} {
+      allow get: if isValidId(resultId) && isSignedIn() && (
+        resource == null ||
+        existing().userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isValidId(resultId) && isSignedIn() &&
+        isValidMissionReadinessResult(incoming(), resultId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if isValidId(resultId) && isSignedIn() &&
+        isValidMissionReadinessResult(incoming(), resultId) &&
+        existing().userId == request.auth.uid &&
+        incoming().userId == existing().userId &&
+        incoming().missionId == existing().missionId &&
+        incoming().createdAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'scorePct', 'passedCount', 'totalCount', 'ready',
+          'weakSkills', 'recommendedLessons', 'answers', 'createdAt'
+        ]);
+      allow delete: if isValidId(resultId) && isSignedIn() && (
+        existing().userId == request.auth.uid || isAdmin()
+      );
+    }
+
+    // Mission Quality Ratings (Optional, 1 per user per mission via deterministic ID)
+    match /missionRatings/{ratingId} {
+      allow get: if isSignedIn() && (
+        resource == null ||
+        existing().userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() &&
+        isValidMissionRating(incoming(), ratingId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isSignedIn() &&
+        isValidMissionRating(incoming(), ratingId) && (
+          isAdmin() ||
+          (
+            existing().userId == request.auth.uid &&
+            incoming().userId == existing().userId &&
+            incoming().missionId == existing().missionId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'difficultyRating', 'clarityRating', 'usefulnessRating',
+              'starterQualityRating', 'overallRating', 'comment', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Custom User-Authored Missions (Practice-Only, Zero Official Rewards)
+    match /customMissions/{missionId} {
+      allow get: if isValidId(missionId) && isSignedIn() && (
+        resource == null ||
+        existing().authorId == request.auth.uid ||
+        (existing().visibility == 'shared' && existing().status == 'active') ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.authorId == request.auth.uid ||
+        (resource.data.visibility == 'shared' && resource.data.status == 'active') ||
+        isAdmin()
+      );
+      allow create: if isValidId(missionId) && isSignedIn() &&
+        isValidCustomMission(incoming(), missionId) &&
+        incoming().authorId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(missionId) && isSignedIn() &&
+        isValidCustomMission(incoming(), missionId) && (
+          isAdmin() ||
+          (
+            existing().authorId == request.auth.uid &&
+            incoming().authorId == existing().authorId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'description', 'scenario', 'category', 'language', 'difficulty',
+              'skills', 'learningObjectives', 'requirements', 'checkpoints', 'starterFiles',
+              'hints', 'completionCriteria', 'personalDeadline', 'visibility', 'status', 'updatedAt'
+            ])
+          ) ||
+          (
+            existing().visibility == 'shared' &&
+            incoming().authorId == existing().authorId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['reportedCount', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(missionId) && isSignedIn() && (existing().authorId == request.auth.uid || isAdmin());
+    }
+
+    // Mission Collaboration Teams (Role-Based Editor/Viewer Permissions)
+    match /missionTeams/{teamId} {
+      allow get: if isValidId(teamId) && isSignedIn() && (
+        resource == null ||
+        request.auth.uid in existing().memberIds ||
+        exists(/databases/$(database)/documents/missionTeamInvites/$(teamId + '_' + request.auth.uid)) ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        request.auth.uid in resource.data.memberIds ||
+        isAdmin()
+      );
+      allow create: if isValidId(teamId) && isSignedIn() &&
+        isValidMissionTeam(incoming(), teamId) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().memberRoles[request.auth.uid] == 'owner' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(teamId) && isSignedIn() &&
+        isValidMissionTeam(incoming(), teamId) && (
+          isAdmin() ||
+          (
+            existing().ownerId == request.auth.uid &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().missionId == existing().missionId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'memberIds', 'memberRoles', 'memberNames', 'checkpointAssignments',
+              'files', 'version', 'completedCheckpointIds', 'contributions',
+              'status', 'lastEditedByUid', 'lastEditedByName', 'updatedAt'
+            ])
+          ) ||
+          (
+            request.auth.uid in existing().memberIds &&
+            existing().memberRoles[request.auth.uid] == 'editor' &&
+            existing().status != 'completed' &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().missionId == existing().missionId &&
+            incoming().memberIds == existing().memberIds &&
+            incoming().memberRoles == existing().memberRoles &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'files', 'version', 'completedCheckpointIds', 'contributions',
+              'status', 'lastEditedByUid', 'lastEditedByName', 'updatedAt'
+            ])
+          ) ||
+          (
+            !(request.auth.uid in existing().memberIds) &&
+            exists(/databases/$(database)/documents/missionTeamInvites/$(teamId + '_' + request.auth.uid)) &&
+            request.auth.uid in incoming().memberIds &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().missionId == existing().missionId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().memberRoles[request.auth.uid] == get(/databases/$(database)/documents/missionTeamInvites/$(teamId + '_' + request.auth.uid)).data.role &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['memberIds', 'memberRoles', 'memberNames', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(teamId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    // Mission Team Invites (Deterministic ID: teamId_inviteeUid)
+    match /missionTeamInvites/{inviteId} {
+      allow get: if isSignedIn() && (
+        resource == null ||
+        existing().inviterId == request.auth.uid ||
+        existing().inviteeUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.inviteeUid == request.auth.uid ||
+        resource.data.inviterId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() &&
+        isValidMissionTeamInvite(incoming(), inviteId) &&
+        incoming().inviterId == request.auth.uid &&
+        incoming().status == 'pending' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        get(/databases/$(database)/documents/missionTeams/$(incoming().teamId)).data.ownerId == request.auth.uid;
+      allow update: if isSignedIn() &&
+        isValidMissionTeamInvite(incoming(), inviteId) && (
+          isAdmin() ||
+          (
+            existing().inviteeUid == request.auth.uid &&
+            incoming().teamId == existing().teamId &&
+            incoming().inviterId == existing().inviterId &&
+            incoming().inviteeUid == existing().inviteeUid &&
+            incoming().role == existing().role &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().status in ['accepted', 'declined'] &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'inviteeName', 'updatedAt'])
+          )
+        );
+      allow delete: if isSignedIn() && (
+        existing().inviterId == request.auth.uid ||
+        existing().inviteeUid == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // Real-time Mission Mode Leaderboard (non-PII public performance metrics)
+    match /missionLeaderboard/{entryId} {
+      allow get, list: if isSignedIn();
+      allow create: if isValidId(entryId) && isSignedIn() &&
+        isValidMissionLeaderboardEntry(incoming(), entryId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(entryId) && isSignedIn() &&
+        isValidMissionLeaderboardEntry(incoming(), entryId) && (
+          isAdmin() ||
+          (
+            existing().userId == request.auth.uid &&
+            incoming().userId == existing().userId &&
+            incoming().missionId == existing().missionId &&
+            incoming().updatedAt == request.time
+          )
+        );
+      allow delete: if isValidId(entryId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+    }
+
+    // -------------------------------------------------------------------------
+    // Five Major Development Systems Collections
+    // -------------------------------------------------------------------------
+
+    // Shared Project Collaboration Invitations (Email-targeted with deterministic ID)
+    match /projectInvitations/{inviteId} {
+      allow get: if isValidId(inviteId) && isSignedIn() && (
+        resource == null ||
+        existing().inviterId == request.auth.uid ||
+        (hasAuthEmail() && existing().inviteeEmail == authEmailLower()) ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.inviterId == request.auth.uid ||
+        (hasAuthEmail() && resource.data.inviteeEmail == authEmailLower()) ||
+        isAdmin()
+      );
+      allow create: if isValidId(inviteId) && isSignedIn() &&
+        isValidProjectInvitation(incoming(), inviteId) &&
+        incoming().inviterId == request.auth.uid &&
+        incoming().status == 'pending' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        get(/databases/$(database)/documents/projects/$(incoming().projectId)).data.ownerId == request.auth.uid;
+      allow update: if isValidId(inviteId) && isSignedIn() &&
+        isValidProjectInvitation(incoming(), inviteId) && (
+          isAdmin() ||
+          (
+            hasAuthEmail() &&
+            existing().inviteeEmail == authEmailLower() &&
+            existing().status == 'pending' &&
+            incoming().status in ['accepted', 'declined'] &&
+            incoming().projectId == existing().projectId &&
+            incoming().inviterId == existing().inviterId &&
+            incoming().inviteeEmail == existing().inviteeEmail &&
+            incoming().role == existing().role &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          ) ||
+          (
+            existing().inviterId == request.auth.uid &&
+            incoming().projectId == existing().projectId &&
+            incoming().inviterId == existing().inviterId &&
+            incoming().inviteeEmail == existing().inviteeEmail &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().status in ['pending', 'cancelled'] &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'role', 'inviteSignature', 'expiresAt', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(inviteId) && isSignedIn() && (
+        existing().inviterId == request.auth.uid ||
+        (hasAuthEmail() && existing().inviteeEmail == authEmailLower()) ||
+        isAdmin()
+      );
+    }
+
+    // TestLab Test Suites
+    match /testSuites/{suiteId} {
+      allow get: if isValidId(suiteId) && isSignedIn() && (
+        resource == null ||
+        existing().userId == request.auth.uid ||
+        ('collaboratorIds' in existing() && request.auth.uid in existing().collaboratorIds) ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        ('collaboratorIds' in resource.data && request.auth.uid in resource.data.collaboratorIds) ||
+        isAdmin()
+      );
+      allow create: if isValidId(suiteId) && isSignedIn() &&
+        isValidTestSuite(incoming(), suiteId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isProjectEditor(get(/databases/$(database)/documents/projects/$(incoming().projectId)).data);
+      allow update: if isValidId(suiteId) && isSignedIn() &&
+        isValidTestSuite(incoming(), suiteId) && (
+          isAdmin() ||
+          (
+            incoming().userId == existing().userId &&
+            incoming().projectId == existing().projectId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            isProjectEditor(get(/databases/$(database)/documents/projects/$(existing().projectId)).data) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'cases', 'approved', 'collaboratorIds', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(suiteId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // TestLab Execution Runs (Immutable historical results & coverage)
+    match /testRuns/{runId} {
+      allow get: if isValidId(runId) && isSignedIn() && (
+        resource == null ||
+        existing().userId == request.auth.uid ||
+        ('collaboratorIds' in existing() && request.auth.uid in existing().collaboratorIds) ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        ('collaboratorIds' in resource.data && request.auth.uid in resource.data.collaboratorIds) ||
+        isAdmin()
+      );
+      allow create: if isValidId(runId) && isSignedIn() &&
+        isValidTestRunSession(incoming(), runId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        isProjectMember(get(/databases/$(database)/documents/projects/$(incoming().projectId)).data);
+      allow update: if false;
+      allow delete: if isValidId(runId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Architect Plans & Sub-Versions
+    match /architectures/{archId} {
+      allow get: if isValidId(archId) && isSignedIn() && (
+        resource == null ||
+        existing().userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      allow create: if isValidId(archId) && isSignedIn() &&
+        isValidArchitecturePlan(incoming(), archId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(archId) && isSignedIn() &&
+        isValidArchitecturePlan(incoming(), archId) && (
+          isAdmin() ||
+          (
+            existing().userId == request.auth.uid &&
+            incoming().userId == existing().userId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'projectId', 'title', 'prompt', 'overview', 'frontendSpec',
+              'backendSpec', 'authSpec', 'techStack', 'modules',
+              'databaseTables', 'apiEndpoints', 'diagrams', 'versionNumber',
+              'status', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(archId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+
+      match /versions/{versionId} {
+        allow get: if isValidId(archId) && isValidId(versionId) && isSignedIn() && (
+          get(/databases/$(database)/documents/architectures/$(archId)).data.userId == request.auth.uid || isAdmin()
+        );
+        allow list: if isValidId(archId) && isSignedIn() && (
+          resource.data.userId == request.auth.uid || isAdmin()
+        );
+        allow create: if isValidId(archId) && isValidId(versionId) && isSignedIn() &&
+          isValidArchitectureVersion(incoming(), archId, versionId) &&
+          incoming().userId == request.auth.uid &&
+          incoming().createdAt == request.time &&
+          get(/databases/$(database)/documents/architectures/$(archId)).data.userId == request.auth.uid;
+        allow update: if false;
+        allow delete: if isValidId(archId) && isValidId(versionId) && isSignedIn() && (
+          get(/databases/$(database)/documents/architectures/$(archId)).data.userId == request.auth.uid || isAdmin()
+        );
+      }
+    }
+
+    // Developer Insights Activity Feed (Strictly User-Scoped & Owner-Deletable)
+    match /activityEvents/{eventId} {
+      allow get: if isValidId(eventId) && isSignedIn() && (
+        resource == null ||
+        existing().userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      allow create: if isValidId(eventId) && isSignedIn() &&
+        isValidActivityEvent(incoming(), eventId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(eventId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+  }
+}
