@@ -48,6 +48,65 @@ import type {
   ActivityCategory,
 } from '../types/mideocode';
 
+const utf8Encoder = new TextEncoder();
+
+export function utf8ByteLength(value: string): number {
+  return utf8Encoder.encode(value || '').length;
+}
+
+export function truncateToUtf8Bytes(value: string, maxBytes: number): string {
+  const input = value || '';
+  if (maxBytes <= 0 || !input) return '';
+  if (utf8ByteLength(input) <= maxBytes) return input;
+  // Binary search character boundary so multi-byte UTF-8 never exceeds maxBytes
+  let lo = 0;
+  let hi = Math.min(input.length, maxBytes);
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (utf8ByteLength(input.slice(0, mid)) <= maxBytes) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return input.slice(0, lo);
+}
+
+export function buildBoundedVersionSnapshot(
+  files: { name: string; folder?: string; language: string; content: string }[],
+  maxFiles = 40,
+  maxTotalBytes = 480_000,
+): ProjectVersionSnapshot[] {
+  const capped = files.slice(0, Math.min(50, maxFiles));
+  if (capped.length === 0) return [];
+  const perFileBudget = Math.max(2048, Math.floor(maxTotalBytes / capped.length));
+  const snapshot: ProjectVersionSnapshot[] = [];
+  let runningBytes = 0;
+
+  for (const f of capped) {
+    const remainingBudget = Math.max(0, maxTotalBytes - runningBytes);
+    if (remainingBudget < 512) break;
+    const allowedContentBytes = Math.min(18_000, perFileBudget, remainingBudget - 256);
+    const safeName = truncateToUtf8Bytes((f.name || 'file.txt').trim() || 'file.txt', 120);
+    const safeFolder = truncateToUtf8Bytes((f.folder || '').trim(), 120);
+    const safeLang = truncateToUtf8Bytes((f.language || 'text').trim() || 'text', 32);
+    const safeContent = truncateToUtf8Bytes(f.content || '', Math.max(0, allowedContentBytes));
+    runningBytes +=
+      utf8ByteLength(safeName) +
+      utf8ByteLength(safeFolder) +
+      utf8ByteLength(safeLang) +
+      utf8ByteLength(safeContent) +
+      96;
+    snapshot.push({
+      name: safeName,
+      folder: safeFolder,
+      language: safeLang,
+      content: safeContent,
+    });
+  }
+  return snapshot;
+}
+
 export function sanitizeForFirestore<T>(value: T): T {
   if (Array.isArray(value)) {
     return value
@@ -853,14 +912,24 @@ export async function createProjectWithFiles(
   },
 ): Promise<{ project: Project; files: ProjectFile[] }> {
   const projectId = `proj_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  const totalBytes = input.files.reduce((acc, f) => acc + new Blob([f.content]).size, 0);
+  const safeOwnerName = truncateToUtf8Bytes((ownerName || '').trim() || 'Developer', 80) || 'Developer';
+
+  const normalizedFiles = input.files.slice(0, 80).map((f) => ({
+    name: truncateToUtf8Bytes((f.name || 'file.txt').trim() || 'file.txt', 120),
+    folder: truncateToUtf8Bytes((f.folder || '').trim(), 120),
+    language: truncateToUtf8Bytes((f.language || 'javascript').trim() || 'javascript', 32),
+    content: truncateToUtf8Bytes(f.content || '', 145_000),
+  }));
+
+  const rawBytes = normalizedFiles.reduce((acc, f) => acc + utf8ByteLength(f.content), 0);
+  const totalBytes = Math.max(0, Math.min(5_000_000, rawBytes));
 
   const projectPayload: Record<string, unknown> = {
     id: projectId,
     ownerId: uid,
-    ownerName: ownerName.slice(0, 80),
-    title: input.title.trim().slice(0, 120) || 'Untitled Workspace',
-    description: input.description.trim().slice(0, 1000),
+    ownerName: safeOwnerName,
+    title: truncateToUtf8Bytes(input.title.trim() || 'Untitled Workspace', 120) || 'Untitled Workspace',
+    description: truncateToUtf8Bytes(input.description.trim(), 1000),
     language: input.language,
     visibility: 'private',
     isPortfolio: false,
@@ -872,35 +941,35 @@ export async function createProjectWithFiles(
     updatedAt: serverTimestamp(),
   };
   if (input.guidedProjectId) {
-    projectPayload.guidedProjectId = input.guidedProjectId.slice(0, 80);
+    projectPayload.guidedProjectId = truncateToUtf8Bytes(input.guidedProjectId, 80);
   }
   if (input.architectureId) {
-    projectPayload.architectureId = input.architectureId.slice(0, 128);
+    projectPayload.architectureId = truncateToUtf8Bytes(input.architectureId, 128);
   }
 
   try {
     await setDoc(doc(db, 'projects', projectId), projectPayload);
 
     const createdFiles: ProjectFile[] = [];
-    for (let i = 0; i < input.files.length; i++) {
-      const f = input.files[i];
+    for (let i = 0; i < normalizedFiles.length; i++) {
+      const f = normalizedFiles[i];
       const fileId = `file_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`;
       const fileDoc = {
         id: fileId,
         projectId,
         ownerId: uid,
-        name: f.name.slice(0, 120),
-        folder: f.folder.slice(0, 120),
-        language: f.language.slice(0, 32),
+        name: f.name,
+        folder: f.folder,
+        language: f.language,
         visibility: 'private' as const,
-        content: f.content.slice(0, 150000),
+        content: f.content,
         updatedAt: serverTimestamp(),
       };
       await setDoc(doc(db, 'projects', projectId, 'files', fileId), fileDoc);
       createdFiles.push(fileDoc as unknown as ProjectFile);
     }
 
-    // Create initial version snapshot v1
+    // Create initial bounded version snapshot v1 (strictly < 1 MiB Firestore doc cap)
     const vId = `v1_${Date.now()}`;
     await setDoc(doc(db, 'projects', projectId, 'versions', vId), {
       id: vId,
@@ -909,22 +978,17 @@ export async function createProjectWithFiles(
       versionNumber: 1,
       label: 'Initial workspace snapshot',
       authorId: uid,
-      authorName: ownerName.slice(0, 80),
+      authorName: safeOwnerName,
       changeType: input.architectureId ? 'ai_build' : 'manual',
-      changedFiles: input.files.map((f) => (f.folder ? `${f.folder}/${f.name}` : f.name)).slice(0, 50),
-      filesCount: input.files.length,
-      snapshot: input.files.slice(0, 30).map((f) => ({
-        name: f.name,
-        folder: f.folder,
-        language: f.language,
-        content: f.content.slice(0, 20000),
-      })),
+      changedFiles: normalizedFiles.map((f) => (f.folder ? `${f.folder}/${f.name}` : f.name)).slice(0, 50),
+      filesCount: normalizedFiles.length,
+      snapshot: buildBoundedVersionSnapshot(normalizedFiles),
       createdAt: serverTimestamp(),
     });
 
     await recordDeveloperActivity(uid, {
       category: 'project',
-      action: `Created project "${input.title}"`,
+      action: `Created project "${truncateToUtf8Bytes(input.title, 80)}"`,
       language: input.language,
       aiAssisted: Boolean(input.architectureId),
       projectId,
@@ -1018,24 +1082,29 @@ export async function forceOverwriteProjectFile(
   editorMeta?: { uid: string; name: string },
 ): Promise<number> {
   try {
+    const projSnap = await getDoc(doc(db, 'projects', projectId));
+    const currentProj = projSnap.data() as Project | undefined;
+    const baseVersion = Math.max(serverVersion, currentProj?.version ?? 1);
+    const newVersion = Math.min(10000, baseVersion + 1);
+    const safeBytes = Math.max(0, Math.min(5_000_000, Math.round(allFilesTotalBytes)));
+
     const filePatch: Record<string, unknown> = {
-      content: content.slice(0, 150000),
+      content: truncateToUtf8Bytes(content, 145_000),
       updatedAt: serverTimestamp(),
     };
     if (editorMeta) {
       filePatch.lastEditedByUid = editorMeta.uid;
-      filePatch.lastEditedByName = editorMeta.name.slice(0, 80);
+      filePatch.lastEditedByName = truncateToUtf8Bytes((editorMeta.name || '').trim() || 'Developer', 80);
     }
     await updateDoc(doc(db, 'projects', projectId, 'files', fileId), filePatch);
-    const newVersion = serverVersion + 1;
     const projPatch: Record<string, unknown> = {
       version: newVersion,
-      storageBytes: allFilesTotalBytes,
+      storageBytes: safeBytes,
       updatedAt: serverTimestamp(),
     };
     if (editorMeta) {
       projPatch.lastEditedByUid = editorMeta.uid;
-      projPatch.lastEditedByName = editorMeta.name.slice(0, 80);
+      projPatch.lastEditedByName = truncateToUtf8Bytes((editorMeta.name || '').trim() || 'Developer', 80);
     }
     await updateDoc(doc(db, 'projects', projectId), projPatch);
     return newVersion;
@@ -1059,11 +1128,11 @@ export async function addProjectFile(
       id: fileId,
       projectId,
       ownerId,
-      name: file.name.slice(0, 120),
-      folder: file.folder.slice(0, 120),
-      language: file.language.slice(0, 32),
+      name: truncateToUtf8Bytes(file.name.trim() || 'file.txt', 120),
+      folder: truncateToUtf8Bytes(file.folder.trim(), 120),
+      language: truncateToUtf8Bytes(file.language.trim() || 'javascript', 32),
       visibility: file.visibility,
-      content: file.content.slice(0, 150000),
+      content: truncateToUtf8Bytes(file.content, 145_000),
       collaboratorIds: proj?.collaboratorIds && proj.collaboratorIds.length > 0 ? proj.collaboratorIds : undefined,
       lastEditedByUid: uid,
       updatedAt: serverTimestamp(),
@@ -1073,6 +1142,124 @@ export async function addProjectFile(
     return snap.data() as ProjectFile;
   } catch (err) {
     handleFirestoreError(err, OperationType.CREATE, `projects/${projectId}/files/${fileId}`);
+  }
+}
+
+export async function mergeImportedFilesIntoProject(
+  uid: string,
+  editorName: string,
+  projectId: string,
+  existingFiles: ProjectFile[],
+  incomingFiles: { name: string; folder: string; language: string; content: string }[],
+): Promise<{
+  files: ProjectFile[];
+  addedCount: number;
+  updatedCount: number;
+  skippedForLimitCount: number;
+}> {
+  try {
+    const projSnap = await getDoc(doc(db, 'projects', projectId));
+    const proj = projSnap.data() as Project | undefined;
+    if (!proj) {
+      throw new Error('Selected project could not be found.');
+    }
+
+    const getRelPath = (f: { folder?: string; name: string }) => {
+      const cleanFolder = (f.folder || '').replace(/^\/+|\/+$/g, '');
+      return cleanFolder ? `${cleanFolder}/${f.name}` : f.name;
+    };
+
+    const byPath = new Map<string, ProjectFile>();
+    for (const f of existingFiles) {
+      byPath.set(getRelPath(f), f);
+    }
+
+    let runningBytes = existingFiles.reduce((s, f) => s + utf8ByteLength(f.content || ''), 0);
+    let currentFileCount = existingFiles.length;
+    let addedCount = 0;
+    let updatedCount = 0;
+    let skippedForLimitCount = 0;
+    const safeEditorName = truncateToUtf8Bytes((editorName || '').trim() || 'Developer', 80) || 'Developer';
+
+    for (let i = 0; i < incomingFiles.length; i++) {
+      const item = incomingFiles[i];
+      const safeName = truncateToUtf8Bytes((item.name || 'file.txt').trim() || 'file.txt', 120);
+      const safeFolder = truncateToUtf8Bytes((item.folder || '').trim(), 120);
+      const safeLang = truncateToUtf8Bytes((item.language || 'javascript').trim() || 'javascript', 32);
+      const safeContent = truncateToUtf8Bytes(item.content || '', 145_000);
+      const rel = safeFolder ? `${safeFolder}/${safeName}` : safeName;
+      const existing = byPath.get(rel);
+      const nextBytes = utf8ByteLength(safeContent);
+
+      if (existing) {
+        const delta = nextBytes - utf8ByteLength(existing.content || '');
+        if (runningBytes + delta > 4_800_000) {
+          skippedForLimitCount++;
+          continue;
+        }
+        await updateDoc(doc(db, 'projects', projectId, 'files', existing.id), {
+          content: safeContent,
+          language: safeLang,
+          lastEditedByUid: uid,
+          lastEditedByName: safeEditorName,
+          updatedAt: serverTimestamp(),
+        });
+        runningBytes += delta;
+        updatedCount++;
+      } else {
+        if (currentFileCount >= 90 || runningBytes + nextBytes > 4_800_000) {
+          skippedForLimitCount++;
+          continue;
+        }
+        const fileId = `file_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`;
+        const payload = sanitizeForFirestore<Record<string, unknown>>({
+          id: fileId,
+          projectId,
+          ownerId: proj.ownerId,
+          name: safeName,
+          folder: safeFolder,
+          language: safeLang,
+          visibility: proj.visibility,
+          content: safeContent,
+          collaboratorIds:
+            proj.collaboratorIds && proj.collaboratorIds.length > 0 ? proj.collaboratorIds : undefined,
+          lastEditedByUid: uid,
+          lastEditedByName: safeEditorName,
+          updatedAt: serverTimestamp(),
+        });
+        await setDoc(doc(db, 'projects', projectId, 'files', fileId), payload);
+        runningBytes += nextBytes;
+        currentFileCount++;
+        addedCount++;
+      }
+    }
+
+    const freshFiles = await getProjectFiles(projectId);
+    const totalBytes = Math.min(
+      5_000_000,
+      freshFiles.reduce((s, f) => s + utf8ByteLength(f.content || ''), 0),
+    );
+    const nextVersion = Math.min(10000, (proj.version || 1) + 1);
+
+    await updateDoc(doc(db, 'projects', projectId), {
+      version: nextVersion,
+      storageBytes: totalBytes,
+      lastEditedByUid: uid,
+      lastEditedByName: safeEditorName,
+      updatedAt: serverTimestamp(),
+    });
+
+    await recordDeveloperActivity(uid, {
+      category: 'project',
+      action: `Imported ${addedCount + updatedCount} file(s) into "${proj.title}"`,
+      language: proj.language,
+      aiAssisted: false,
+      projectId,
+    });
+
+    return { files: freshFiles, addedCount, updatedCount, skippedForLimitCount };
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `projects/${projectId}/files`);
   }
 }
 
@@ -1152,37 +1339,35 @@ export async function createProjectVersionSnapshot(
   const versionId = `ver_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   const ref = doc(db, 'projects', projectId, 'versions', versionId);
   try {
-    const snapshot: ProjectVersionSnapshot[] = files.slice(0, 30).map((f) => ({
-      name: f.name,
-      folder: f.folder,
-      language: f.language,
-      content: f.content.slice(0, 20000),
-    }));
+    const snapshot = buildBoundedVersionSnapshot(files);
+    const safeVersionNum = Math.max(1, Math.min(10000, Math.round(versionNumber)));
     const payload = sanitizeForFirestore<Record<string, unknown>>({
       id: versionId,
       projectId,
       ownerId: options?.ownerId || uid,
-      versionNumber,
-      label: label.trim().slice(0, 120) || `Snapshot v${versionNumber}`,
-      description: options?.description?.trim().slice(0, 500) || undefined,
+      versionNumber: safeVersionNum,
+      label: truncateToUtf8Bytes(label.trim() || `Snapshot v${safeVersionNum}`, 120) || `Snapshot v${safeVersionNum}`,
+      description: options?.description?.trim()
+        ? truncateToUtf8Bytes(options.description.trim(), 500)
+        : undefined,
       authorId: uid,
-      authorName: options?.authorName?.slice(0, 80) || undefined,
+      authorName: options?.authorName ? truncateToUtf8Bytes(options.authorName, 80) : undefined,
       changeType: options?.changeType || 'manual',
-      aiOperation: options?.aiOperation?.slice(0, 240) || undefined,
+      aiOperation: options?.aiOperation ? truncateToUtf8Bytes(options.aiOperation, 240) : undefined,
       changedFiles: options?.changedFiles?.slice(0, 50) || undefined,
       parentVersionId: options?.parentVersionId?.slice(0, 128) || undefined,
       collaboratorIds:
         options?.collaboratorIds && options.collaboratorIds.length > 0
           ? options.collaboratorIds
           : undefined,
-      filesCount: files.length,
+      filesCount: Math.min(100, files.length),
       snapshot,
       createdAt: serverTimestamp(),
     });
     await setDoc(ref, payload);
     await recordDeveloperActivity(uid, {
       category: 'version',
-      action: `Created snapshot "${label.trim().slice(0, 60)}"`,
+      action: `Created snapshot "${truncateToUtf8Bytes(label.trim(), 60)}"`,
       aiAssisted: options?.changeType === 'ai_build' || options?.changeType === 'ai_fix',
       projectId,
     });
@@ -1309,14 +1494,18 @@ export async function restoreProjectVersionSnapshot(
     }
 
     const freshFiles = await getProjectFiles(projectId);
-    const totalBytes = freshFiles.reduce((s, f) => s + new Blob([f.content || '']).size, 0);
-    const nextVersion = currentVersionNum + 1;
+    const totalBytes = Math.min(
+      5_000_000,
+      freshFiles.reduce((s, f) => s + utf8ByteLength(f.content || ''), 0),
+    );
+    const nextVersion = Math.min(10000, currentVersionNum + 1);
+    const safeAuthorName = truncateToUtf8Bytes((options?.authorName || '').trim() || 'Restore', 80) || 'Restore';
 
     await updateDoc(doc(db, 'projects', projectId), {
       version: nextVersion,
       storageBytes: totalBytes,
       lastEditedByUid: uid,
-      lastEditedByName: options?.authorName || 'Restore',
+      lastEditedByName: safeAuthorName,
       updatedAt: serverTimestamp(),
     });
 
@@ -1324,11 +1513,11 @@ export async function restoreProjectVersionSnapshot(
       uid,
       projectId,
       nextVersion,
-      `Restored from v${version.versionNumber}: ${version.label}`.slice(0, 120),
+      truncateToUtf8Bytes(`Restored from v${version.versionNumber}: ${version.label}`, 120),
       freshFiles,
       {
         ownerId,
-        authorName: options?.authorName,
+        authorName: safeAuthorName,
         changeType: 'restore',
         parentVersionId: version.id,
         changedFiles: selectiveSet ? Array.from(selectiveSet) : freshFiles.map(getPath),

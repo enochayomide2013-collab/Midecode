@@ -12,6 +12,7 @@ import {
   Compass,
   Copy,
   FileCode2,
+  FilePlus2,
   FileWarning,
   Flag,
   FolderGit2,
@@ -32,7 +33,9 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  UploadCloud,
   Wrench,
+  X,
   XCircle,
 } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
@@ -45,22 +48,28 @@ import {
   forceOverwriteProjectFile,
   getProjectFiles,
   listProjectVersions,
+  mergeImportedFilesIntoProject,
   restoreProjectVersionSnapshot,
+  utf8ByteLength,
 } from '../services/dataService';
 import { listTestSuitesForUser } from '../services/testLabService';
 import { logProjectActivity } from '../services/collaborationService';
 import {
+  RESCUE_IMPORT_ACCEPT,
   deleteRescueScanReport,
+  detectImportLanguage,
   investigateIssueViaApi,
   listRescueFixRecords,
   listUserRescueScans,
   markRescueFixRolledBack,
+  prepareImportedProjectFiles,
   proposeFixViaApi,
   recordRescueFixRecord,
   saveRescueScanReport,
   scanProjectViaApi,
   sendRescueChatViaApi,
   verifyRescueFixViaApi,
+  type ImportedFileInput,
 } from '../services/rescueService';
 import type {
   Project,
@@ -118,14 +127,7 @@ function getFileDisplayPath(f: { folder?: string; name: string }): string {
 }
 
 function detectLanguageFromFilename(name: string): string {
-  const lower = name.toLowerCase();
-  if (lower.endsWith('.tsx') || lower.endsWith('.ts')) return 'typescript';
-  if (lower.endsWith('.py')) return 'python';
-  if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
-  if (lower.endsWith('.css') || lower.endsWith('.scss')) return 'css';
-  if (lower.endsWith('.sql')) return 'sql';
-  if (lower.endsWith('.json')) return 'json';
-  return 'javascript';
+  return detectImportLanguage(name);
 }
 
 function formatDateLabel(val: unknown): string {
@@ -231,10 +233,19 @@ export function ProjectRescueView() {
   const [chatInput, setChatInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
 
-  // Local folder / multi-file import state
+  // Local folder / multi-file import & paste file state
   const [importingFiles, setImportingFiles] = useState(false);
+  const [importTargetMode, setImportTargetMode] = useState<'new' | 'current'>('new');
+  const [dragOverImport, setDragOverImport] = useState(false);
+  const [showNewFileModal, setShowNewFileModal] = useState(false);
+  const [newFileName, setNewFileName] = useState('');
+  const [newFileFolder, setNewFileFolder] = useState('');
+  const [newFileContent, setNewFileContent] = useState('');
+  const [addingNewFile, setAddingNewFile] = useState(false);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const multiFileInputRef = useRef<HTMLInputElement | null>(null);
+  const skipNextResetForProjectRef = useRef<string | null>(null);
+  const pendingHistoryReportRef = useRef<RescueScanReport | null>(null);
 
   useEffect(() => {
     if (rescueLaunch) {
@@ -272,6 +283,7 @@ export function ProjectRescueView() {
     if (!activeProject || !firebaseUser) {
       setFiles([]);
       setLinkedSuites([]);
+      setManualFixTargetPath('');
       return;
     }
     setLoadingFiles(true);
@@ -282,15 +294,17 @@ export function ProjectRescueView() {
       ]);
       setFiles(loadedFiles);
       setLinkedSuites(allSuites.filter((s) => s.projectId === activeProject.id));
-      if (loadedFiles.length > 0 && !manualFixTargetPath) {
-        setManualFixTargetPath(getFileDisplayPath(loadedFiles[0]));
-      }
+      setManualFixTargetPath((prev) => {
+        if (loadedFiles.length === 0) return '';
+        if (prev && loadedFiles.some((f) => getFileDisplayPath(f) === prev)) return prev;
+        return getFileDisplayPath(loadedFiles[0]);
+      });
     } catch (err) {
       notify('error', err instanceof Error ? err.message : 'Unable to load project files.');
     } finally {
       setLoadingFiles(false);
     }
-  }, [activeProject, firebaseUser, manualFixTargetPath, notify]);
+  }, [activeProject, firebaseUser, notify]);
 
   const refreshHistory = useCallback(async () => {
     if (!firebaseUser) return;
@@ -315,12 +329,26 @@ export function ProjectRescueView() {
   }, [firebaseUser, activeProject, activeReport, notify]);
 
   useEffect(() => {
+    if (activeProject?.id && skipNextResetForProjectRef.current === activeProject.id) {
+      skipNextResetForProjectRef.current = null;
+      return;
+    }
     setRootCause(null);
     setFixProposal(null);
     setVerificationResult(null);
     setLastAppliedSnapshot(null);
     setSelectedIssueId(null);
-    setActiveReport(null);
+    setManualFixTargetPath('');
+    setChatMessages([]);
+    if (
+      pendingHistoryReportRef.current &&
+      pendingHistoryReportRef.current.projectId === activeProject?.id
+    ) {
+      setActiveReport(pendingHistoryReportRef.current);
+      pendingHistoryReportRef.current = null;
+    } else {
+      setActiveReport(null);
+    }
     refreshActiveFiles();
   }, [activeProject?.id]);
 
@@ -356,26 +384,33 @@ export function ProjectRescueView() {
   // -------------------------------------------------------------------------
   // Actions: Scan, Investigate, Propose Fix, Authorize/Apply, Rollback, Chat
   // -------------------------------------------------------------------------
-  const handleRunScan = async (overrideMode?: RescueScanMode) => {
-    if (!firebaseUser || !activeProject) return;
-    if (files.length === 0) {
-      notify('error', 'This project has no files yet. Add files in Mideo IDE or import a folder first.');
-      return;
+  const runScanForWorkspace = async (
+    targetProject: Project,
+    workspaceFiles: ProjectFile[],
+    overrideMode?: RescueScanMode,
+  ): Promise<RescueScanReport | null> => {
+    if (!firebaseUser) return null;
+    if (workspaceFiles.length === 0) {
+      notify('error', 'This project has no files yet. Add files or import a folder first.');
+      return null;
     }
     const mode = overrideMode || scanMode;
+    setScanMode(mode);
     setScanning(true);
     try {
       const rawReport = await scanProjectViaApi({
-        projectId: activeProject.id,
-        projectTitle: activeProject.title,
+        projectId: targetProject.id,
+        projectTitle: targetProject.title,
         scanMode: mode,
-        files,
+        files: workspaceFiles,
       });
       const savedReport = await saveRescueScanReport(firebaseUser.uid, rawReport);
       setActiveReport(savedReport);
       setScanHistory((prev) => [savedReport, ...prev.filter((r) => r.id !== savedReport.id)]);
       if (savedReport.issues.length > 0) {
         setSelectedIssueId(savedReport.issues[0].id);
+      } else {
+        setSelectedIssueId(null);
       }
       notify(
         savedReport.issues.length === 0 ? 'success' : 'info',
@@ -388,6 +423,11 @@ export function ProjectRescueView() {
     } finally {
       setScanning(false);
     }
+  };
+
+  const handleRunScan = async (overrideMode?: RescueScanMode) => {
+    if (!activeProject) return null;
+    return runScanForWorkspace(activeProject, files, overrideMode);
   };
 
   const handleInvestigate = async (
@@ -515,7 +555,10 @@ export function ProjectRescueView() {
       const updatedFiles = files.map((f) =>
         f.id === targetFile.id ? { ...f, content: fixProposal.proposedCode } : f,
       );
-      const totalBytes = updatedFiles.reduce((sum, f) => sum + new Blob([f.content]).size, 0);
+      const totalBytes = Math.min(
+        5_000_000,
+        updatedFiles.reduce((sum, f) => sum + utf8ByteLength(f.content), 0),
+      );
       await forceOverwriteProjectFile(
         activeProject.id,
         targetFile.id,
@@ -573,16 +616,18 @@ export function ProjectRescueView() {
       });
       setFixHistory((prev) => [fixRec, ...prev]);
 
-      // Refresh workspace project version & run updated scan silently
+      // Refresh workspace project version & run updated quick scan
       await refreshUserData();
-      const postScan = await scanProjectViaApi({
+      const postScanRaw = await scanProjectViaApi({
         projectId: activeProject.id,
         projectTitle: activeProject.title,
         scanMode: 'quick',
         files: updatedFiles,
       }).catch(() => null);
-      if (postScan) {
-        setActiveReport(postScan);
+      if (postScanRaw) {
+        const savedPost = await saveRescueScanReport(firebaseUser.uid, postScanRaw).catch(() => postScanRaw);
+        setActiveReport(savedPost);
+        setScanHistory((prev) => [savedPost, ...prev.filter((r) => r.id !== savedPost.id)]);
       }
 
       if (verification.passed) {
@@ -635,7 +680,17 @@ export function ProjectRescueView() {
       if (activeProject?.id === record.projectId) {
         setFiles(restored);
         if (fixProposal) setFixProposal({ ...fixProposal, status: 'rolled_back' });
+        setVerificationResult(null);
         setLastAppliedSnapshot(null);
+        const rescan = await scanProjectViaApi({
+          projectId: activeProject.id,
+          projectTitle: activeProject.title,
+          scanMode: 'quick',
+          files: restored,
+        }).catch(() => null);
+        if (rescan) {
+          setActiveReport(rescan);
+        }
       }
       await refreshUserData();
       notify('success', `Rolled back ${record.filePath} to pre-fix snapshot v${targetVersion.versionNumber}.`);
@@ -646,60 +701,52 @@ export function ProjectRescueView() {
     }
   };
 
-  const handleImportProjectFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    e.target.value = '';
-    if (!fileList || fileList.length === 0 || !firebaseUser || !profile) return;
+  const ingestImportedEntries = async (rawEntries: ImportedFileInput[]) => {
+    if (!firebaseUser || !profile) {
+      notify('error', 'Please sign in before importing project files.');
+      return;
+    }
+    if (rawEntries.length === 0) return;
 
-    const picked = Array.from(fileList);
     setImportingFiles(true);
     try {
-      const supportedExt = new Set([
-        'js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'py', 'html', 'htm', 'css', 'scss', 'sql', 'json', 'md', 'yml', 'yaml', 'txt',
-      ]);
-      const parsedFiles: { name: string; folder: string; language: string; content: string }[] = [];
-      let skippedCount = 0;
-
-      for (const f of picked) {
-        const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
-        const lower = rel.toLowerCase();
-        if (
-          lower.includes('node_modules/') ||
-          lower.includes('.git/') ||
-          lower.includes('/dist/') ||
-          lower.endsWith('.env') ||
-          lower.includes('.env.local') ||
-          f.size > 150_000
-        ) {
-          skippedCount++;
-          continue;
-        }
-        const ext = f.name.split('.').pop()?.toLowerCase() || '';
-        if (!supportedExt.has(ext)) {
-          skippedCount++;
-          continue;
-        }
-        const text = await f.text();
-        const parts = rel.split('/');
-        const rootFolder = parts.length > 1 ? parts.slice(1, -1).join('/') : '';
-        parsedFiles.push({
-          name: f.name,
-          folder: rootFolder,
-          language: detectLanguageFromFilename(f.name),
-          content: text.slice(0, 150_000),
-        });
-        if (parsedFiles.length >= 40) break;
+      const prepared = prepareImportedProjectFiles(rawEntries);
+      if (prepared.files.length === 0) {
+        throw new Error(
+          'No supported source files (.js, .ts, .tsx, .py, .html, .css, .sql, .json, .md, etc.) were found outside ignored folders like node_modules or .git.',
+        );
       }
 
-      if (parsedFiles.length === 0) {
-        throw new Error('No supported source code files (.js, .ts, .tsx, .py, .html, .css, .sql, .json) were found.');
+      const mergeIntoExisting =
+        importTargetMode === 'current' && activeProject && canModifyProject;
+
+      if (mergeIntoExisting && activeProject) {
+        const merged = await mergeImportedFilesIntoProject(
+          firebaseUser.uid,
+          profile.displayName,
+          activeProject.id,
+          files,
+          prepared.files,
+        );
+        await refreshUserData();
+        setFiles(merged.files);
+        setManualFixTargetPath(getFileDisplayPath(merged.files[0]));
+        setRootCause(null);
+        setFixProposal(null);
+        setVerificationResult(null);
+        setLastAppliedSnapshot(null);
+        const totalSkipped = prepared.skippedCount + merged.skippedForLimitCount;
+        notify(
+          'success',
+          `Imported into "${activeProject.title}": ${merged.addedCount} added, ${merged.updatedCount} updated${totalSkipped ? `, ${totalSkipped} skipped` : ''}. Running scan...`,
+        );
+        await runScanForWorkspace(activeProject, merged.files, scanMode);
+        return;
       }
 
-      const firstRel = (picked[0] as File & { webkitRelativePath?: string }).webkitRelativePath || '';
-      const inferredName = firstRel.includes('/') ? firstRel.split('/')[0] : `Imported Rescue Project`;
-      const hasPy = parsedFiles.some((f) => f.language === 'python');
-      const hasTs = parsedFiles.some((f) => f.language === 'typescript');
-      const hasHtml = parsedFiles.some((f) => f.language === 'html');
+      const hasPy = prepared.files.some((f) => f.language === 'python');
+      const hasTs = prepared.files.some((f) => f.language === 'typescript');
+      const hasHtml = prepared.files.some((f) => f.language === 'html');
       const projLang: Project['language'] = hasPy
         ? 'python'
         : hasTs
@@ -709,24 +756,204 @@ export function ProjectRescueView() {
             : 'javascript';
 
       const created = await createProjectWithFiles(firebaseUser.uid, profile.displayName, {
-        title: `${inferredName}`.slice(0, 110),
-        description: `Imported for Project Rescue AI analysis (${parsedFiles.length} files${skippedCount ? `, ${skippedCount} skipped` : ''}).`,
+        title: prepared.inferredProjectTitle.slice(0, 110),
+        description: `Imported for Project Rescue AI analysis (${prepared.files.length} files${prepared.skippedCount ? `, ${prepared.skippedCount} skipped` : ''}).`,
         language: projLang,
-        files: parsedFiles,
+        files: prepared.files,
       });
 
+      skipNextResetForProjectRef.current = created.project.id;
       await refreshUserData();
       setSelectedProjectId(created.project.id);
       setActiveIdeProjectId(created.project.id);
       setFiles(created.files);
+      setManualFixTargetPath(created.files[0] ? getFileDisplayPath(created.files[0]) : '');
+      setRootCause(null);
+      setFixProposal(null);
+      setVerificationResult(null);
+      setLastAppliedSnapshot(null);
+      setSelectedIssueId(null);
+      setChatMessages([]);
       notify(
         'success',
-        `Imported "${created.project.title}" (${created.files.length} files${skippedCount ? `, ${skippedCount} binary/ignored skipped` : ''}).`,
+        `Imported "${created.project.title}" (${created.files.length} files${prepared.skippedCount ? `, ${prepared.skippedCount} skipped` : ''}). Running diagnostic scan...`,
       );
+      await runScanForWorkspace(created.project, created.files, scanMode);
     } catch (err) {
       notify('error', err instanceof Error ? err.message : 'Project import failed.');
     } finally {
       setImportingFiles(false);
+    }
+  };
+
+  const handleImportProjectFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    e.target.value = '';
+    if (!fileList || fileList.length === 0) return;
+
+    const picked = Array.from(fileList);
+    setImportingFiles(true);
+    try {
+      const entries: ImportedFileInput[] = [];
+      for (const f of picked) {
+        const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+        // Skip huge files & known ignored directories before calling f.text() to stay instant on huge folders
+        const lowerRel = rel.replace(/\\/g, '/').toLowerCase();
+        if (
+          lowerRel.includes('/node_modules/') ||
+          lowerRel.startsWith('node_modules/') ||
+          lowerRel.includes('/.git/') ||
+          lowerRel.startsWith('.git/') ||
+          lowerRel.includes('/dist/') ||
+          lowerRel.includes('/build/') ||
+          lowerRel.includes('/.next/') ||
+          lowerRel.includes('/__pycache__/') ||
+          f.size > 250_000
+        ) {
+          entries.push({ relativePath: rel, sizeBytes: f.size, text: '' });
+          continue;
+        }
+        const text = await f.text();
+        entries.push({ relativePath: rel, sizeBytes: f.size, text });
+      }
+      await ingestImportedEntries(entries);
+    } catch (err) {
+      setImportingFiles(false);
+      notify('error', err instanceof Error ? err.message : 'Could not read selected files.');
+    }
+  };
+
+  const readDroppedEntryRecursive = async (
+    entry: FileSystemEntry,
+    parentPath: string,
+    collected: ImportedFileInput[],
+  ): Promise<void> => {
+    if (collected.length >= 160) return;
+    const relPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+    const lowerSeg = entry.name.toLowerCase();
+    if (
+      entry.isDirectory &&
+      ['node_modules', '.git', 'dist', 'build', '.next', '.nuxt', '__pycache__', '.venv', 'venv', 'coverage'].includes(
+        lowerSeg,
+      )
+    ) {
+      return;
+    }
+
+    if (entry.isFile) {
+      const fileEntry = entry as FileSystemFileEntry;
+      const file = await new Promise<File>((resolve, reject) => {
+        fileEntry.file(resolve, reject);
+      });
+      if (file.size <= 250_000) {
+        const text = await file.text();
+        collected.push({ relativePath: relPath, sizeBytes: file.size, text });
+      } else {
+        collected.push({ relativePath: relPath, sizeBytes: file.size, text: '' });
+      }
+      return;
+    }
+
+    if (entry.isDirectory) {
+      const dirEntry = entry as FileSystemDirectoryEntry;
+      const reader = dirEntry.createReader();
+      // readEntries must be called in a loop until an empty array is returned
+      const readAll = async (): Promise<FileSystemEntry[]> => {
+        const all: FileSystemEntry[] = [];
+        while (true) {
+          const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => {
+            reader.readEntries(resolve, reject);
+          });
+          if (!batch || batch.length === 0) break;
+          all.push(...batch);
+        }
+        return all;
+      };
+      const children = await readAll();
+      for (const child of children) {
+        await readDroppedEntryRecursive(child, relPath, collected);
+        if (collected.length >= 160) break;
+      }
+    }
+  };
+
+  const handleDropImport = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverImport(false);
+    if (importingFiles) return;
+
+    const dt = e.dataTransfer;
+    if (!dt) return;
+    setImportingFiles(true);
+    try {
+      const collected: ImportedFileInput[] = [];
+      const items = dt.items ? Array.from(dt.items) : [];
+      const webkitEntries = items
+        .map((it) => (typeof it.webkitGetAsEntry === 'function' ? it.webkitGetAsEntry() : null))
+        .filter((en): en is FileSystemEntry => en !== null);
+
+      if (webkitEntries.length > 0) {
+        for (const entry of webkitEntries) {
+          await readDroppedEntryRecursive(entry, '', collected);
+        }
+      } else if (dt.files && dt.files.length > 0) {
+        for (const f of Array.from(dt.files)) {
+          const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+          const text = f.size <= 250_000 ? await f.text() : '';
+          collected.push({ relativePath: rel, sizeBytes: f.size, text });
+        }
+      }
+
+      if (collected.length === 0) {
+        notify('error', 'No readable files were detected in that drop.');
+        setImportingFiles(false);
+        return;
+      }
+      await ingestImportedEntries(collected);
+    } catch (err) {
+      setImportingFiles(false);
+      notify('error', err instanceof Error ? err.message : 'Folder drop import failed.');
+    }
+  };
+
+  const handleCreateQuickFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!firebaseUser || !activeProject || !canModifyProject) return;
+    const cleanName = newFileName.trim().replace(/^\/+/, '');
+    if (!cleanName) {
+      notify('error', 'Enter a filename such as app.js or utils/helper.ts.');
+      return;
+    }
+    setAddingNewFile(true);
+    try {
+      const merged = await mergeImportedFilesIntoProject(
+        firebaseUser.uid,
+        profile?.displayName || 'Developer',
+        activeProject.id,
+        files,
+        [
+          {
+            name: cleanName.includes('/') ? cleanName.split('/').pop()! : cleanName,
+            folder:
+              newFileFolder.trim() ||
+              (cleanName.includes('/') ? cleanName.split('/').slice(0, -1).join('/') : ''),
+            language: detectLanguageFromFilename(cleanName),
+            content: newFileContent,
+          },
+        ],
+      );
+      await refreshUserData();
+      setFiles(merged.files);
+      setShowNewFileModal(false);
+      setNewFileName('');
+      setNewFileFolder('');
+      setNewFileContent('');
+      notify('success', `Saved ${cleanName} to "${activeProject.title}".`);
+    } catch (err) {
+      notify('error', err instanceof Error ? err.message : 'Could not add file to project.');
+    } finally {
+      setAddingNewFile(false);
     }
   };
 
@@ -827,6 +1054,10 @@ export function ProjectRescueView() {
     }
     setRescueStep(2);
     const report = activeReport || (await handleRunScan('deep'));
+    if (!report && !activeReport) {
+      setRescueStep(1);
+      return;
+    }
     const topIssue = report?.issues[0] || selectedIssue || null;
     const rc = await handleInvestigate(
       topIssue,
@@ -835,13 +1066,31 @@ export function ProjectRescueView() {
     );
     if (rc) {
       setRescueStep(3);
+    } else {
+      setRescueStep(1);
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div
+      className="space-y-6"
+      onDragOver={(e) => {
+        e.preventDefault();
+        if (!dragOverImport) setDragOverImport(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target) setDragOverImport(false);
+      }}
+      onDrop={handleDropImport}
+    >
       {/* Top Header & Project Bar */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] p-5 space-y-4">
+      <div
+        className={`rounded-xl border transition-colors bg-white dark:bg-[#0D1322] p-5 space-y-4 ${
+          dragOverImport
+            ? 'border-blue-500 ring-2 ring-blue-500/30 bg-blue-50/40 dark:bg-blue-950/20'
+            : 'border-slate-200 dark:border-slate-800'
+        }`}
+      >
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2.5">
@@ -874,10 +1123,22 @@ export function ProjectRescueView() {
               ref={multiFileInputRef}
               type="file"
               multiple
-              accept=".js,.jsx,.mjs,.cjs,.ts,.tsx,.py,.html,.htm,.css,.scss,.sql,.json,.md,.yml,.yaml,.txt"
+              accept={RESCUE_IMPORT_ACCEPT}
               className="hidden"
               onChange={handleImportProjectFiles}
             />
+
+            {activeProject && canModifyProject && (
+              <select
+                value={importTargetMode}
+                onChange={(e) => setImportTargetMode(e.target.value as 'new' | 'current')}
+                aria-label="Import destination mode"
+                className="px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-700 dark:text-slate-200"
+              >
+                <option value="new">Import as New Project</option>
+                <option value="current">Add into Current Project</option>
+              </select>
+            )}
 
             <button
               type="button"
@@ -897,6 +1158,16 @@ export function ProjectRescueView() {
               <FileCode2 className="w-3.5 h-3.5" />
               Import Files
             </button>
+            {activeProject && canModifyProject && (
+              <button
+                type="button"
+                onClick={() => setShowNewFileModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-blue-500 cursor-pointer"
+              >
+                <FilePlus2 className="w-3.5 h-3.5" />
+                Add File
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -919,6 +1190,13 @@ export function ProjectRescueView() {
             </button>
           </div>
         </div>
+
+        {dragOverImport && (
+          <div className="p-3 rounded-lg border border-dashed border-blue-500 bg-blue-500/10 flex items-center justify-center gap-2 text-xs font-semibold text-blue-600 dark:text-blue-400">
+            <UploadCloud className="w-4 h-4" />
+            Drop any project folder or code files here to import &amp; scan automatically
+          </div>
+        )}
 
         {/* Active Project Selector & Workspace Links */}
         <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
@@ -1001,20 +1279,30 @@ export function ProjectRescueView() {
           <FolderGit2 className="w-10 h-10 text-blue-500 mx-auto" />
           <div className="space-y-1">
             <h2 className="text-base font-bold text-slate-900 dark:text-white">
-              Select or Import a Coding Project to Rescue
+              Select, Drag &amp; Drop, or Import a Coding Project to Rescue
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-              Import a local project folder or multi-file codebase above, or open any existing project in Mideo Projects / Mideo IDE.
+              Drag and drop a local folder or multi-file codebase anywhere here, use the import buttons above, or open any existing project in Mideo Projects.
             </p>
           </div>
           <div className="flex flex-wrap justify-center gap-3">
             <button
               type="button"
               onClick={() => folderInputRef.current?.click()}
+              disabled={importingFiles}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
             >
               <FolderUp className="w-4 h-4" />
               Import Project Folder
+            </button>
+            <button
+              type="button"
+              onClick={() => multiFileInputRef.current?.click()}
+              disabled={importingFiles}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium cursor-pointer"
+            >
+              <FileCode2 className="w-4 h-4" />
+              Import Code Files
             </button>
             <button
               type="button"
@@ -2453,15 +2741,29 @@ export function ProjectRescueView() {
                       >
                         Back to Explanation
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setAuthorizeModalOpen(true)}
-                        disabled={applyingFix || !canModifyProject}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
-                      >
-                        {applyingFix ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-                        Authorize &amp; Apply Fix (With Backup Snapshot)
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFixProposal({ ...fixProposal, status: 'rejected' });
+                            setRescueStep(3);
+                            notify('info', 'Fix rejected. Original files were not modified.');
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-400/50 text-red-600 dark:text-red-400 text-xs font-medium cursor-pointer"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                          Reject Fix
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAuthorizeModalOpen(true)}
+                          disabled={applyingFix || !canModifyProject}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
+                        >
+                          {applyingFix ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                          Authorize &amp; Apply Fix (With Backup Snapshot)
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -2579,6 +2881,7 @@ export function ProjectRescueView() {
                             <button
                               type="button"
                               onClick={() => {
+                                pendingHistoryReportRef.current = item;
                                 setSelectedProjectId(item.projectId);
                                 setActiveReport(item);
                                 setTab('overview');
@@ -2591,9 +2894,19 @@ export function ProjectRescueView() {
                             <button
                               type="button"
                               onClick={async () => {
-                                await deleteRescueScanReport(item.id);
-                                setScanHistory((prev) => prev.filter((r) => r.id !== item.id));
-                                notify('info', 'Scan report removed from history.');
+                                try {
+                                  await deleteRescueScanReport(item.id);
+                                  setScanHistory((prev) => prev.filter((r) => r.id !== item.id));
+                                  if (activeReport?.id === item.id) {
+                                    setActiveReport(null);
+                                  }
+                                  notify('info', 'Scan report removed from history.');
+                                } catch (err) {
+                                  notify(
+                                    'error',
+                                    err instanceof Error ? err.message : 'Unable to delete scan report.',
+                                  );
+                                }
                               }}
                               className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-400 hover:text-red-500 cursor-pointer"
                               title="Delete scan report"
@@ -2847,6 +3160,86 @@ export function ProjectRescueView() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Add / Paste File Modal inside Project Rescue AI */}
+      {showNewFileModal && activeProject && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleCreateQuickFile}
+            className="w-full max-w-lg rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] p-6 space-y-4 shadow-2xl"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Add File to &ldquo;{activeProject.title}&rdquo;
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowNewFileModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div>
+                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Filename (with extension)
+                </label>
+                <input
+                  value={newFileName}
+                  onChange={(e) => setNewFileName(e.target.value)}
+                  placeholder="e.g. App.tsx or helper.py"
+                  required
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Folder (optional)
+                </label>
+                <input
+                  value={newFileFolder}
+                  onChange={(e) => setNewFileFolder(e.target.value)}
+                  placeholder="e.g. src/components"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="text-xs">
+              <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                File Contents
+              </label>
+              <textarea
+                rows={8}
+                value={newFileContent}
+                onChange={(e) => setNewFileContent(e.target.value)}
+                placeholder="Paste code or configuration here..."
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowNewFileModal(false)}
+                className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={addingNewFile || !newFileName.trim()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
+              >
+                {addingNewFile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FilePlus2 className="w-3.5 h-3.5" />}
+                Save File to Project
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

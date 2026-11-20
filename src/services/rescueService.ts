@@ -13,7 +13,12 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { fetchWithAuthAndRetry } from './authService';
-import { recordDeveloperActivity, sanitizeForFirestore } from './dataService';
+import {
+  recordDeveloperActivity,
+  sanitizeForFirestore,
+  truncateToUtf8Bytes,
+  utf8ByteLength,
+} from './dataService';
 import type {
   ProjectFile,
   RescueAppliedFixRecord,
@@ -63,6 +68,204 @@ function toTimestampMs(val: unknown): number {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+}
+
+// ---------------------------------------------------------------------------
+// File & Folder Import Normalizer / Validator (shared by pickers & drag-drop)
+// ---------------------------------------------------------------------------
+export const RESCUE_IMPORT_ACCEPT =
+  '.js,.jsx,.mjs,.cjs,.ts,.tsx,.mts,.cts,.py,.pyw,.html,.htm,.css,.scss,.sass,.less,.sql,.json,.md,.mdx,.yml,.yaml,.toml,.xml,.txt,.sh,.vue,.svelte,.env.example';
+
+const IGNORED_IMPORT_SEGMENTS = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  '.next',
+  '.nuxt',
+  '__pycache__',
+  '.venv',
+  'venv',
+  '.cache',
+  'coverage',
+  '.turbo',
+  '.idea',
+  '.vscode',
+]);
+
+const SUPPORTED_IMPORT_EXTENSIONS = new Set([
+  'js', 'jsx', 'mjs', 'cjs',
+  'ts', 'tsx', 'mts', 'cts',
+  'py', 'pyw',
+  'html', 'htm',
+  'css', 'scss', 'sass', 'less',
+  'sql',
+  'json', 'jsonc',
+  'md', 'mdx',
+  'yml', 'yaml',
+  'toml', 'xml', 'txt', 'sh', 'bash',
+  'vue', 'svelte', 'astro', 'prisma', 'graphql', 'gql',
+]);
+
+const SPECIAL_TEXT_FILENAMES = new Set([
+  'dockerfile',
+  'makefile',
+  'procfile',
+  '.gitignore',
+  '.gitattributes',
+  '.prettierrc',
+  '.eslintrc',
+  '.babelrc',
+  '.editorconfig',
+  '.env.example',
+  '.env.sample',
+  '.env.template',
+]);
+
+export function normalizeImportedRelativePath(rawPath: string): string {
+  return (rawPath || '')
+    .replace(/\\/g, '/')
+    .replace(/\/+/g, '/')
+    .replace(/^\.?\//, '')
+    .replace(/^\/+|\/+$/g, '')
+    .trim();
+}
+
+export function isIgnoredImportPath(relativePath: string): boolean {
+  const norm = normalizeImportedRelativePath(relativePath).toLowerCase();
+  if (!norm) return true;
+  const parts = norm.split('/');
+  if (parts.some((seg) => IGNORED_IMPORT_SEGMENTS.has(seg))) return true;
+  const base = parts[parts.length - 1];
+  if (base === '.ds_store' || base === 'thumbs.db' || base === 'package-lock.json' || base === 'yarn.lock' || base === 'bun.lock' || base === 'pnpm-lock.yaml') {
+    return true;
+  }
+  // Never import local .env secrets (.env, .env.local, .env.production, etc.), while allowing .env.example/sample/template
+  if (/^\.env(\.|$)/i.test(base) && !/^\.env\.(example|sample|template)$/i.test(base)) {
+    return true;
+  }
+  return false;
+}
+
+export function isSupportedCodeFilename(filename: string): boolean {
+  const lower = filename.trim().toLowerCase();
+  if (!lower) return false;
+  if (SPECIAL_TEXT_FILENAMES.has(lower)) return true;
+  const dotIdx = lower.lastIndexOf('.');
+  if (dotIdx <= 0 || dotIdx === lower.length - 1) return false;
+  const ext = lower.slice(dotIdx + 1);
+  return SUPPORTED_IMPORT_EXTENSIONS.has(ext);
+}
+
+export function detectImportLanguage(filename: string): string {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.tsx') || lower.endsWith('.ts') || lower.endsWith('.mts') || lower.endsWith('.cts')) {
+    return 'typescript';
+  }
+  if (lower.endsWith('.py') || lower.endsWith('.pyw')) return 'python';
+  if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
+  if (lower.endsWith('.css') || lower.endsWith('.scss') || lower.endsWith('.sass') || lower.endsWith('.less')) {
+    return 'css';
+  }
+  if (lower.endsWith('.sql')) return 'sql';
+  if (lower.endsWith('.json') || lower.endsWith('.jsonc')) return 'json';
+  return 'javascript';
+}
+
+export interface ImportedFileInput {
+  relativePath: string;
+  sizeBytes?: number;
+  text: string;
+}
+
+export interface NormalizedImportedFile {
+  name: string;
+  folder: string;
+  language: string;
+  content: string;
+}
+
+export function prepareImportedProjectFiles(entries: ImportedFileInput[]): {
+  files: NormalizedImportedFile[];
+  skippedCount: number;
+  inferredProjectTitle: string;
+  totalBytes: number;
+} {
+  const MAX_FILES = 60;
+  const MAX_FILE_BYTES = 145_000;
+  const MAX_TOTAL_BYTES = 4_200_000;
+
+  // Detect whether all entries share one outer root directory (typical when selecting a folder)
+  const normalizedEntries = entries
+    .map((entry) => ({
+      ...entry,
+      normPath: normalizeImportedRelativePath(entry.relativePath),
+    }))
+    .filter((e) => Boolean(e.normPath));
+
+  const firstSegments = normalizedEntries
+    .map((e) => (e.normPath.includes('/') ? e.normPath.split('/')[0] : ''))
+    .filter(Boolean);
+  const sharedRootFolder =
+    normalizedEntries.length > 0 &&
+    firstSegments.length === normalizedEntries.length &&
+    new Set(firstSegments).size === 1
+      ? firstSegments[0]
+      : '';
+
+  const dedupedByPath = new Map<string, NormalizedImportedFile>();
+  let skippedCount = 0;
+  let totalBytes = 0;
+
+  for (const entry of normalizedEntries) {
+    if (isIgnoredImportPath(entry.normPath)) {
+      skippedCount++;
+      continue;
+    }
+    const parts = entry.normPath.split('/');
+    const baseName = parts[parts.length - 1];
+    if (!isSupportedCodeFilename(baseName)) {
+      skippedCount++;
+      continue;
+    }
+    if ((entry.sizeBytes ?? entry.text.length) > 250_000 || entry.text.includes('\u0000')) {
+      skippedCount++;
+      continue;
+    }
+
+    const folderParts = sharedRootFolder
+      ? parts.slice(1, -1)
+      : parts.slice(0, -1);
+
+    const safeName = truncateToUtf8Bytes(baseName, 120);
+    const rawFolder = folderParts.join('/');
+    const safeFolder = truncateToUtf8Bytes(rawFolder, 120);
+    const safeContent = truncateToUtf8Bytes(entry.text, MAX_FILE_BYTES);
+    const contentBytes = utf8ByteLength(safeContent);
+
+    if (dedupedByPath.size >= MAX_FILES || totalBytes + contentBytes > MAX_TOTAL_BYTES) {
+      skippedCount++;
+      continue;
+    }
+
+    const canonicalKey = safeFolder ? `${safeFolder}/${safeName}` : safeName;
+    if (!dedupedByPath.has(canonicalKey)) {
+      totalBytes += contentBytes;
+      dedupedByPath.set(canonicalKey, {
+        name: safeName,
+        folder: safeFolder,
+        language: detectImportLanguage(safeName),
+        content: safeContent,
+      });
+    }
+  }
+
+  return {
+    files: Array.from(dedupedByPath.values()),
+    skippedCount,
+    inferredProjectTitle: sharedRootFolder || 'Imported Rescue Project',
+    totalBytes,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -255,31 +458,61 @@ export async function saveRescueScanReport(
     .slice(0, 120);
   const projectId = String(report.projectId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
 
-  const payload = sanitizeForFirestore<Record<string, unknown>>({
-    id: scanId,
-    userId: uid,
-    projectId,
-    projectTitle: String(report.projectTitle || 'Workspace').trim().slice(0, 140) || 'Workspace',
-    scanMode: report.scanMode,
-    healthScore: Math.max(0, Math.min(100, Math.round(Number(report.healthScore) || 0))),
-    filesInspected: Math.max(0, Math.min(500, Math.round(Number(report.filesInspected) || 0))),
-    confirmedCount: Math.max(0, Math.min(500, Math.round(Number(report.confirmedCount) || 0))),
-    potentialCount: Math.max(0, Math.min(500, Math.round(Number(report.potentialCount) || 0))),
-    severityCounts: {
-      critical: report.severityCounts?.critical || 0,
-      high: report.severityCounts?.high || 0,
-      medium: report.severityCounts?.medium || 0,
-      low: report.severityCounts?.low || 0,
-      suggestion: report.severityCounts?.suggestion || 0,
-    },
-    summary: String(report.summary || 'Project health scan completed.').trim().slice(0, 4000) || 'Scan completed.',
-    recommendedRepairOrder: (report.recommendedRepairOrder || []).map((s) => String(s).slice(0, 300)).slice(0, 30),
-    suggestedImprovements: (report.suggestedImprovements || []).map((s) => String(s).slice(0, 300)).slice(0, 30),
-    projectIndex: encodeProjectIndexForFirestore(report.projectIndex),
-    issues: (report.issues || []).slice(0, 50),
-    runtimeAudit: (report.runtimeAudit || []).slice(0, 15),
-    createdAt: serverTimestamp(),
-  });
+  const boundedIssues = (report.issues || []).slice(0, 45).map((iss) => ({
+    ...iss,
+    title: truncateToUtf8Bytes(iss.title || 'Issue', 220),
+    filePath: truncateToUtf8Bytes(iss.filePath || 'unknown', 220),
+    evidenceSource: truncateToUtf8Bytes(iss.evidenceSource || 'Static Check', 120),
+    summary: truncateToUtf8Bytes(iss.summary || '', 800),
+    beginnerExplanation: truncateToUtf8Bytes(iss.beginnerExplanation || '', 900),
+    developerExplanation: truncateToUtf8Bytes(iss.developerExplanation || '', 900),
+    recommendedAction: truncateToUtf8Bytes(iss.recommendedAction || '', 400),
+    symbolOrSnippet: iss.symbolOrSnippet ? truncateToUtf8Bytes(iss.symbolOrSnippet, 300) : undefined,
+    relatedFiles: (iss.relatedFiles || []).slice(0, 12),
+  }));
+
+  let encodedIndex = encodeProjectIndexForFirestore(report.projectIndex);
+  const buildPayload = (issuesList: typeof boundedIssues, idxObj: Record<string, unknown>) =>
+    sanitizeForFirestore<Record<string, unknown>>({
+      id: scanId,
+      userId: uid,
+      projectId,
+      projectTitle: truncateToUtf8Bytes(String(report.projectTitle || 'Workspace').trim(), 140) || 'Workspace',
+      scanMode: report.scanMode,
+      healthScore: Math.max(0, Math.min(100, Math.round(Number(report.healthScore) || 0))),
+      filesInspected: Math.max(0, Math.min(500, Math.round(Number(report.filesInspected) || 0))),
+      confirmedCount: Math.max(0, Math.min(500, Math.round(Number(report.confirmedCount) || 0))),
+      potentialCount: Math.max(0, Math.min(500, Math.round(Number(report.potentialCount) || 0))),
+      severityCounts: {
+        critical: report.severityCounts?.critical || 0,
+        high: report.severityCounts?.high || 0,
+        medium: report.severityCounts?.medium || 0,
+        low: report.severityCounts?.low || 0,
+        suggestion: report.severityCounts?.suggestion || 0,
+      },
+      summary:
+        truncateToUtf8Bytes(String(report.summary || 'Project health scan completed.').trim(), 3900) ||
+        'Scan completed.',
+      recommendedRepairOrder: (report.recommendedRepairOrder || [])
+        .map((s) => truncateToUtf8Bytes(String(s), 280))
+        .slice(0, 30),
+      suggestedImprovements: (report.suggestedImprovements || [])
+        .map((s) => truncateToUtf8Bytes(String(s), 280))
+        .slice(0, 30),
+      projectIndex: idxObj,
+      issues: issuesList,
+      runtimeAudit: (report.runtimeAudit || []).slice(0, 15),
+      createdAt: serverTimestamp(),
+    });
+
+  let payload = buildPayload(boundedIssues, encodedIndex);
+  if (utf8ByteLength(JSON.stringify(payload)) > 680_000) {
+    encodedIndex = encodeProjectIndexForFirestore({
+      ...report.projectIndex,
+      files: (report.projectIndex.files || []).slice(0, 20),
+    });
+    payload = buildPayload(boundedIssues.slice(0, 25), encodedIndex);
+  }
 
   try {
     await setDoc(doc(db, 'rescueScans', scanId), payload);
@@ -326,13 +559,13 @@ export async function recordRescueFixRecord(
     id: fixId,
     userId: uid,
     projectId: input.projectId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120),
-    projectTitle: input.projectTitle.trim().slice(0, 140) || 'Workspace',
-    filePath: input.filePath.trim().slice(0, 240) || 'index.js',
-    problemIdentified: input.problemIdentified.trim().slice(0, 500) || 'Applied rescue fix',
+    projectTitle: truncateToUtf8Bytes(input.projectTitle.trim(), 140) || 'Workspace',
+    filePath: truncateToUtf8Bytes(input.filePath.trim(), 240) || 'index.js',
+    problemIdentified: truncateToUtf8Bytes(input.problemIdentified.trim(), 500) || 'Applied rescue fix',
     snapshotVersionId: input.snapshotVersionId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120),
     snapshotVersionNumber: Math.max(1, Math.min(10000, Math.round(input.snapshotVersionNumber))),
     verificationPassed: Boolean(input.verificationPassed),
-    verificationSummary: input.verificationSummary.trim().slice(0, 1000) || 'Verified',
+    verificationSummary: truncateToUtf8Bytes(input.verificationSummary.trim(), 1000) || 'Verified',
     status: 'applied',
     createdAt: serverTimestamp(),
   });

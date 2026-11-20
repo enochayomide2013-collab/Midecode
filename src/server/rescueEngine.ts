@@ -7,21 +7,33 @@ import { transformSync } from 'esbuild';
 import { Linter } from 'eslint';
 import { GoogleGenAI, Type } from '@google/genai';
 import { executeTestLabSuite, type SubmittedWorkspaceFile } from './testLabEngine.ts';
+import {
+  getScanJobRecord,
+  recordRescueAdminEvent,
+  saveScanJobRecord,
+} from './rescueTelemetry.ts';
 import type {
   RescueCertainty,
   RescueChatMessage,
+  RescueCustomScanConfig,
+  RescueDocumentationDiscrepancy,
+  RescueDocumentationReport,
   RescueFileSummary,
   RescueFixProposal,
   RescueImpactReport,
   RescueIssue,
   RescueIssueCategory,
   RescueProjectIndex,
+  RescueRiskLevel,
   RescueRootCauseAnalysis,
   RescueRuntimeAudit,
+  RescueScanJob,
   RescueScanMode,
   RescueScanReport,
+  RescueScanStage,
   RescueSeverity,
   RescueVerificationResult,
+  RescueVerificationStatus,
   TestSuite,
 } from '../types/mideocode.ts';
 
@@ -58,16 +70,47 @@ function getAiClient(): GoogleGenAI | null {
   });
 }
 
+function parseJsonSafe<T>(rawText: string | undefined, fallback: T): T {
+  const trimmed = (rawText || '').trim();
+  if (!trimmed) return fallback;
+  const cleaned = trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(cleaned.slice(start, end + 1)) as T;
+      } catch {
+        return fallback;
+      }
+    }
+    return fallback;
+  }
+}
+
 export function normalizeRescuePath(file: { folder?: string; name: string }): string {
-  const folder = (file.folder || '').replace(/^\/+|\/+$/g, '').trim();
-  const name = (file.name || '').replace(/^\/+/, '').trim();
+  const cleanSlashes = (s: string) =>
+    s
+      .replace(/\\/g, '/')
+      .replace(/\/+/g, '/')
+      .replace(/^\.?\//, '')
+      .replace(/^\/+|\/+$/g, '')
+      .trim();
+  const folder = cleanSlashes(file.folder || '');
+  const name = cleanSlashes(file.name || '');
+  if (!name) return '';
   return folder ? `${folder}/${name}` : name;
 }
 
 export function redactSecrets(text: string, filePath = ''): string {
   if (!text) return '';
   const lower = filePath.toLowerCase();
-  if (lower.endsWith('.env') || lower.includes('.env.')) {
+  if (lower.endsWith('.env') || (lower.includes('.env.') && !lower.endsWith('.example'))) {
     return text
       .split('\n')
       .map((line) => {
@@ -93,16 +136,75 @@ export function redactSecrets(text: string, filePath = ''): string {
 function detectLanguage(filePath: string, declared?: string): string {
   const lower = filePath.toLowerCase();
   if (lower.endsWith('.tsx')) return 'tsx';
-  if (lower.endsWith('.ts')) return 'typescript';
+  if (lower.endsWith('.ts') || lower.endsWith('.mts') || lower.endsWith('.cts')) return 'typescript';
   if (lower.endsWith('.jsx')) return 'jsx';
   if (lower.endsWith('.js') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) return 'javascript';
-  if (lower.endsWith('.py')) return 'python';
+  if (lower.endsWith('.py') || lower.endsWith('.pyw')) return 'python';
+  if (lower.endsWith('.php')) return 'php';
+  if (lower.endsWith('.java')) return 'java';
+  if (lower.endsWith('.cpp') || lower.endsWith('.cc') || lower.endsWith('.cxx') || lower.endsWith('.hpp')) return 'cpp';
+  if (lower.endsWith('.c') || lower.endsWith('.h')) return 'c';
+  if (lower.endsWith('.cs')) return 'csharp';
+  if (lower.endsWith('.go')) return 'go';
+  if (lower.endsWith('.rs')) return 'rust';
   if (lower.endsWith('.sql')) return 'sql';
   if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
-  if (lower.endsWith('.css')) return 'css';
-  if (lower.endsWith('.json')) return 'json';
-  if (lower.endsWith('.md')) return 'markdown';
+  if (lower.endsWith('.css') || lower.endsWith('.scss') || lower.endsWith('.sass') || lower.endsWith('.less')) return 'css';
+  if (lower.endsWith('.json') || lower.endsWith('.jsonc')) return 'json';
+  if (lower.endsWith('.md') || lower.endsWith('.mdx')) return 'markdown';
+  if (lower.endsWith('.yml') || lower.endsWith('.yaml')) return 'yaml';
+  if (lower.endsWith('.toml')) return 'toml';
+  if (lower.endsWith('.xml')) return 'xml';
+  if (lower.endsWith('.sh') || lower.endsWith('.bash')) return 'shell';
   return declared || 'text';
+}
+
+function inferFileRole(
+  filePath: string,
+  lang: string,
+  meta: { imports: string[]; apiCalls: string[]; apiRoutes: string[] },
+): RescueFileSummary['role'] {
+  const lower = filePath.toLowerCase();
+  const base = path.posix.basename(lower);
+  if (lang === 'markdown' || base.endsWith('.txt') || lower.startsWith('docs/')) return 'documentation';
+  if (base.includes('.test.') || base.includes('.spec.') || lower.includes('/__tests__/')) return 'test';
+  if (
+    lang === 'json' ||
+    lang === 'yaml' ||
+    lang === 'toml' ||
+    base.startsWith('.env') ||
+    base.includes('config')
+  ) {
+    return 'config';
+  }
+  if (
+    ['index.html', 'main.tsx', 'main.ts', 'main.jsx', 'main.js', 'index.ts', 'index.js', 'app.tsx', 'app.py', 'main.py', 'server.ts', 'server.js'].includes(base)
+  ) {
+    return 'entry';
+  }
+  if (lower.includes('auth') || lower.includes('login') || lower.includes('oauth')) return 'auth';
+  if (lang === 'sql' || lower.includes('db') || lower.includes('schema') || lower.includes('prisma') || lower.includes('firestore')) {
+    return 'database';
+  }
+  if (meta.apiRoutes.length > 0 || lower.includes('route') || lower.includes('controller')) return 'route';
+  if (meta.apiCalls.length > 0 || lower.includes('api')) return 'api_client';
+  if (lower.includes('context') || lower.includes('store') || lower.includes('state') || lower.includes('redux')) return 'state';
+  if (lower.includes('service')) return 'service';
+  if (lower.includes('view') || lower.includes('page') || lower.includes('pages/')) return 'page';
+  if (lower.includes('component') || lang === 'tsx' || lang === 'jsx') return 'component';
+  if (lower.includes('util') || lower.includes('helper') || lower.includes('lib/')) return 'utility';
+  return 'module';
+}
+
+export function computeWorkspaceFingerprint(files: RescueWorkspaceFile[]): string {
+  const normalized = files
+    .map((f) => ({
+      path: normalizeRescuePath(f),
+      hash: crypto.createHash('sha1').update(f.content || '').digest('hex'),
+    }))
+    .filter((f) => Boolean(f.path))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  return crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex').slice(0, 24);
 }
 
 function extractImportsAndExports(filePath: string, content: string, lang: string): {
@@ -167,7 +269,19 @@ function extractImportsAndExports(filePath: string, content: string, lang: strin
     let m: RegExpExecArray | null;
     while ((m = srcRegex.exec(content)) !== null) {
       const target = m[1].trim();
-      if (target && !target.startsWith('http://') && !target.startsWith('https://') && !target.startsWith('//') && !target.startsWith('#')) {
+      const lowerTarget = target.toLowerCase();
+      if (
+        target &&
+        !lowerTarget.startsWith('http://') &&
+        !lowerTarget.startsWith('https://') &&
+        !lowerTarget.startsWith('//') &&
+        !lowerTarget.startsWith('#') &&
+        !lowerTarget.startsWith('data:') &&
+        !lowerTarget.startsWith('blob:') &&
+        !lowerTarget.startsWith('mailto:') &&
+        !lowerTarget.startsWith('tel:') &&
+        !lowerTarget.startsWith('javascript:')
+      ) {
         imports.add(target);
       }
     }
@@ -175,7 +289,10 @@ function extractImportsAndExports(filePath: string, content: string, lang: strin
     const cssImport = /@import\s+(?:url\()?['"]([^'"]+)['"]\)?/gi;
     let m: RegExpExecArray | null;
     while ((m = cssImport.exec(content)) !== null) {
-      if (!m[1].startsWith('http')) imports.add(m[1]);
+      const target = m[1].trim().toLowerCase();
+      if (target && !target.startsWith('http://') && !target.startsWith('https://') && !target.startsWith('data:')) {
+        imports.add(m[1].trim());
+      }
     }
   }
 
@@ -191,10 +308,35 @@ function resolveRelativeImport(
   fromPath: string,
   specifier: string,
   allPathSet: Set<string>,
+  lang = '',
 ): string | null {
   if (!specifier.startsWith('.') && !specifier.startsWith('/')) {
     return null;
   }
+
+  // Handle Python relative dot syntax (e.g., ".utils", "..models.user")
+  if (lang === 'python' && specifier.startsWith('.') && !specifier.startsWith('./') && !specifier.startsWith('../')) {
+    const dotMatch = specifier.match(/^(\.+)(.*)$/);
+    if (dotMatch) {
+      const upLevels = Math.max(0, dotMatch[1].length - 1);
+      const modulePart = dotMatch[2].replace(/\./g, '/');
+      let baseDir = path.posix.dirname(fromPath);
+      for (let i = 0; i < upLevels; i++) {
+        baseDir = baseDir === '.' ? '.' : path.posix.dirname(baseDir);
+      }
+      const prefix = baseDir === '.' ? '' : `${baseDir}/`;
+      if (!modulePart) {
+        const initPath = `${prefix}__init__.py`;
+        return allPathSet.has(initPath) ? initPath : null;
+      }
+      const pyFile = `${prefix}${modulePart}.py`;
+      if (allPathSet.has(pyFile)) return pyFile;
+      const pyInit = `${prefix}${modulePart}/__init__.py`;
+      if (allPathSet.has(pyInit)) return pyInit;
+      return null;
+    }
+  }
+
   const cleanSpec = specifier.split('?')[0].split('#')[0];
   const baseDir = path.posix.dirname(fromPath);
   const candidateBase = cleanSpec.startsWith('/')
@@ -268,6 +410,12 @@ export function buildProjectIndex(files: RescueWorkspaceFile[]): {
   if (declaredPkgSet.has('tailwindcss')) frameworksDetected.add('Tailwind CSS');
   if (declaredPkgSet.has('firebase')) frameworksDetected.add('Firebase');
   if (languages.python) frameworksDetected.add('Python');
+  if (languages.php) frameworksDetected.add('PHP');
+  if (languages.java) frameworksDetected.add('Java');
+  if (languages.cpp || languages.c) frameworksDetected.add('C/C++');
+  if (languages.csharp) frameworksDetected.add('C#');
+  if (languages.go) frameworksDetected.add('Go');
+  if (languages.rust) frameworksDetected.add('Rust');
   if (languages.sql) frameworksDetected.add('SQL');
   if (languages.typescript || languages.tsx) frameworksDetected.add('TypeScript');
   if (frameworksDetected.size === 0 && languages.html) frameworksDetected.add('HTML/CSS/JS Web');
@@ -285,6 +433,7 @@ export function buildProjectIndex(files: RescueWorkspaceFile[]): {
       fileId: f.id,
       path: p,
       language: lang,
+      role: inferFileRole(p, lang, extracted),
       linesCount: f.content ? f.content.split('\n').length : 0,
       bytes: Buffer.byteLength(f.content, 'utf8'),
       imports: extracted.imports,
@@ -309,7 +458,7 @@ export function buildProjectIndex(files: RescueWorkspaceFile[]): {
       if (spec.startsWith('.') || spec.startsWith('/')) {
         // Ignore API paths accidentally captured as HTML links
         if (spec.startsWith('/api/')) continue;
-        const target = resolveRelativeImport(p, spec, allPathSet);
+        const target = resolveRelativeImport(p, spec, allPathSet, summary.language);
         if (target) {
           resolvedEdges.get(p)!.push(target);
           summariesMap.get(target)!.importedBy.push(p);
@@ -561,18 +710,275 @@ function runTscTempCheck(fileMap: Map<string, RescueWorkspaceFile>): {
   }
 }
 
+export function analyzeProjectDocumentation(
+  fileMap: Map<string, RescueWorkspaceFile>,
+  index: RescueProjectIndex,
+  packageJsonParsed: Record<string, unknown> | null,
+): RescueDocumentationReport {
+  const docFiles: RescueDocumentationReport['docFiles'] = [];
+  const setupInstructions = new Set<string>();
+  const documentedEndpointsSet = new Set<string>();
+  const referencedPathsSet = new Set<string>();
+  const discrepancies: RescueDocumentationDiscrepancy[] = [];
+
+  const backendRouteSet = new Set<string>();
+  for (const s of index.files) {
+    for (const r of s.apiRoutes) {
+      backendRouteSet.add(r.replace(/\/+$/, ''));
+    }
+  }
+  const hasBackendFiles = backendRouteSet.size > 0 || index.files.some((f) => f.role === 'route');
+  const pkgScripts =
+    packageJsonParsed && typeof packageJsonParsed.scripts === 'object' && packageJsonParsed.scripts !== null
+      ? (packageJsonParsed.scripts as Record<string, unknown>)
+      : null;
+
+  for (const [filePath, file] of fileMap.entries()) {
+    const lower = filePath.toLowerCase();
+    const isDoc =
+      lower.endsWith('.md') ||
+      lower.endsWith('.mdx') ||
+      (lower.endsWith('.txt') && !lower.includes('requirements.txt'));
+    if (!isDoc) continue;
+
+    const text = file.content || '';
+    const headings = text
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => /^#{1,3}\s+/.test(l))
+      .map((l) => l.replace(/^#{1,3}\s+/, '').trim())
+      .slice(0, 12);
+
+    const paragraphs = text
+      .split(/\n\s*\n/)
+      .map((p) => p.replace(/^#.*$/gm, '').trim())
+      .filter((p) => p.length > 20 && !p.startsWith('```'));
+
+    docFiles.push({
+      path: filePath,
+      title: headings[0] || path.posix.basename(filePath),
+      wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
+      headings,
+      excerpt: (paragraphs[0] || text.slice(0, 220)).replace(/\s+/g, ' ').slice(0, 260),
+    });
+
+    // Extract setup commands
+    const cmdMatches = text.match(/(?:npm|pnpm|yarn|pip3?|python3?|uvicorn|flask|go|cargo)\s+[a-zA-Z0-9._:/-]+(?:\s+[a-zA-Z0-9._:/-]+){0,3}/g) || [];
+    for (const cmd of cmdMatches.slice(0, 12)) {
+      setupInstructions.add(cmd.trim());
+      if (pkgScripts && cmd.startsWith('npm run ')) {
+        const scriptName = cmd.replace('npm run ', '').trim().split(/\s+/)[0];
+        if (scriptName && !Object.prototype.hasOwnProperty.call(pkgScripts, scriptName)) {
+          discrepancies.push({
+            kind: 'missing_script',
+            docFile: filePath,
+            target: `npm run ${scriptName}`,
+            details: `${filePath} instructs running "npm run ${scriptName}", which is not defined in package.json scripts.`,
+          });
+        }
+      }
+    }
+
+    // Extract documented /api/... endpoints
+    const apiMatches = text.match(/\b(\/api\/[a-zA-Z0-9_/:.-]+)/g) || [];
+    for (const ep of apiMatches) {
+      const normalizedEp = ep.replace(/\/+$/, '');
+      documentedEndpointsSet.add(normalizedEp);
+      if (hasBackendFiles) {
+        let matched = backendRouteSet.has(normalizedEp);
+        if (!matched) {
+          for (const pattern of backendRouteSet) {
+            const regexStr = '^' + pattern.replace(/:[a-zA-Z0-9_]+/g, '[^/]+') + '$';
+            if (new RegExp(regexStr).test(normalizedEp)) {
+              matched = true;
+              break;
+            }
+          }
+        }
+        if (!matched) {
+          discrepancies.push({
+            kind: 'missing_documented_route',
+            docFile: filePath,
+            target: normalizedEp,
+            details: `${filePath} documents endpoint "${normalizedEp}", but no matching backend route handler was found in inspected code.`,
+          });
+        }
+      }
+    }
+
+    // Extract referenced source/config paths like src/foo.ts or server.ts
+    const pathMatches = text.match(/`((?:\.?\/)?(?:src|app|server|backend|frontend|api|lib|utils|components|pages|docs)\/[a-zA-Z0-9._/-]+\.[a-zA-Z0-9]{1,8}|(?:package\.json|tsconfig\.json|server\.ts|app\.py|main\.py))`/g) || [];
+    for (const raw of pathMatches) {
+      const cleanRef = raw.replace(/^`|`$/g, '').replace(/^\.\//, '');
+      referencedPathsSet.add(cleanRef);
+      if (!fileMap.has(cleanRef)) {
+        discrepancies.push({
+          kind: 'missing_referenced_file',
+          docFile: filePath,
+          target: cleanRef,
+          details: `${filePath} references "${cleanRef}", which was not found in the imported project files.`,
+        });
+      }
+    }
+  }
+
+  const readmeDoc =
+    docFiles.find((d) => path.posix.basename(d.path).toLowerCase() === 'readme.md') || docFiles[0];
+
+  return {
+    docFiles,
+    purposeSummary: readmeDoc?.excerpt || (docFiles.length === 0 ? 'No README or Markdown documentation files were found in this workspace.' : 'Project documentation files inspected.'),
+    setupInstructions: Array.from(setupInstructions).slice(0, 12),
+    documentedEndpoints: Array.from(documentedEndpointsSet).slice(0, 20),
+    referencedPaths: Array.from(referencedPathsSet).slice(0, 20),
+    discrepancies: discrepancies.slice(0, 20),
+  };
+}
+
+function checkBalancedDelimiters(code: string): { line: number; message: string } | null {
+  const stack: { ch: string; line: number }[] = [];
+  const pairs: Record<string, string> = { '(': ')', '{': '}', '[': ']' };
+  const closing = new Set([')', '}', ']']);
+  let line = 1;
+  let inSingle = false;
+  let inDouble = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let i = 0; i < code.length; i++) {
+    const c = code[i];
+    const next = code[i + 1] || '';
+    if (c === '\n') {
+      line += 1;
+      inLineComment = false;
+      continue;
+    }
+    if (inLineComment) continue;
+    if (inBlockComment) {
+      if (c === '*' && next === '/') {
+        inBlockComment = false;
+        i += 1;
+      }
+      continue;
+    }
+    if (inSingle) {
+      if (c === '\\') { i += 1; continue; }
+      if (c === "'") inSingle = false;
+      continue;
+    }
+    if (inDouble) {
+      if (c === '\\') { i += 1; continue; }
+      if (c === '"') inDouble = false;
+      continue;
+    }
+    if (c === '/' && next === '/') {
+      inLineComment = true;
+      i += 1;
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      inBlockComment = true;
+      i += 1;
+      continue;
+    }
+    if (c === "'") {
+      inSingle = true;
+      continue;
+    }
+    if (c === '"') {
+      inDouble = true;
+      continue;
+    }
+    if (pairs[c]) {
+      stack.push({ ch: pairs[c], line });
+    } else if (closing.has(c)) {
+      const top = stack.pop();
+      if (!top || top.ch !== c) {
+        return {
+          line,
+          message: top ? `Mismatched delimiter "${c}" (expected "${top.ch}" opened at line ${top.line}).` : `Unexpected closing "${c}" without matching opener.`,
+        };
+      }
+    }
+  }
+  if (stack.length > 0) {
+    const unclosed = stack[stack.length - 1];
+    return {
+      line: unclosed.line,
+      message: `Unclosed delimiter matching "${unclosed.ch}" opened at line ${unclosed.line}.`,
+    };
+  }
+  return null;
+}
+
 export async function scanProjectWorkspace(input: {
   userId: string;
   projectId: string;
   projectTitle: string;
   scanMode: RescueScanMode;
   files: RescueWorkspaceFile[];
+  customConfig?: RescueCustomScanConfig;
+  onStageProgress?: (stage: RescueScanStage, progressPct: number, filesProcessed: number) => void;
+  isCancelled?: () => boolean;
 }): Promise<Omit<RescueScanReport, 'id' | 'createdAt'>> {
-  const { index, fileMap, brokenImports, unlistedPackages } = buildProjectIndex(input.files);
+  const excludedPaths = (input.customConfig?.excludedPaths || [])
+    .map((p) => p.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim())
+    .filter(Boolean);
+
+  input.onStageProgress?.('Preparing Project', 5, 0);
+  const filteredInputFiles =
+    excludedPaths.length > 0
+      ? input.files.filter((f) => {
+          const p = normalizeRescuePath(f);
+          return !excludedPaths.some((ex) => p === ex || p.startsWith(`${ex}/`));
+        })
+      : input.files;
+
+  input.onStageProgress?.('Loading File Inventory', 15, filteredInputFiles.length);
+  if (input.isCancelled?.()) throw new Error('Scan cancelled by user.');
+
+  const { index, fileMap, brokenImports, unlistedPackages, packageJsonParsed } =
+    buildProjectIndex(filteredInputFiles);
   const issues: RescueIssue[] = [];
   const runtimeAudit: RescueRuntimeAudit[] = [];
+  const projectFingerprint = computeWorkspaceFingerprint(filteredInputFiles);
+
+  input.onStageProgress?.('Inspecting Source Files', 28, index.inspectedFiles);
+  if (input.isCancelled?.()) throw new Error('Scan cancelled by user.');
+
+  input.onStageProgress?.('Reading Documentation', 38, index.inspectedFiles);
+  const documentationReport = analyzeProjectDocumentation(fileMap, index, packageJsonParsed);
+  for (const disc of documentationReport.discrepancies) {
+    issues.push({
+      id: makeIssueId('doc', `${disc.docFile}:${disc.target}:${disc.kind}`),
+      title:
+        disc.kind === 'missing_documented_route'
+          ? `Documented route "${disc.target}" not found in backend`
+          : disc.kind === 'missing_script'
+            ? `Documented script "${disc.target}" missing in package.json`
+            : `Documented path "${disc.target}" missing in project`,
+      severity: 'medium',
+      certainty: 'possible',
+      confidence: 74,
+      category: 'documentation',
+      filePath: disc.docFile,
+      evidenceSource: 'Documentation Cross-Check',
+      summary: disc.details,
+      beginnerExplanation: `The documentation file ${disc.docFile} mentions "${disc.target}", which wasn't found in the inspected code files.`,
+      developerExplanation: `Documentation consistency check (${disc.kind}) in ${disc.docFile}: ${disc.details}`,
+      relatedFiles: [],
+      recommendedAction: `Verify whether ${disc.docFile} needs updating or whether "${disc.target}" is missing from the project.`,
+      learnTopic: 'documentation',
+    });
+  }
+
+  input.onStageProgress?.('Analyzing Dependencies', 48, index.inspectedFiles);
+  input.onStageProgress?.('Mapping Project Architecture', 58, index.inspectedFiles);
+  if (input.isCancelled?.()) throw new Error('Scan cancelled by user.');
 
   const eslintLinter = new Linter();
+
+  input.onStageProgress?.('Running Static Diagnostics', 70, index.inspectedFiles);
 
   // 1. JSON & Config Checks
   let jsonFilesCount = 0;
@@ -833,8 +1239,62 @@ except Exception as e:
     });
   }
 
-  // Deep & Full Scan Checks
-  if (input.scanMode === 'deep' || input.scanMode === 'full') {
+  // 5b. Multi-Language Structural Check (PHP, Java, C/C++, C#, Go, Rust)
+  const polyglotLangs = new Set(['php', 'java', 'cpp', 'c', 'csharp', 'go', 'rust']);
+  const polyglotFiles = Array.from(fileMap.entries()).filter(([p]) => polyglotLangs.has(detectLanguage(p)));
+  if (polyglotFiles.length > 0) {
+    for (const [filePath, file] of polyglotFiles) {
+      const lang = detectLanguage(filePath, file.language);
+      const delim = checkBalancedDelimiters(file.content);
+      if (delim) {
+        issues.push({
+          id: makeIssueId('poly', `${filePath}:${delim.line}:${delim.message}`),
+          title: `${lang.toUpperCase()} syntax structure error in ${filePath} (line ${delim.line})`,
+          severity: 'critical',
+          certainty: 'confirmed',
+          confidence: 92,
+          category: 'syntax',
+          filePath,
+          line: delim.line,
+          evidenceSource: 'Structural Delimiter Parser',
+          summary: delim.message,
+          beginnerExplanation: `Line ${delim.line} in ${filePath} has an unclosed or mismatched bracket/brace, which prevents ${lang} from compiling or running.`,
+          developerExplanation: `Delimiter balance parser reported at ${filePath}:${delim.line} — ${delim.message}`,
+          relatedFiles: [],
+          recommendedAction: `Match the opening/closing braces or parentheses near line ${delim.line} in ${filePath}.`,
+        });
+      }
+      if (lang === 'php' && !file.content.includes('<?php') && !file.content.includes('<?=')) {
+        issues.push({
+          id: makeIssueId('php_tag', filePath),
+          title: `PHP file missing <?php opening tag in ${filePath}`,
+          severity: 'medium',
+          certainty: 'possible',
+          confidence: 78,
+          category: 'syntax',
+          filePath,
+          line: 1,
+          evidenceSource: 'PHP Structure Check',
+          summary: `${filePath} does not begin with a <?php tag.`,
+          beginnerExplanation: `PHP files normally start with "<?php" so the server knows to run them as PHP code instead of printing text.`,
+          developerExplanation: `Missing "<?php" opening tag in ${filePath}. Verify whether this file is intended as plain template output or PHP code.`,
+          relatedFiles: [],
+          recommendedAction: `Add "<?php" at the top of ${filePath} if it executes PHP logic.`,
+        });
+      }
+    }
+    runtimeAudit.push({
+      tool: 'Multi-Language Structural Parser (PHP/Java/C++/C#/Go/Rust)',
+      available: true,
+      executed: true,
+      note: `Checked syntax delimiter structure on ${polyglotFiles.length} file(s); native compilers are not executed in web sandbox.`,
+    });
+  }
+
+  // Deep, Full, or Custom Scan Checks
+  const runDeepChecks =
+    input.scanMode === 'deep' || input.scanMode === 'full' || input.scanMode === 'custom';
+  if (runDeepChecks) {
     // 6. ESLint Static AST Checks on JS/TS
     let eslintChecked = 0;
     for (const [filePath, file] of fileMap.entries()) {
@@ -1022,8 +1482,13 @@ except Exception as e:
     }
   }
 
-  // Full Scan: Security, Secrets, Performance, plus Gemini Holistic Insight
-  if (input.scanMode === 'full') {
+  // Full or Custom Scan: Security, Secrets, Performance
+  if (
+    input.scanMode === 'full' ||
+    (input.scanMode === 'custom' &&
+      (input.customConfig?.checks.includes('security') ||
+        input.customConfig?.checks.includes('performance')))
+  ) {
     for (const [filePath, file] of fileMap.entries()) {
       const content = file.content;
       const lines = content.split('\n');
@@ -1095,9 +1560,20 @@ except Exception as e:
     }
   }
 
-  // Deduplicate by ID
+  input.onStageProgress?.('Investigating Detected Problems', 82, index.inspectedFiles);
+  if (input.isCancelled?.()) throw new Error('Scan cancelled by user.');
+
+  input.onStageProgress?.('Classifying Issues', 89, index.inspectedFiles);
+
+  // Deduplicate by ID & filter by customConfig checks when scanMode === 'custom'
+  const allowedCategories =
+    input.scanMode === 'custom' && input.customConfig?.checks?.length
+      ? new Set<RescueIssueCategory>(input.customConfig.checks)
+      : null;
+
   const dedupedMap = new Map<string, RescueIssue>();
   for (const iss of issues) {
+    if (allowedCategories && !allowedCategories.has(iss.category)) continue;
     if (!dedupedMap.has(iss.id)) {
       dedupedMap.set(iss.id, iss);
     }
@@ -1156,13 +1632,16 @@ except Exception as e:
     'Create a Version History snapshot or run TestLab verification after applying code changes.',
   ];
 
-  // Optional AI holistic summary on deep/full scans when Gemini is configured
+  input.onStageProgress?.('Generating Scan Report', 95, index.inspectedFiles);
+
+  // Optional AI holistic summary on deep/full/custom scans when Gemini is configured
   const ai = getAiClient();
-  if ((input.scanMode === 'deep' || input.scanMode === 'full') && ai && index.inspectedFiles > 0) {
+  if ((input.scanMode === 'deep' || input.scanMode === 'full' || input.scanMode === 'custom') && ai && index.inspectedFiles > 0) {
     try {
       const compactManifest = index.files.slice(0, 35).map((f) => ({
         path: f.path,
         language: f.language,
+        role: f.role,
         imports: f.imports.slice(0, 10),
         apiCalls: f.apiCalls,
         apiRoutes: f.apiRoutes,
@@ -1193,11 +1672,11 @@ except Exception as e:
           },
         },
       });
-      const parsed = JSON.parse((aiResp.text || '{}').trim()) as {
+      const parsed = parseJsonSafe<{
         summary?: string;
         recommendedRepairOrder?: string[];
         suggestedImprovements?: string[];
-      };
+      }>(aiResp.text, {});
       if (parsed.summary) summary = parsed.summary.slice(0, 3800);
       if (Array.isArray(parsed.recommendedRepairOrder) && parsed.recommendedRepairOrder.length > 0) {
         recommendedRepairOrder = parsed.recommendedRepairOrder.slice(0, 10);
@@ -1211,7 +1690,14 @@ except Exception as e:
         executed: true,
         note: 'Synthesized cross-file priorities and repair order from inspected project context.',
       });
-    } catch {
+    } catch (err) {
+      recordRescueAdminEvent({
+        kind: 'ai_error',
+        userId: input.userId,
+        projectTitle: input.projectTitle,
+        message: 'Gemini holistic scan synthesis failed; deterministic scan completed.',
+        details: err instanceof Error ? err.message : String(err),
+      });
       runtimeAudit.push({
         tool: 'Gemini Project Rescue Analyzer',
         available: true,
@@ -1245,9 +1731,112 @@ except Exception as e:
     recommendedRepairOrder,
     suggestedImprovements,
     projectIndex: index,
+    documentationReport,
     issues: cappedIssues,
     runtimeAudit,
+    excludedPaths,
+    projectFingerprint,
   };
+}
+
+export function startRescueScanJob(input: {
+  userId: string;
+  projectId: string;
+  projectTitle: string;
+  scanMode: RescueScanMode;
+  files: RescueWorkspaceFile[];
+  customConfig?: RescueCustomScanConfig;
+}): RescueScanJob {
+  const jobId = `rjob_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const initialJob: RescueScanJob = {
+    jobId,
+    userId: input.userId,
+    projectId: input.projectId,
+    projectTitle: input.projectTitle.slice(0, 140),
+    scanMode: input.scanMode,
+    status: 'running',
+    currentStage: 'Preparing Project',
+    progressPct: 3,
+    filesProcessed: 0,
+    totalFiles: input.files.length,
+    startedAt: new Date().toISOString(),
+  };
+  saveScanJobRecord(initialJob);
+
+  void (async () => {
+    try {
+      const rawReport = await scanProjectWorkspace({
+        ...input,
+        onStageProgress: (stage, progressPct, filesProcessed) => {
+          const cur = getScanJobRecord(jobId);
+          if (!cur || cur.status === 'cancelled') return;
+          saveScanJobRecord({
+            ...cur,
+            currentStage: stage,
+            progressPct,
+            filesProcessed,
+          });
+        },
+        isCancelled: () => getScanJobRecord(jobId)?.status === 'cancelled',
+      });
+      const cur = getScanJobRecord(jobId);
+      if (!cur || cur.status === 'cancelled') return;
+      const report: RescueScanReport = {
+        ...rawReport,
+        id: `scan_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        createdAt: new Date().toISOString(),
+      };
+      saveScanJobRecord({
+        ...cur,
+        status: 'completed',
+        currentStage: 'Generating Scan Report',
+        progressPct: 100,
+        filesProcessed: report.filesInspected,
+        finishedAt: new Date().toISOString(),
+        report,
+      });
+    } catch (err) {
+      const cur = getScanJobRecord(jobId);
+      if (!cur || cur.status === 'cancelled') return;
+      const msg = err instanceof Error ? err.message : 'Background scan failed.';
+      recordRescueAdminEvent({
+        kind: 'failed_scan',
+        userId: input.userId,
+        projectTitle: input.projectTitle,
+        message: msg,
+      });
+      saveScanJobRecord({
+        ...cur,
+        status: 'failed',
+        finishedAt: new Date().toISOString(),
+        error: msg,
+      });
+    }
+  })();
+
+  return initialJob;
+}
+
+export function getUserRescueScanJob(jobId: string, userId: string): RescueScanJob | null {
+  const job = getScanJobRecord(jobId);
+  if (!job || job.userId !== userId) return null;
+  return job;
+}
+
+export function cancelRescueScanJob(jobId: string, userId: string): RescueScanJob | null {
+  const job = getScanJobRecord(jobId);
+  if (!job || job.userId !== userId) return null;
+  if (job.status === 'running') {
+    const cancelled: RescueScanJob = {
+      ...job,
+      status: 'cancelled',
+      finishedAt: new Date().toISOString(),
+      error: 'Cancelled by user.',
+    };
+    saveScanJobRecord(cancelled);
+    return cancelled;
+  }
+  return job;
 }
 
 function selectRelevantFiles(
@@ -1311,10 +1900,17 @@ export async function investigateProjectIssue(input: {
   files: RescueWorkspaceFile[];
   issue?: RescueIssue | null;
   userProblemDescription?: string;
+  expectedBehavior?: string;
+  actualBehavior?: string;
+  screenshot?: { mimeType: string; dataBase64: string } | null;
 }): Promise<RescueRootCauseAnalysis> {
   const { index, fileMap } = buildProjectIndex(input.files);
   const focusPath = input.issue?.filePath;
-  const problemDesc = input.userProblemDescription || input.issue?.summary || input.issue?.title || 'Investigate project issue';
+  const problemDesc =
+    input.userProblemDescription ||
+    input.issue?.summary ||
+    input.issue?.title ||
+    'Investigate project issue';
 
   const relevantFiles = selectRelevantFiles(fileMap, index, focusPath, problemDesc, 6);
   const inspectedFilesList = Array.from(fileMap.keys());
@@ -1322,7 +1918,9 @@ export async function investigateProjectIssue(input: {
   if (index.skippedFiles.length > 0) {
     unverifiedScopeNotes.push(`${index.skippedFiles.length} file(s) skipped due to per-file size cap.`);
   }
-  unverifiedScopeNotes.push('Live external database/network endpoints and user browser runtime logs outside MideoCode workspace were not directly executed.');
+  unverifiedScopeNotes.push(
+    'Live external database/network endpoints and user browser runtime logs outside MideoCode workspace were not directly executed.',
+  );
 
   const ai = getAiClient();
   if (!ai) {
@@ -1340,6 +1938,7 @@ Dependency overview:
 ${JSON.stringify(
   index.files.map((f) => ({
     path: f.path,
+    role: f.role,
     imports: f.imports,
     importedBy: f.importedBy,
     exports: f.exports,
@@ -1351,6 +1950,9 @@ ${JSON.stringify(
 Reported Problem / Issue:
 ${input.issue ? JSON.stringify(input.issue) : problemDesc}
 Additional User Symptom: ${input.userProblemDescription || 'None'}
+Expected Behavior: ${input.expectedBehavior || 'Not specified'}
+Actual Behavior: ${input.actualBehavior || 'Not specified'}
+${input.screenshot ? 'A screenshot of the error/UI state is attached for visual inspection.' : ''}
 
 Relevant File Contents (secrets redacted):
 ${relevantFiles.map((f) => `--- FILE: ${f.path} ---\n${f.content}`).join('\n\n')}
@@ -1361,50 +1963,94 @@ Rules:
 - Provide both a plain-English Beginner Explanation and a technical Developer Explanation.
 `;
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-4-hydrogen',
-    contents: prompt,
-    config: {
-      systemInstruction:
-        'You are MideoCode Project Rescue AI. Return accurate, evidence-backed root cause analysis in strict JSON.',
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          problemTitle: { type: Type.STRING },
-          certainty: { type: Type.STRING, enum: ['confirmed', 'possible'] },
-          confidence: { type: Type.INTEGER },
-          whatIsHappening: { type: Type.STRING },
-          confirmedCauses: { type: Type.ARRAY, items: { type: Type.STRING } },
-          possibleCauses: { type: Type.ARRAY, items: { type: Type.STRING } },
-          responsibleFile: { type: Type.STRING },
-          affectedFiles: { type: Type.ARRAY, items: { type: Type.STRING } },
-          whyItOccurred: { type: Type.STRING },
-          safestSolution: { type: Type.STRING },
-          beginnerExplanation: { type: Type.STRING },
-          developerExplanation: { type: Type.STRING },
-          learnKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+  const contents: Array<string | { text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+  let useMultimodal = false;
+  if (
+    input.screenshot &&
+    ['image/png', 'image/jpeg', 'image/webp'].includes(input.screenshot.mimeType) &&
+    input.screenshot.dataBase64
+  ) {
+    const cleanB64 = input.screenshot.dataBase64.replace(/^data:image\/[a-z]+;base64,/i, '');
+    if (Buffer.byteLength(cleanB64, 'base64') <= 4 * 1024 * 1024) {
+      contents.push({ text: prompt });
+      contents.push({
+        inlineData: {
+          mimeType: input.screenshot.mimeType,
+          data: cleanB64,
         },
-        required: [
-          'problemTitle',
-          'certainty',
-          'confidence',
-          'whatIsHappening',
-          'confirmedCauses',
-          'possibleCauses',
-          'responsibleFile',
-          'affectedFiles',
-          'whyItOccurred',
-          'safestSolution',
-          'beginnerExplanation',
-          'developerExplanation',
-          'learnKeywords',
-        ],
-      },
-    },
-  });
+      });
+      useMultimodal = true;
+    }
+  }
 
-  const raw = JSON.parse((response.text || '{}').trim()) as Partial<RescueRootCauseAnalysis>;
+  let response;
+  try {
+    response = await ai.models.generateContent({
+      model: 'gemini-4-hydrogen',
+      contents: useMultimodal
+        ? { parts: contents as Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> }
+        : prompt,
+      config: {
+        systemInstruction:
+          'You are MideoCode Project Rescue AI. Return accurate, evidence-backed root cause analysis in strict JSON.',
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            problemTitle: { type: Type.STRING },
+            certainty: { type: Type.STRING, enum: ['confirmed', 'possible'] },
+            confidence: { type: Type.INTEGER },
+            whatIsHappening: { type: Type.STRING },
+            confirmedCauses: { type: Type.ARRAY, items: { type: Type.STRING } },
+            possibleCauses: { type: Type.ARRAY, items: { type: Type.STRING } },
+            responsibleFile: { type: Type.STRING },
+            affectedFiles: { type: Type.ARRAY, items: { type: Type.STRING } },
+            whyItOccurred: { type: Type.STRING },
+            safestSolution: { type: Type.STRING },
+            beginnerExplanation: { type: Type.STRING },
+            developerExplanation: { type: Type.STRING },
+            learnKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+          },
+          required: [
+            'problemTitle',
+            'certainty',
+            'confidence',
+            'whatIsHappening',
+            'confirmedCauses',
+            'possibleCauses',
+            'responsibleFile',
+            'affectedFiles',
+            'whyItOccurred',
+            'safestSolution',
+            'beginnerExplanation',
+            'developerExplanation',
+            'learnKeywords',
+          ],
+        },
+      },
+    });
+  } catch (err) {
+    recordRescueAdminEvent({
+      kind: 'ai_error',
+      projectTitle: input.projectTitle,
+      message: 'Root cause AI investigation failed.',
+      details: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+
+  const raw = parseJsonSafe<Partial<RescueRootCauseAnalysis>>(response.text, {
+    problemTitle: input.issue?.title || 'Root Cause Investigation',
+    certainty: input.issue?.certainty || 'possible',
+    confidence: input.issue?.confidence || 70,
+    whatIsHappening: input.issue?.summary || 'Analysis completed across inspected project files.',
+    beginnerExplanation:
+      input.issue?.beginnerExplanation ||
+      'Project Rescue AI inspected the workspace files to pinpoint where this error originates.',
+    developerExplanation:
+      input.issue?.developerExplanation ||
+      'Review the responsible file and related imports highlighted below.',
+  });
   const safeResponsible =
     raw.responsibleFile && fileMap.has(raw.responsibleFile)
       ? raw.responsibleFile
@@ -1560,6 +2206,28 @@ export function analyzeFixImpact(
     preFlightPassed = false;
   }
 
+  const isCriticalConfigOrEntry =
+    origSummary?.role === 'entry' ||
+    origSummary?.role === 'auth' ||
+    origSummary?.role === 'database' ||
+    targetPath === 'package.json';
+
+  let riskLevel: RescueRiskLevel = 'Low Risk';
+  let riskRationale = 'Isolated module change; existing exports and syntax passed pre-flight checks.';
+
+  if (!preFlightPassed || removedOrChangedExports.length > 0 || dependentFiles.length > 3 || isCriticalConfigOrEntry) {
+    riskLevel = 'High Risk';
+    const reasons: string[] = [];
+    if (!preFlightPassed) reasons.push('pre-flight validation flagged conflicts');
+    if (removedOrChangedExports.length > 0) reasons.push(`modifies/removes exports (${removedOrChangedExports.join(', ')})`);
+    if (dependentFiles.length > 3) reasons.push(`${dependentFiles.length} modules depend on this file`);
+    if (isCriticalConfigOrEntry) reasons.push(`modifies critical ${origSummary?.role || 'config'} module`);
+    riskRationale = `High impact because ${reasons.join('; ')}.`;
+  } else if (dependentFiles.length >= 1 || origSummary?.role === 'route' || origSummary?.role === 'api_client') {
+    riskLevel = 'Moderate Risk';
+    riskRationale = `Modifies shared module used by ${dependentFiles.length} file(s) or API boundary.`;
+  }
+
   return {
     dependentFiles,
     affectedFeatures: [
@@ -1568,6 +2236,8 @@ export function analyzeFixImpact(
       ...(dependentFiles.length > 0 ? [`${dependentFiles.length} dependent module(s)`] : ['Isolated module']),
     ],
     removedOrChangedExports,
+    riskLevel,
+    riskRationale,
     preFlightPassed,
     preFlightChecks,
     potentialConflicts,
@@ -1640,16 +2310,24 @@ Rules:
     },
   });
 
-  const parsed = JSON.parse((response.text || '{}').trim()) as {
+  const parsed = parseJsonSafe<{
     problemIdentified?: string;
     proposedCode?: string;
     explanation?: string;
     reason?: string;
     potentialSideEffects?: string[];
-  };
+  }>(response.text, {});
 
-  const proposedCode = (parsed.proposedCode || targetFile.content).trimEnd();
+  if (!parsed.proposedCode || !parsed.proposedCode.trim()) {
+    throw new Error('AI did not return a complete replacement file. Please add more detail about what should be fixed and retry.');
+  }
+
+  const proposedCode = parsed.proposedCode.endsWith('\n')
+    ? parsed.proposedCode
+    : `${parsed.proposedCode.trimEnd()}\n`;
   const impact = analyzeFixImpact(input.files, input.targetFilePath, proposedCode);
+
+  const targetFileHash = crypto.createHash('sha256').update(targetFile.content || '').digest('hex');
 
   return {
     id: `fix_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -1658,6 +2336,7 @@ Rules:
     fileId: targetFile.id,
     filePath: input.targetFilePath,
     language: detectLanguage(input.targetFilePath, targetFile.language),
+    targetFileHash,
     originalCode: targetFile.content,
     proposedCode,
     explanation: parsed.explanation || 'Corrected the identified issue while preserving existing exports.',
@@ -1690,18 +2369,34 @@ export async function verifyPatchedWorkspace(input: {
     (iss) => !prevSet.has(iss.id) && (iss.severity === 'critical' || iss.severity === 'high'),
   );
 
+  const doesIssueBelongToTool = (issue: RescueIssue, toolName: string): boolean => {
+    const toolLower = toolName.toLowerCase();
+    const evLower = issue.evidenceSource.toLowerCase();
+    if (toolLower.includes('typescript')) {
+      return issue.category === 'type' || evLower.includes('tsc');
+    }
+    return evLower.includes(toolLower.split(' ')[0]);
+  };
+
   const checksExecuted: RescueVerificationResult['checksExecuted'] = scan.runtimeAudit
     .filter((r) => r.executed)
     .map((r) => ({
       name: r.tool,
       executed: true,
-      passed: !scan.issues.some((i) => i.evidenceSource.toLowerCase().includes(r.tool.split(' ')[0].toLowerCase()) && i.filePath === input.targetFilePath && i.severity === 'critical'),
+      passed: !scan.issues.some(
+        (i) =>
+          i.filePath === input.targetFilePath &&
+          (i.severity === 'critical' || i.severity === 'high') &&
+          doesIssueBelongToTool(i, r.tool),
+      ),
       details: r.note,
     }));
 
   let testLabSummary: RescueVerificationResult['testLabSummary'];
   let testsPassed = true;
+  let ranTestLab = false;
   if (input.testSuite && input.testSuite.cases.length > 0) {
+    ranTestLab = true;
     const runRes = executeTestLabSuite({
       language: input.testSuite.language || 'javascript',
       files: input.files,
@@ -1733,11 +2428,31 @@ export async function verifyPatchedWorkspace(input: {
   );
   const passed = targetCriticalOrHigh.length === 0 && newIssuesIntroduced.length === 0 && testsPassed;
 
+  const targetLang = detectLanguage(input.targetFilePath);
+  const fullCompilerLangs = new Set(['javascript', 'typescript', 'jsx', 'tsx', 'json', 'python', 'sql', 'css']);
+  let verificationStatus: RescueVerificationStatus = 'VERIFIED';
+  if (!passed) {
+    verificationStatus = 'FAILED';
+  } else if (checksExecuted.length === 0) {
+    verificationStatus = 'NOT_VERIFIED';
+  } else if (!fullCompilerLangs.has(targetLang) || (!ranTestLab && targetLang !== 'json' && targetLang !== 'sql')) {
+    verificationStatus =
+      fullCompilerLangs.has(targetLang) && checksExecuted.every((c) => c.passed)
+        ? 'VERIFIED'
+        : 'PARTIALLY_VERIFIED';
+  }
+
   return {
     passed,
-    summary: passed
-      ? `Verification passed for ${input.targetFilePath}. No new critical/high errors introduced (${scan.issues.length} total remaining project findings).`
-      : `Verification flagged ${targetCriticalOrHigh.length} critical/high issue(s) on ${input.targetFilePath} and ${newIssuesIntroduced.length} newly introduced issue(s). You can roll back safely.`,
+    verificationStatus,
+    summary:
+      verificationStatus === 'FAILED'
+        ? `Verification failed: ${targetCriticalOrHigh.length} critical/high issue(s) remain on ${input.targetFilePath} and ${newIssuesIntroduced.length} newly introduced issue(s). Rollback is ready.`
+        : verificationStatus === 'NOT_VERIFIED'
+          ? `Change saved to ${input.targetFilePath}, but no automated compiler or test runner was available for verification.`
+          : verificationStatus === 'PARTIALLY_VERIFIED'
+            ? `Partial verification passed on ${input.targetFilePath} (structural checks ran; native compiler/runtime or TestLab suite was not executed).`
+            : `Verified on ${input.targetFilePath}. Executed checks passed with 0 new critical/high errors (${scan.issues.length} remaining project findings).`,
     checksExecuted,
     remainingIssuesCount: scan.issues.length,
     newIssuesIntroduced,
