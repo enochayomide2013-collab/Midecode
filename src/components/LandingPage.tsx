@@ -95,8 +95,18 @@ export function LandingPage() {
                   alt="MideoCode software engineering workstation"
                   className="w-full h-full object-cover"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-transparent pointer-events-none" />
-                <div className="absolute bottom-5 left-5 right-5 flex items-center justify-between text-xs text-slate-200">
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/15 to-transparent pointer-events-none" />
+                {INTRO_VIDEO_URL && (
+                  <button
+                    type="button"
+                    onClick={() => setIntroOpen(true)}
+                    aria-label="Play Introduction to MideoCode"
+                    className="absolute inset-0 m-auto w-16 h-16 rounded-full bg-blue-600/95 hover:bg-blue-500 text-white flex items-center justify-center shadow-2xl border border-white/25 transition-transform hover:scale-105 cursor-pointer"
+                  >
+                    <Play className="w-7 h-7 fill-current ml-0.5" />
+                  </button>
+                )}
+                <div className="absolute bottom-5 left-5 right-5 flex items-center justify-between gap-2 text-xs text-slate-200">
                   <span>Multi-file CodeMirror IDE · Live Preview</span>
                   <span>Isolated JS & Python Runtimes</span>
                 </div>

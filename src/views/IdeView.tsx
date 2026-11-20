@@ -6,6 +6,7 @@ import {
   Download,
   GitBranch,
   History,
+  LifeBuoy,
   Maximize2,
   Minimize2,
   Sparkles,
@@ -44,6 +45,7 @@ export function IdeView() {
     openTestLabForProject,
     openVersionsForProject,
     openCollabForProject,
+    openRescueForProject,
     refreshUserData,
     askAi,
     notify,
@@ -335,6 +337,19 @@ export function IdeView() {
           >
             <Users className="w-3.5 h-3.5" />
             Collab
+          </button>
+          <button
+            onClick={() =>
+              openRescueForProject(
+                activeProject.id,
+                latestConsoleError ? 'investigate' : 'overview',
+                latestConsoleError || undefined,
+              )
+            }
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap cursor-pointer"
+          >
+            <LifeBuoy className="w-3.5 h-3.5 text-emerald-500" />
+            Rescue AI
           </button>
           <button
             onClick={() =>

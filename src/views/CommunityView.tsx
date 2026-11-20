@@ -3,6 +3,9 @@ import {
   Bookmark,
   Flag,
   Heart,
+  Image as ImageIcon,
+  ImagePlus,
+  Loader2,
   MailCheck,
   Megaphone,
   MessageSquare,
@@ -10,6 +13,8 @@ import {
   Search,
   Send,
   ShieldCheck,
+  Trash2,
+  Video,
   X,
 } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
@@ -22,6 +27,15 @@ import {
   submitModerationReport,
   toggleBookmark,
 } from '../services/dataService';
+import {
+  COMMUNITY_IMAGE_MAX_BYTES,
+  COMMUNITY_VIDEO_MAX_BYTES,
+  COMMUNITY_VIDEO_MIN_BYTES,
+  deleteAdminCommunityMedia,
+  formatMediaBytes,
+  uploadAdminCommunityMediaChunked,
+  type UploadedCommunityMediaResult,
+} from '../services/rescueService';
 import { resendVerificationEmailReal } from '../services/authService';
 import type { CommunityComment, CommunityPost, ModerationReport } from '../types/mideocode';
 
@@ -62,6 +76,11 @@ export function CommunityView() {
   const [newBody, setNewBody] = useState('');
   const [newTags, setNewTags] = useState('javascript, help');
   const [newCode, setNewCode] = useState('');
+  const [composerImages, setComposerImages] = useState<UploadedCommunityMediaResult[]>([]);
+  const [composerUploadingImage, setComposerUploadingImage] = useState(false);
+  const [composerVideo, setComposerVideo] = useState<UploadedCommunityMediaResult | null>(null);
+  const [composerVideoPct, setComposerVideoPct] = useState<number | null>(null);
+  const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
   const [creatingPost, setCreatingPost] = useState(false);
 
   // Report modal state
@@ -159,6 +178,10 @@ export function CommunityView() {
       notify('error', 'Enter a clear title (min 3 chars) and description (min 5 chars).');
       return;
     }
+    if (composerVideoPct !== null || composerUploadingImage) {
+      notify('info', 'Please wait for attached media upload to complete.');
+      return;
+    }
     setCreatingPost(true);
     try {
       const tags = newTags
@@ -173,6 +196,17 @@ export function CommunityView() {
         tags,
         codeSnippet: newCode || undefined,
         authorRole: isAdminActor ? 'admin' : 'member',
+        ...(isAdminActor && composerImages.length > 0
+          ? { imageUrls: composerImages.map((img) => img.url) }
+          : {}),
+        ...(isAdminActor && composerVideo
+          ? {
+              videoUrl: composerVideo.url,
+              videoName: composerVideo.name,
+              videoMimeType: composerVideo.mimeType,
+              videoSizeBytes: composerVideo.sizeBytes,
+            }
+          : {}),
       });
       setPosts((prev) => [created, ...prev]);
       setSelectedPost(created);
@@ -180,6 +214,8 @@ export function CommunityView() {
       setNewTitle('');
       setNewBody('');
       setNewCode('');
+      setComposerImages([]);
+      setComposerVideo(null);
       notify('success', 'Published to Mideo Community.');
     } catch (err) {
       notify('error', err instanceof Error ? err.message : 'Could not publish post.');
@@ -435,6 +471,16 @@ export function CommunityView() {
                       <span className="inline-flex items-center gap-1">
                         <MessageSquare className="w-3.5 h-3.5" /> {post.commentsCount}
                       </span>
+                      {post.imageUrls && post.imageUrls.length > 0 && (
+                        <span className="inline-flex items-center gap-1 text-blue-500">
+                          <ImageIcon className="w-3.5 h-3.5" /> {post.imageUrls.length}
+                        </span>
+                      )}
+                      {post.videoUrl && (
+                        <span className="inline-flex items-center gap-1 text-amber-500">
+                          <Video className="w-3.5 h-3.5" /> Video
+                        </span>
+                      )}
                     </div>
                     <div className="flex gap-1.5">
                       {post.tags.slice(0, 2).map((tag) => (
@@ -525,6 +571,57 @@ export function CommunityView() {
                 <pre className="p-4 rounded-lg bg-slate-950 text-slate-100 text-xs font-mono overflow-x-auto border border-slate-800">
                   <code>{selectedPost.codeSnippet}</code>
                 </pre>
+              )}
+
+              {selectedPost.imageUrls && selectedPost.imageUrls.length > 0 && (
+                <div className="space-y-2">
+                  <div
+                    className={`grid gap-3 ${
+                      selectedPost.imageUrls.length === 1
+                        ? 'grid-cols-1'
+                        : 'grid-cols-1 sm:grid-cols-2'
+                    }`}
+                  >
+                    {selectedPost.imageUrls.map((url, idx) => (
+                      <button
+                        key={`${url}_${idx}`}
+                        type="button"
+                        onClick={() => setLightboxImageUrl(url)}
+                        className="group relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950 cursor-pointer text-left"
+                      >
+                        <img
+                          src={url}
+                          alt={`${selectedPost.title} attachment ${idx + 1}`}
+                          loading="lazy"
+                          className="w-full max-h-80 object-cover group-hover:opacity-95 transition-opacity"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedPost.videoUrl && (
+                <div className="space-y-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-black overflow-hidden">
+                  <video
+                    key={selectedPost.videoUrl}
+                    src={selectedPost.videoUrl}
+                    controls
+                    preload="metadata"
+                    playsInline
+                    className="w-full max-h-[420px] bg-black"
+                  />
+                  {(selectedPost.videoName || selectedPost.videoSizeBytes) && (
+                    <div className="px-3 py-1.5 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+                      <span className="truncate font-mono">{selectedPost.videoName || 'Community Video'}</span>
+                      {selectedPost.videoSizeBytes ? (
+                        <span className="tabular-nums font-mono shrink-0">
+                          {formatMediaBytes(selectedPost.videoSizeBytes)}
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
               )}
 
               {selectedPost.tags.length > 0 && (
@@ -696,6 +793,140 @@ export function CommunityView() {
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#080C17] text-xs font-mono text-slate-900 dark:text-white"
                 />
               </div>
+
+              {isAdminActor && (
+                <div className="p-3.5 rounded-xl border border-amber-500/30 bg-slate-50 dark:bg-[#080C17] space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                      Admin Media Attachments
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322] text-xs cursor-pointer ${
+                          composerImages.length >= 6 || composerUploadingImage ? 'opacity-50 pointer-events-none' : ''
+                        }`}
+                      >
+                        {composerUploadingImage ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                        ) : (
+                          <ImagePlus className="w-3.5 h-3.5 text-blue-500" />
+                        )}
+                        Images ({composerImages.length}/6)
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          multiple
+                          className="hidden"
+                          disabled={composerImages.length >= 6 || composerUploadingImage}
+                          onChange={async (e) => {
+                            const selected = Array.from(e.target.files || []);
+                            e.target.value = '';
+                            if (selected.length === 0) return;
+                            const remaining = Math.max(0, 6 - composerImages.length);
+                            setComposerUploadingImage(true);
+                            try {
+                              for (const file of selected.slice(0, remaining)) {
+                                if (file.size > COMMUNITY_IMAGE_MAX_BYTES) {
+                                  throw new Error(`"${file.name}" exceeds 10 MB.`);
+                                }
+                                const uploaded = await uploadAdminCommunityMediaChunked(file, 'image');
+                                setComposerImages((prev) => [...prev, uploaded].slice(0, 6));
+                              }
+                            } catch (err) {
+                              notify('error', err instanceof Error ? err.message : 'Image upload failed.');
+                            } finally {
+                              setComposerUploadingImage(false);
+                            }
+                          }}
+                        />
+                      </label>
+
+                      <label
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322] text-xs cursor-pointer ${
+                          composerVideoPct !== null ? 'opacity-50 pointer-events-none' : ''
+                        }`}
+                      >
+                        {composerVideoPct !== null ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                        ) : (
+                          <Video className="w-3.5 h-3.5 text-amber-500" />
+                        )}
+                        {composerVideoPct !== null ? `Video ${composerVideoPct}%` : 'Video (1–80 MB)'}
+                        <input
+                          type="file"
+                          accept="video/mp4,video/webm,video/ogg"
+                          className="hidden"
+                          disabled={composerVideoPct !== null}
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = '';
+                            if (!file) return;
+                            if (file.size < COMMUNITY_VIDEO_MIN_BYTES || file.size > COMMUNITY_VIDEO_MAX_BYTES) {
+                              notify('error', `Video must be between 1 MB and 80 MB (selected: ${formatMediaBytes(file.size)}).`);
+                              return;
+                            }
+                            setComposerVideoPct(1);
+                            try {
+                              const prevFn = composerVideo?.filename;
+                              const uploaded = await uploadAdminCommunityMediaChunked(
+                                file,
+                                'video',
+                                (pct) => setComposerVideoPct(pct),
+                              );
+                              setComposerVideo(uploaded);
+                              if (prevFn) await deleteAdminCommunityMedia(prevFn).catch(() => {});
+                            } catch (err) {
+                              notify('error', err instanceof Error ? err.message : 'Video upload failed.');
+                            } finally {
+                              setComposerVideoPct(null);
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {composerImages.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {composerImages.map((img) => (
+                        <div key={img.filename} className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-700">
+                          <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setComposerImages((prev) => prev.filter((item) => item.filename !== img.filename));
+                              await deleteAdminCommunityMedia(img.filename).catch(() => {});
+                            }}
+                            className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/75 text-white cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {composerVideo && (
+                    <div className="flex items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-[#0D1322] px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <span className="truncate font-mono">
+                        {composerVideo.name} ({formatMediaBytes(composerVideo.sizeBytes)})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const fn = composerVideo.filename;
+                          setComposerVideo(null);
+                          await deleteAdminCommunityMedia(fn).catch(() => {});
+                        }}
+                        className="text-red-500 hover:underline shrink-0 cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
@@ -706,14 +937,37 @@ export function CommunityView() {
                 </button>
                 <button
                   type="submit"
-                  disabled={creatingPost}
-                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
+                  disabled={creatingPost || composerVideoPct !== null || composerUploadingImage}
+                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
                 >
                   {creatingPost ? 'Publishing...' : 'Publish Post'}
                 </button>
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Lightbox Modal for Community Images */}
+      {lightboxImageUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4"
+          onClick={() => setLightboxImageUrl(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setLightboxImageUrl(null)}
+            aria-label="Close image preview"
+            className="absolute top-4 right-4 p-2 rounded-lg bg-slate-900/90 text-white hover:bg-slate-800 cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <img
+            src={lightboxImageUrl}
+            alt="Expanded community attachment"
+            className="max-w-full max-h-[90vh] rounded-xl object-contain border border-slate-800"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
 

@@ -8,6 +8,8 @@ import {
   EyeOff,
   Flag,
   Globe,
+  ImagePlus,
+  Loader2,
   Mail,
   Megaphone,
   Phone,
@@ -17,8 +19,10 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Trophy,
   Users,
+  Video,
   X,
   XCircle,
 } from 'lucide-react';
@@ -33,7 +37,16 @@ import {
   adminResolveReport,
   adminSendCommunityAnnouncement,
 } from '../services/dataService';
-import type { ModerationReport, UserProfile } from '../types/mideocode';
+import {
+  COMMUNITY_IMAGE_MAX_BYTES,
+  COMMUNITY_VIDEO_MAX_BYTES,
+  COMMUNITY_VIDEO_MIN_BYTES,
+  deleteAdminCommunityMedia,
+  formatMediaBytes,
+  uploadAdminCommunityMediaChunked,
+  type UploadedCommunityMediaResult,
+} from '../services/rescueService';
+import type { CommunityPost, ModerationReport, UserProfile } from '../types/mideocode';
 
 export function AdminView() {
   const { firebaseUser, profile, capabilities, missions, notify } = useMideo();
@@ -59,8 +72,16 @@ export function AdminView() {
   const [loading, setLoading] = useState(true);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [announcementTitle, setAnnouncementTitle] = useState('');
+  const [announcementCategory, setAnnouncementCategory] =
+    useState<CommunityPost['category']>('announcement');
   const [announcementBody, setAnnouncementBody] = useState('');
   const [announcementTags, setAnnouncementTags] = useState('announcement, update');
+  const [announcementCode, setAnnouncementCode] = useState('');
+  const [uploadedImages, setUploadedImages] = useState<UploadedCommunityMediaResult[]>([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadedVideo, setUploadedVideo] = useState<UploadedCommunityMediaResult | null>(null);
+  const [videoUploadPct, setVideoUploadPct] = useState<number | null>(null);
+  const [mediaError, setMediaError] = useState<string | null>(null);
   const [sendingAnnouncement, setSendingAnnouncement] = useState(false);
 
   const isAuthorizedAdmin = Boolean(
@@ -332,21 +353,21 @@ export function AdminView() {
         <AdminMissionStudio />
       ) : (
         <>
-          {/* Direct Community Announcement Broadcast */}
+          {/* Direct Community Broadcast & Media Publisher */}
           <section className="rounded-xl border border-amber-500/30 bg-white dark:bg-[#0D1322] p-6 space-y-4">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                   <Megaphone className="w-4 h-4 text-amber-500" />
-                  Send Announcement to Community Chat
+                  Post to Mideo Community (Images &amp; 1 MB–80 MB Video)
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Publish an official update directly into Mideo Community. Your post automatically carries an{' '}
-                  <span className="font-semibold text-amber-500">Admin</span> tag.
+                  Publish an official update, showcase, or tutorial directly into Mideo Community with attached images and video (1 MB min – 80 MB max). Posts carry an{' '}
+                  <span className="font-semibold text-amber-500">Admin</span> badge.
                 </p>
               </div>
               <span className="px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-600 dark:text-amber-400 text-[10px] font-bold uppercase tracking-wider shrink-0">
-                Admin Broadcast
+                Admin Publisher
               </span>
             </div>
 
@@ -355,7 +376,11 @@ export function AdminView() {
                 e.preventDefault();
                 if (!firebaseUser) return;
                 if (announcementTitle.trim().length < 3 || announcementBody.trim().length < 5) {
-                  notify('error', 'Enter an announcement title (min 3 chars) and message (min 5 chars).');
+                  notify('error', 'Enter a post title (min 3 chars) and message (min 5 chars).');
+                  return;
+                }
+                if (videoUploadPct !== null || uploadingImage) {
+                  notify('info', 'Please wait for attached media upload to finish before publishing.');
                   return;
                 }
                 setSendingAnnouncement(true);
@@ -371,32 +396,59 @@ export function AdminView() {
                     {
                       title: announcementTitle,
                       body: announcementBody,
+                      category: announcementCategory,
                       tags,
+                      codeSnippet: announcementCode.trim() || undefined,
+                      imageUrls: uploadedImages.map((img) => img.url),
+                      videoUrl: uploadedVideo?.url,
+                      videoName: uploadedVideo?.name,
+                      videoMimeType: uploadedVideo?.mimeType,
+                      videoSizeBytes: uploadedVideo?.sizeBytes,
                     },
                   );
                   setAnnouncementTitle('');
                   setAnnouncementBody('');
-                  notify('success', 'Official announcement posted to Mideo Community with your Admin tag.');
+                  setAnnouncementCode('');
+                  setUploadedImages([]);
+                  setUploadedVideo(null);
+                  setMediaError(null);
+                  notify('success', 'Post published to Mideo Community with your Admin badge.');
                 } catch (err) {
-                  notify('error', err instanceof Error ? err.message : 'Unable to send announcement.');
+                  notify('error', err instanceof Error ? err.message : 'Unable to publish community post.');
                 } finally {
                   setSendingAnnouncement(false);
                 }
               }}
-              className="space-y-3"
+              className="space-y-4"
             >
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div className="md:col-span-2">
                   <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Announcement Title
+                    Post Title
                   </label>
                   <input
                     required
                     value={announcementTitle}
                     onChange={(e) => setAnnouncementTitle(e.target.value)}
-                    placeholder="e.g., New Mission Mode Challenges & Leaderboard Live!"
+                    placeholder="e.g., Platform Walkthrough & New Project Rescue AI Launch!"
                     className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-amber-500"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Community Category
+                  </label>
+                  <select
+                    value={announcementCategory}
+                    onChange={(e) => setAnnouncementCategory(e.target.value as CommunityPost['category'])}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="announcement">Official Announcement</option>
+                    <option value="showcase">Project Showcase</option>
+                    <option value="tip">Tips &amp; Snippets</option>
+                    <option value="discussion">Discussion</option>
+                    <option value="question">Question</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -410,27 +462,249 @@ export function AdminView() {
                   />
                 </div>
               </div>
+
               <div>
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Announcement Message
+                  Message Details
                 </label>
                 <textarea
                   required
                   rows={3}
                   value={announcementBody}
                   onChange={(e) => setAnnouncementBody(e.target.value)}
-                  placeholder="Write your official community announcement..."
+                  placeholder="Write your official community message..."
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-amber-500"
                 />
               </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Optional Code Snippet
+                </label>
+                <textarea
+                  rows={2}
+                  value={announcementCode}
+                  onChange={(e) => setAnnouncementCode(e.target.value)}
+                  placeholder="Optional code block to include in the post..."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              {/* Media Attachment Controls */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                {/* Image Uploader */}
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17] space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <ImagePlus className="w-4 h-4 text-blue-500" />
+                        Attach Images ({uploadedImages.length}/6)
+                      </p>
+                      <p className="text-[11px] text-slate-500">PNG, JPG, WebP, GIF · up to 10 MB each</p>
+                    </div>
+                    <label
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322] text-xs font-medium cursor-pointer hover:border-blue-500 ${
+                        uploadedImages.length >= 6 || uploadingImage ? 'opacity-50 pointer-events-none' : ''
+                      }`}
+                    >
+                      {uploadingImage ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                      ) : (
+                        <ImagePlus className="w-3.5 h-3.5 text-blue-500" />
+                      )}
+                      {uploadingImage ? 'Uploading...' : 'Add Images'}
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        multiple
+                        className="hidden"
+                        disabled={uploadedImages.length >= 6 || uploadingImage}
+                        onChange={async (e) => {
+                          const selected = Array.from(e.target.files || []);
+                          e.target.value = '';
+                          if (selected.length === 0) return;
+                          setMediaError(null);
+                          const remaining = Math.max(0, 6 - uploadedImages.length);
+                          const batch = selected.slice(0, remaining);
+                          setUploadingImage(true);
+                          try {
+                            for (const file of batch) {
+                              if (file.size > COMMUNITY_IMAGE_MAX_BYTES) {
+                                throw new Error(`"${file.name}" exceeds the 10 MB image limit.`);
+                              }
+                              const uploaded = await uploadAdminCommunityMediaChunked(file, 'image');
+                              setUploadedImages((prev) => [...prev, uploaded].slice(0, 6));
+                            }
+                          } catch (err) {
+                            const msg = err instanceof Error ? err.message : 'Image upload failed.';
+                            setMediaError(msg);
+                            notify('error', msg);
+                          } finally {
+                            setUploadingImage(false);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  {uploadedImages.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {uploadedImages.map((img) => (
+                        <div
+                          key={img.filename}
+                          className="relative group rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900 aspect-video"
+                        >
+                          <img
+                            src={img.url}
+                            alt={img.name}
+                            className="w-full h-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setUploadedImages((prev) => prev.filter((item) => item.filename !== img.filename));
+                              await deleteAdminCommunityMedia(img.filename).catch(() => {});
+                            }}
+                            title="Remove image"
+                            className="absolute top-1 right-1 p-1 rounded bg-slate-950/80 text-white hover:bg-red-600 cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Video Uploader (1 MB - 80 MB) */}
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17] space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <Video className="w-4 h-4 text-amber-500" />
+                        Attach Video (1 MB – 80 MB Max)
+                      </p>
+                      <p className="text-[11px] text-slate-500">MP4, WebM, or OGG · chunked upload</p>
+                    </div>
+                    <label
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322] text-xs font-medium cursor-pointer hover:border-amber-500 ${
+                        videoUploadPct !== null ? 'opacity-50 pointer-events-none' : ''
+                      }`}
+                    >
+                      {videoUploadPct !== null ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                      ) : (
+                        <Video className="w-3.5 h-3.5 text-amber-500" />
+                      )}
+                      {videoUploadPct !== null
+                        ? `Uploading ${videoUploadPct}%`
+                        : uploadedVideo
+                          ? 'Replace Video'
+                          : 'Select Video'}
+                      <input
+                        type="file"
+                        accept="video/mp4,video/webm,video/ogg"
+                        className="hidden"
+                        disabled={videoUploadPct !== null}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          if (!file) return;
+                          setMediaError(null);
+                          if (file.size < COMMUNITY_VIDEO_MIN_BYTES) {
+                            const msg = `Video "${file.name}" is ${formatMediaBytes(file.size)}. Videos must be at least 1 MB.`;
+                            setMediaError(msg);
+                            notify('error', msg);
+                            return;
+                          }
+                          if (file.size > COMMUNITY_VIDEO_MAX_BYTES) {
+                            const msg = `Video "${file.name}" is ${formatMediaBytes(file.size)}. Maximum allowed size is 80 MB.`;
+                            setMediaError(msg);
+                            notify('error', msg);
+                            return;
+                          }
+                          setVideoUploadPct(1);
+                          try {
+                            const prevFilename = uploadedVideo?.filename;
+                            const result = await uploadAdminCommunityMediaChunked(
+                              file,
+                              'video',
+                              (pct) => setVideoUploadPct(pct),
+                            );
+                            setUploadedVideo(result);
+                            if (prevFilename) {
+                              await deleteAdminCommunityMedia(prevFilename).catch(() => {});
+                            }
+                            notify('success', `Uploaded video "${result.name}" (${formatMediaBytes(result.sizeBytes)}).`);
+                          } catch (err) {
+                            const msg = err instanceof Error ? err.message : 'Video upload failed.';
+                            setMediaError(msg);
+                            notify('error', msg);
+                          } finally {
+                            setVideoUploadPct(null);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  {videoUploadPct !== null && (
+                    <div className="space-y-1">
+                      <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                        <div
+                          className="h-full bg-amber-500 transition-all duration-150"
+                          style={{ width: `${videoUploadPct}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] font-mono text-slate-500 tabular-nums">
+                        Uploading video chunks... {videoUploadPct}%
+                      </p>
+                    </div>
+                  )}
+
+                  {uploadedVideo && (
+                    <div className="space-y-2">
+                      <video
+                        src={uploadedVideo.url}
+                        controls
+                        preload="metadata"
+                        playsInline
+                        className="w-full max-h-44 rounded-lg border border-slate-200 dark:border-slate-700 bg-black"
+                      />
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                        <span className="truncate font-mono">
+                          {uploadedVideo.name} · {formatMediaBytes(uploadedVideo.sizeBytes)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const fn = uploadedVideo.filename;
+                            setUploadedVideo(null);
+                            await deleteAdminCommunityMedia(fn).catch(() => {});
+                          }}
+                          className="inline-flex items-center gap-1 text-red-500 hover:underline shrink-0 cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {mediaError && (
+                <p className="text-xs text-red-500 font-medium">{mediaError}</p>
+              )}
+
               <div className="flex justify-end">
                 <button
                   type="submit"
-                  disabled={sendingAnnouncement}
+                  disabled={sendingAnnouncement || videoUploadPct !== null || uploadingImage}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  {sendingAnnouncement ? 'Broadcasting...' : 'Post Admin Announcement'}
+                  {sendingAnnouncement ? 'Publishing...' : 'Publish to Mideo Community'}
                 </button>
               </div>
             </form>

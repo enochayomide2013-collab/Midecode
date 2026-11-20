@@ -21,7 +21,7 @@ import {
   saveNote,
   deleteNote,
 } from '../services/dataService';
-import { INTRO_VIDEO_URL, IntroVideoModal } from '../components/IntroVideoModal';
+import { INTRO_VIDEO_URL, INTRO_WEBM_URL, IntroVideoModal } from '../components/IntroVideoModal';
 import { extractReadableError } from '../services/firebase';
 import type { NoteItem } from '../types/mideocode';
 
@@ -216,12 +216,14 @@ export function AcademyView() {
             className="relative w-full sm:w-48 aspect-video rounded-xl overflow-hidden border border-blue-500/40 bg-black shrink-0 group cursor-pointer"
           >
             <video
-              src={`${INTRO_VIDEO_URL}#t=3.5`}
               preload="metadata"
               muted
               playsInline
               className="w-full h-full object-cover"
-            />
+            >
+              <source src={`${INTRO_VIDEO_URL}#t=3.5`} type="video/mp4" />
+              {INTRO_WEBM_URL && <source src={`${INTRO_WEBM_URL}#t=3.5`} type="video/webm" />}
+            </video>
             <span className="absolute inset-0 bg-black/30 group-hover:bg-black/15 flex items-center justify-center transition-colors">
               <span className="w-11 h-11 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg">
                 <Play className="w-5 h-5 fill-current ml-0.5" />

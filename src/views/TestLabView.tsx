@@ -7,6 +7,7 @@ import {
   FlaskConical,
   History,
   Layers,
+  LifeBuoy,
   Loader2,
   Play,
   Plus,
@@ -67,6 +68,7 @@ export function TestLabView() {
     testLabLaunch,
     clearTestLabLaunch,
     askAi,
+    openRescueForProject,
     setActiveView,
     notify,
   } = useMideo();
@@ -393,6 +395,24 @@ export function TestLabView() {
                 </option>
               ))}
             </select>
+          )}
+          {activeProject && (
+            <button
+              type="button"
+              onClick={() =>
+                openRescueForProject(
+                  activeProject.id,
+                  activeRun && activeRun.failedTests > 0 ? 'investigate' : 'overview',
+                  activeRun && activeRun.failedTests > 0
+                    ? `TestLab run "${activeRun.suiteTitle}" had ${activeRun.failedTests} failing test(s). Investigate the root cause in ${activeProject.title}.`
+                    : undefined,
+                )
+              }
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322] text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-emerald-500 whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <LifeBuoy className="w-3.5 h-3.5 text-emerald-500" />
+              Rescue AI
+            </button>
           )}
           <button
             type="button"

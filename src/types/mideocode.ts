@@ -10,6 +10,7 @@ export type NavSection =
   | 'missions'
   | 'ide'
   | 'ai'
+  | 'rescue'
   | 'projects'
   | 'versions'
   | 'collaboration'
@@ -314,6 +315,11 @@ export interface CommunityPost {
   category: 'question' | 'showcase' | 'discussion' | 'tip' | 'announcement';
   tags: string[];
   codeSnippet?: string;
+  imageUrls?: string[];
+  videoUrl?: string;
+  videoName?: string;
+  videoMimeType?: string;
+  videoSizeBytes?: number;
   visibility: 'public' | 'hidden';
   likesCount: number;
   commentsCount: number;
@@ -1264,4 +1270,216 @@ export interface DeveloperInsightsSnapshot {
   }[];
 }
 
+// ---------------------------------------------------------------------------
+// 6. MideoCode Project Rescue AI Domain Types
+// ---------------------------------------------------------------------------
+export type RescueScanMode = 'quick' | 'deep' | 'full';
+export type RescueSeverity = 'critical' | 'high' | 'medium' | 'low' | 'suggestion';
+export type RescueCertainty = 'confirmed' | 'possible';
+export type RescueIssueCategory =
+  | 'syntax'
+  | 'type'
+  | 'runtime'
+  | 'import'
+  | 'dependency'
+  | 'config'
+  | 'api_integration'
+  | 'database'
+  | 'auth'
+  | 'security'
+  | 'performance'
+  | 'architecture';
 
+export type RescueInternalTab =
+  | 'overview'
+  | 'scanner'
+  | 'investigate'
+  | 'root_cause'
+  | 'fixes'
+  | 'rescue_mode'
+  | 'history'
+  | 'chat';
+
+export interface RescueFileSummary {
+  fileId?: string;
+  path: string;
+  language: string;
+  linesCount: number;
+  bytes: number;
+  imports: string[];
+  importedBy: string[];
+  exports: string[];
+  apiCalls: string[];
+  apiRoutes: string[];
+}
+
+export interface RescueProjectIndex {
+  totalFiles: number;
+  inspectedFiles: number;
+  skippedFiles: { path: string; reason: string }[];
+  languages: Record<string, number>;
+  frameworksDetected: string[];
+  packageDependencies: string[];
+  entryPoints: string[];
+  files: RescueFileSummary[];
+  circularDependencies: string[][];
+  unreferencedFiles: string[];
+  apiRouteConnections: {
+    frontendFile: string;
+    endpoint: string;
+    matchedBackendFile?: string;
+    status: 'connected' | 'unmatched_endpoint' | 'static_only';
+  }[];
+}
+
+export interface RescueIssue {
+  id: string;
+  title: string;
+  severity: RescueSeverity;
+  certainty: RescueCertainty;
+  confidence: number;
+  category: RescueIssueCategory;
+  filePath: string;
+  line?: number;
+  column?: number;
+  symbolOrSnippet?: string;
+  evidenceSource: string;
+  summary: string;
+  beginnerExplanation: string;
+  developerExplanation: string;
+  relatedFiles: string[];
+  recommendedAction: string;
+  learnTopic?: string;
+}
+
+export interface RescueRootCauseAnalysis {
+  issueId?: string;
+  problemTitle: string;
+  certainty: RescueCertainty;
+  confidence: number;
+  whatIsHappening: string;
+  confirmedCauses: string[];
+  possibleCauses: string[];
+  responsibleFile: string;
+  affectedFiles: string[];
+  whyItOccurred: string;
+  safestSolution: string;
+  beginnerExplanation: string;
+  developerExplanation: string;
+  learnKeywords: string[];
+  inspectedFilesList: string[];
+  unverifiedScopeNotes: string[];
+}
+
+export interface RescueImpactReport {
+  dependentFiles: string[];
+  affectedFeatures: string[];
+  removedOrChangedExports: string[];
+  preFlightPassed: boolean;
+  preFlightChecks: {
+    checkName: string;
+    executed: boolean;
+    passed: boolean;
+    details: string;
+  }[];
+  potentialConflicts: string[];
+}
+
+export interface RescueFixProposal {
+  id: string;
+  issueId?: string;
+  problemIdentified: string;
+  fileId?: string;
+  filePath: string;
+  language: string;
+  originalCode: string;
+  proposedCode: string;
+  explanation: string;
+  reason: string;
+  potentialSideEffects: string[];
+  impact: RescueImpactReport;
+  status: 'pending' | 'applied' | 'rejected' | 'rolled_back';
+}
+
+export interface RescueVerificationResult {
+  passed: boolean;
+  summary: string;
+  checksExecuted: {
+    name: string;
+    executed: boolean;
+    passed: boolean;
+    details: string;
+  }[];
+  remainingIssuesCount: number;
+  newIssuesIntroduced: RescueIssue[];
+  testLabSummary?: {
+    executed: boolean;
+    suiteTitle?: string;
+    passedTests?: number;
+    totalTests?: number;
+    message: string;
+  };
+}
+
+export interface RescueRuntimeAudit {
+  tool: string;
+  available: boolean;
+  executed: boolean;
+  note: string;
+}
+
+export interface RescueScanReport {
+  id: string;
+  userId: string;
+  projectId: string;
+  projectTitle: string;
+  scanMode: RescueScanMode;
+  healthScore: number;
+  filesInspected: number;
+  confirmedCount: number;
+  potentialCount: number;
+  severityCounts: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+    suggestion: number;
+  };
+  summary: string;
+  recommendedRepairOrder: string[];
+  suggestedImprovements: string[];
+  projectIndex: RescueProjectIndex;
+  issues: RescueIssue[];
+  runtimeAudit: RescueRuntimeAudit[];
+  createdAt: unknown;
+}
+
+export interface RescueAppliedFixRecord {
+  id: string;
+  userId: string;
+  projectId: string;
+  projectTitle: string;
+  filePath: string;
+  problemIdentified: string;
+  snapshotVersionId: string;
+  snapshotVersionNumber: number;
+  verificationPassed: boolean;
+  verificationSummary: string;
+  status: 'applied' | 'rolled_back';
+  createdAt: unknown;
+}
+
+export interface RescueChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  citedFiles?: string[];
+  suggestedTab?: RescueInternalTab;
+  createdAt: string;
+}
+
+export interface RescueLaunchContext {
+  projectId: string;
+  initialTab?: RescueInternalTab;
+  initialPrompt?: string;
+}

@@ -20,6 +20,7 @@ import {
   GitBranch,
   Home,
   LayoutGrid,
+  LifeBuoy,
   Loader2,
   LogOut,
   Menu,
@@ -65,6 +66,7 @@ import { ArchitectView } from './views/ArchitectView';
 import { VersionHistoryView } from './views/VersionHistoryView';
 import { CollaborationView } from './views/CollaborationView';
 import { DeveloperInsightsView } from './views/DeveloperInsightsView';
+import { ProjectRescueView } from './views/ProjectRescueView';
 import { ACADEMY_COURSES } from './data/academyData';
 import { DOC_ARTICLES } from './data/docsData';
 import { GUIDED_PROJECTS } from './data/projectsData';
@@ -86,6 +88,7 @@ const PRIMARY_NAV: NavItem[] = [
   { id: 'ide', label: 'Mideo IDE', icon: Code2 },
   { id: 'ai', label: 'Mideo AI', icon: Sparkles },
   { id: 'projects', label: 'Mideo Projects', icon: FolderGit2 },
+  { id: 'rescue', label: 'Project Rescue AI', icon: LifeBuoy },
   { id: 'architect', label: 'Architect', icon: Compass },
   { id: 'testlab', label: 'TestLab', icon: CheckSquare },
   { id: 'versions', label: 'Version History', icon: GitBranch },
@@ -338,6 +341,8 @@ function WorkspaceShell() {
         return <AiView />;
       case 'projects':
         return <ProjectsView />;
+      case 'rescue':
+        return <ProjectRescueView />;
       case 'architect':
         return <ArchitectView />;
       case 'testlab':

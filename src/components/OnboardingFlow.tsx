@@ -1,9 +1,9 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CountryCode } from 'libphonenumber-js';
 import { Check, ArrowRight, Loader2, Phone, Camera, Play } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
 import { MideoLogo } from './MideoLogo';
-import { INTRO_VIDEO_URL, IntroVideoModal } from './IntroVideoModal';
+import { INTRO_VIDEO_URL, INTRO_WEBM_URL, IntroVideoModal } from './IntroVideoModal';
 import { processAndUploadAvatar, saveOnboardingProfile } from '../services/dataService';
 import {
   SUPPORTED_COUNTRIES,
@@ -42,6 +42,12 @@ export function OnboardingFlow() {
   const [careerPathId, setCareerPathId] = useState(profile?.activeCareerPathId || 'frontend-developer');
   const [saving, setSaving] = useState(false);
   const [introOpen, setIntroOpen] = useState(false);
+
+  useEffect(() => {
+    if (profile?.displayName && !displayName) {
+      setDisplayName(profile.displayName);
+    }
+  }, [profile?.displayName, displayName]);
 
   const selectedCountry = useMemo(() => getCountryByCode(countryCode), [countryCode]);
 
@@ -99,9 +105,6 @@ export function OnboardingFlow() {
         const countryObj = getCountryByCode(check.detectedCountry);
         resolvedCountry = `${countryObj.name} (${countryObj.code})`;
       }
-    } else if (!skipOptional) {
-      setPhoneError('Please enter your phone number so we can stay connected.');
-      return;
     }
 
     setSaving(true);
@@ -158,12 +161,14 @@ export function OnboardingFlow() {
               className="relative w-24 aspect-video rounded-lg overflow-hidden border border-blue-500/40 bg-black shrink-0 cursor-pointer group"
             >
               <video
-                src={`${INTRO_VIDEO_URL}#t=3.5`}
                 preload="metadata"
                 muted
                 playsInline
                 className="w-full h-full object-cover"
-              />
+              >
+                <source src={`${INTRO_VIDEO_URL}#t=3.5`} type="video/mp4" />
+                {INTRO_WEBM_URL && <source src={`${INTRO_WEBM_URL}#t=3.5`} type="video/webm" />}
+              </video>
               <span className="absolute inset-0 bg-black/30 group-hover:bg-black/15 flex items-center justify-center">
                 <span className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center">
                   <Play className="w-3 h-3 fill-current ml-0.5" />
@@ -253,7 +258,9 @@ export function OnboardingFlow() {
 
           {/* Phone Number Question */}
           <div>
-            <label className="block text-sm font-medium mb-1">Phone Number</label>
+            <label className="block text-sm font-medium mb-1">
+              Phone Number <span className="text-xs font-normal text-slate-400">(optional)</span>
+            </label>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
               Stored privately in your profile so we understand your region and can support your account.
             </p>
@@ -275,10 +282,9 @@ export function OnboardingFlow() {
                 <input
                   type="tel"
                   inputMode="tel"
-                  required
                   value={phoneInput}
                   onChange={(e) => handlePhoneInputChange(e.target.value)}
-                  placeholder={`${selectedCountry.dial} phone number or +international`}
+                  placeholder={`${selectedCountry.dial} phone number or +international (optional)`}
                   className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-sm font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-600"
                 />
               </div>

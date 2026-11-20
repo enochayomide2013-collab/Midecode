@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Code2, Eye, FlaskConical, GitCommitHorizontal, Globe, Layers, Lock, Plus, Rocket, Users } from 'lucide-react';
+import { CheckCircle2, Code2, Eye, FlaskConical, GitCommitHorizontal, Globe, Layers, LifeBuoy, Lock, Plus, Rocket, Users } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
 import { GUIDED_PROJECTS } from '../data/projectsData';
 import { updateProjectMeta } from '../services/dataService';
@@ -19,6 +19,7 @@ export function ProjectsView() {
     openTestLabForProject,
     openCollabForProject,
     openArchitectForProject,
+    openRescueForProject,
     refreshUserData,
     grantXp,
     notify,
@@ -266,6 +267,13 @@ export function ProjectsView() {
                         >
                           <FlaskConical className="w-3.5 h-3.5" />
                           TestLab
+                        </button>
+                        <button
+                          onClick={() => openRescueForProject(proj.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:border-emerald-500 text-xs font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap cursor-pointer"
+                        >
+                          <LifeBuoy className="w-3.5 h-3.5 text-emerald-500" />
+                          Rescue AI
                         </button>
                         <button
                           onClick={() => openCollabForProject(proj.id)}

@@ -17,7 +17,12 @@ import {
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { fetchWithAuthAndRetry, getCountryInfoFromPhone } from './authService';
+import {
+  clearPendingRegistrationName,
+  fetchWithAuthAndRetry,
+  getCountryInfoFromPhone,
+  getPendingRegistrationName,
+} from './authService';
 import type {
   UserProfile,
   UserRole,
@@ -124,16 +129,18 @@ export async function loadOrCreateUserProfile(firebaseUser: User): Promise<UserP
     const snap = await getDoc(userRef);
     let resolvedProfile: UserProfile | null = snap.exists() ? (snap.data() as UserProfile) : null;
 
-    const displayName =
-      resolvedProfile?.displayName?.trim() ||
+    const pendingName = getPendingRegistrationName(firebaseUser.uid);
+    const preferredDisplayName =
+      pendingName ||
       firebaseUser.displayName?.trim() ||
+      resolvedProfile?.displayName?.trim() ||
       firebaseUser.email?.split('@')[0] ||
       (firebaseUser.phoneNumber ? `Developer ${firebaseUser.phoneNumber.slice(-4)}` : 'MideoCode Learner');
 
     if (!resolvedProfile) {
       const newProfile: Record<string, unknown> = {
         uid: firebaseUser.uid,
-        displayName: displayName.slice(0, 80),
+        displayName: preferredDisplayName.slice(0, 80),
         experienceLevel: 'beginner',
         preferredLanguages: ['JavaScript', 'HTML/CSS'],
         learningGoals: ['Build real-world projects'],
@@ -154,7 +161,19 @@ export async function loadOrCreateUserProfile(firebaseUser: User): Promise<UserP
       await setDoc(userRef, newProfile);
       const createdSnap = await getDoc(userRef);
       resolvedProfile = createdSnap.data() as UserProfile;
+    } else if (pendingName && resolvedProfile.displayName !== pendingName) {
+      await updateDoc(userRef, {
+        displayName: pendingName.slice(0, 80),
+        updatedAt: serverTimestamp(),
+      }).catch(() => {});
+      resolvedProfile = { ...resolvedProfile, displayName: pendingName.slice(0, 80) };
     }
+
+    if (pendingName) {
+      clearPendingRegistrationName(firebaseUser.uid);
+    }
+
+    const displayName = resolvedProfile?.displayName || preferredDisplayName;
 
     // Mirror non-PII public profile if missing
     const publicRef = doc(db, 'publicProfiles', firebaseUser.uid);
@@ -172,6 +191,11 @@ export async function loadOrCreateUserProfile(firebaseUser: User): Promise<UserP
       const photo = resolvedProfile?.photoURL || firebaseUser.photoURL;
       if (photo) publicProfile.photoURL = photo.slice(0, 500);
       await setDoc(publicRef, publicProfile);
+    } else if (pendingName && (publicSnap.data() as { displayName?: string })?.displayName !== pendingName) {
+      await updateDoc(publicRef, {
+        displayName: pendingName.slice(0, 80),
+        updatedAt: serverTimestamp(),
+      }).catch(() => {});
     }
 
     // Create default user settings if missing
@@ -1454,6 +1478,11 @@ export async function createCommunityPost(
     tags: string[];
     codeSnippet?: string;
     authorRole?: UserRole;
+    imageUrls?: string[];
+    videoUrl?: string;
+    videoName?: string;
+    videoMimeType?: string;
+    videoSizeBytes?: number;
   },
 ): Promise<CommunityPost> {
   const id = `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -1478,6 +1507,30 @@ export async function createCommunityPost(
     }
     if (input.codeSnippet?.trim()) {
       payload.codeSnippet = input.codeSnippet.slice(0, 8000);
+    }
+    const cleanImages = (input.imageUrls || [])
+      .filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
+      .map((u) => u.trim().slice(0, 300))
+      .slice(0, 6);
+    if (cleanImages.length > 0) {
+      payload.imageUrls = cleanImages;
+    }
+    if (input.videoUrl?.trim()) {
+      payload.videoUrl = input.videoUrl.trim().slice(0, 300);
+      if (input.videoName?.trim()) {
+        payload.videoName = input.videoName.trim().slice(0, 160);
+      }
+      if (input.videoMimeType?.trim()) {
+        payload.videoMimeType = input.videoMimeType.trim().slice(0, 80);
+      }
+      if (
+        typeof input.videoSizeBytes === 'number' &&
+        Number.isFinite(input.videoSizeBytes) &&
+        input.videoSizeBytes >= 1_000_000 &&
+        input.videoSizeBytes <= 83_886_080
+      ) {
+        payload.videoSizeBytes = Math.round(input.videoSizeBytes);
+      }
     }
     await setDoc(ref, sanitizeForFirestore(payload));
     const snap = await getDoc(ref);
@@ -1774,24 +1827,35 @@ export async function adminSendCommunityAnnouncement(
   input: {
     title: string;
     body: string;
+    category?: CommunityPost['category'];
     tags?: string[];
     codeSnippet?: string;
+    imageUrls?: string[];
+    videoUrl?: string;
+    videoName?: string;
+    videoMimeType?: string;
+    videoSizeBytes?: number;
   },
 ): Promise<CommunityPost> {
   const post = await createCommunityPost(adminId, authorName || 'MideoCode Admin', {
     title: input.title,
     body: input.body,
-    category: 'announcement',
+    category: input.category || 'announcement',
     tags: input.tags && input.tags.length > 0 ? input.tags : ['announcement', 'official'],
     codeSnippet: input.codeSnippet,
     authorRole: 'admin',
+    imageUrls: input.imageUrls,
+    videoUrl: input.videoUrl,
+    videoName: input.videoName,
+    videoMimeType: input.videoMimeType,
+    videoSizeBytes: input.videoSizeBytes,
   });
   try {
     const logId = `audit_announce_${Date.now()}`;
     await setDoc(doc(db, 'adminAuditLogs', logId), {
       id: logId,
       adminId,
-      action: 'community_announcement',
+      action: input.category && input.category !== 'announcement' ? `community_post_${input.category}` : 'community_announcement',
       targetPath: `communityPosts/${post.id}`,
       createdAt: serverTimestamp(),
     });

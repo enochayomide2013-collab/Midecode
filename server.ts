@@ -35,15 +35,28 @@ import {
   signInvitationPayload,
   verifyInvitationPayload,
 } from './src/server/collabAndDiffHelpers.ts';
+import {
+  chatWithRescueAssistant,
+  investigateProjectIssue,
+  proposeFixAndAnalyzeImpact,
+  scanProjectWorkspace,
+  verifyPatchedWorkspace,
+  type RescueWorkspaceFile,
+} from './src/server/rescueEngine.ts';
 import type {
   ArchitecturePlan,
   MissionRuntimeTestSpec,
   MissionServerEvalConfig,
   MissionTestCaseResult,
   ProjectVersionSnapshot,
+  RescueChatMessage,
+  RescueIssue,
+  RescueRootCauseAnalysis,
+  RescueScanMode,
   TestCaseItem,
   TestCaseResult,
   TestCoverageSummary,
+  TestSuite,
   TestType,
 } from './src/types/mideocode.ts';
 
@@ -599,7 +612,14 @@ except Exception as _ex:
 
 async function startServer() {
   const app = express();
-  app.use(express.json({ limit: '512kb' }));
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/api/admin/community-media/chunk/')) {
+      next();
+      return;
+    }
+    const limit = req.path.startsWith('/api/rescue/') ? '5mb' : '512kb';
+    express.json({ limit })(req, res, next);
+  });
 
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({
@@ -1818,6 +1838,490 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
     res.json(computeSnapshotDiff(baseSnapshot, targetSnapshot));
   });
 
+  // -------------------------------------------------------------------------
+  // Admin Community Media Uploads (Images <= 10 MB, Videos 1 MB - 80 MB Max)
+  // -------------------------------------------------------------------------
+  const communityMediaDir = path.resolve(__dirname, '.mideocode-uploads', 'community');
+  const communityMediaTmpDir = path.resolve(__dirname, '.mideocode-uploads', 'community-tmp');
+  fs.mkdirSync(communityMediaDir, { recursive: true });
+  fs.mkdirSync(communityMediaTmpDir, { recursive: true });
+
+  const VIDEO_MIN_BYTES = 1_000_000; // 1 MB
+  const VIDEO_MAX_BYTES = 80 * 1024 * 1024; // 80 MiB max
+  const IMAGE_MAX_BYTES = 10 * 1024 * 1024; // 10 MiB max
+
+  interface PendingMediaUpload {
+    id: string;
+    adminUid: string;
+    kind: 'image' | 'video';
+    ext: string;
+    mimeType: string;
+    originalName: string;
+    expectedSize: number;
+    uploadedBytes: number;
+    tmpPath: string;
+    createdAt: number;
+  }
+
+  const pendingMediaUploads = new Map<string, PendingMediaUpload>();
+
+  const MEDIA_MIME_TO_EXT: Record<string, { kind: 'image' | 'video'; ext: string; canonicalMime: string }> = {
+    'image/png': { kind: 'image', ext: 'png', canonicalMime: 'image/png' },
+    'image/jpeg': { kind: 'image', ext: 'jpg', canonicalMime: 'image/jpeg' },
+    'image/jpg': { kind: 'image', ext: 'jpg', canonicalMime: 'image/jpeg' },
+    'image/webp': { kind: 'image', ext: 'webp', canonicalMime: 'image/webp' },
+    'image/gif': { kind: 'image', ext: 'gif', canonicalMime: 'image/gif' },
+    'video/mp4': { kind: 'video', ext: 'mp4', canonicalMime: 'video/mp4' },
+    'video/webm': { kind: 'video', ext: 'webm', canonicalMime: 'video/webm' },
+    'video/quicktime': { kind: 'video', ext: 'mp4', canonicalMime: 'video/mp4' },
+    'video/x-m4v': { kind: 'video', ext: 'mp4', canonicalMime: 'video/mp4' },
+    'video/ogg': { kind: 'video', ext: 'ogv', canonicalMime: 'video/ogg' },
+  };
+
+  function validateMediaMagicBytes(head: Buffer, kind: 'image' | 'video', ext: string): boolean {
+    if (head.length < 8) return false;
+    if (kind === 'image') {
+      if (ext === 'png') return head.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      if (ext === 'jpg') return head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+      if (ext === 'gif') return head.subarray(0, 3).toString('ascii') === 'GIF';
+      if (ext === 'webp') {
+        return head.subarray(0, 4).toString('ascii') === 'RIFF' && head.subarray(8, 12).toString('ascii') === 'WEBP';
+      }
+      return false;
+    }
+    if (ext === 'mp4') {
+      return head.subarray(4, 8).toString('ascii') === 'ftyp';
+    }
+    if (ext === 'webm') {
+      return head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3;
+    }
+    if (ext === 'ogv') {
+      return head.subarray(0, 4).toString('ascii') === 'OggS';
+    }
+    return false;
+  }
+
+  app.post('/api/admin/community-media/init', requireAuth, (req: AuthedRequest, res: Response) => {
+    if (!isVerifiedAdminRequest(req) || !req.uid) {
+      res.status(403).json({ error: 'Only verified administrators can upload community media.' });
+      return;
+    }
+    if (!checkRateLimit(`admin-media-init:${req.uid}`, 40, 10 * 60_000)) {
+      res.status(429).json({ error: 'Too many upload requests. Wait a moment and try again.' });
+      return;
+    }
+    const { kind, mimeType, fileName, sizeBytes } = req.body as {
+      kind?: 'image' | 'video';
+      mimeType?: string;
+      fileName?: string;
+      sizeBytes?: number;
+    };
+
+    const normalizedMime = String(mimeType || '').toLowerCase().split(';')[0].trim();
+    const spec = MEDIA_MIME_TO_EXT[normalizedMime];
+    if (!spec || (kind && spec.kind !== kind)) {
+      res.status(400).json({
+        error: 'Unsupported media format. Use PNG/JPG/WebP/GIF images or MP4/WebM/MOV/OGG videos.',
+      });
+      return;
+    }
+
+    const totalSize = Number(sizeBytes);
+    if (!Number.isFinite(totalSize) || totalSize <= 0) {
+      res.status(400).json({ error: 'Invalid file size.' });
+      return;
+    }
+    if (spec.kind === 'video') {
+      if (totalSize < VIDEO_MIN_BYTES) {
+        res.status(400).json({
+          error: 'Community video must be at least 1 MB (1,000,000 bytes).',
+        });
+        return;
+      }
+      if (totalSize > VIDEO_MAX_BYTES) {
+        res.status(400).json({
+          error: 'Community video exceeds the 80 MB maximum limit.',
+        });
+        return;
+      }
+    } else if (totalSize > IMAGE_MAX_BYTES) {
+      res.status(400).json({ error: 'Each community image must be 10 MB or smaller.' });
+      return;
+    }
+
+    // Clean stale unfinished temp uploads older than 1 hour
+    const now = Date.now();
+    for (const [oldId, meta] of pendingMediaUploads.entries()) {
+      if (now - meta.createdAt > 3600_000) {
+        try {
+          if (fs.existsSync(meta.tmpPath)) fs.unlinkSync(meta.tmpPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+        pendingMediaUploads.delete(oldId);
+      }
+    }
+
+    const uploadId = `up_${now}_${crypto.randomBytes(6).toString('hex')}`;
+    const tmpPath = path.join(communityMediaTmpDir, `${uploadId}.part`);
+    fs.writeFileSync(tmpPath, Buffer.alloc(0));
+
+    pendingMediaUploads.set(uploadId, {
+      id: uploadId,
+      adminUid: req.uid,
+      kind: spec.kind,
+      ext: spec.ext,
+      mimeType: spec.canonicalMime,
+      originalName: String(fileName || `media.${spec.ext}`).replace(/[^a-zA-Z0-9._ -]/g, '_').slice(0, 120),
+      expectedSize: totalSize,
+      uploadedBytes: 0,
+      tmpPath,
+      createdAt: now,
+    });
+
+    res.json({ uploadId, maxChunkBytes: 4 * 1024 * 1024 });
+  });
+
+  app.post(
+    '/api/admin/community-media/chunk/:uploadId',
+    express.raw({ type: 'application/octet-stream', limit: '6mb' }),
+    requireAuth,
+    (req: AuthedRequest, res: Response) => {
+      if (!isVerifiedAdminRequest(req) || !req.uid) {
+        res.status(403).json({ error: 'Only verified administrators can upload community media.' });
+        return;
+      }
+      const uploadId = String(req.params.uploadId || '');
+      const session = pendingMediaUploads.get(uploadId);
+      if (!session || session.adminUid !== req.uid) {
+        res.status(404).json({ error: 'Upload session not found or expired.' });
+        return;
+      }
+      const chunk = req.body as Buffer;
+      if (!Buffer.isBuffer(chunk) || chunk.length === 0) {
+        res.status(400).json({ error: 'Empty binary chunk.' });
+        return;
+      }
+      const maxAllowed = session.kind === 'video' ? VIDEO_MAX_BYTES : IMAGE_MAX_BYTES;
+      if (session.uploadedBytes + chunk.length > maxAllowed || session.uploadedBytes + chunk.length > session.expectedSize) {
+        res.status(400).json({ error: 'Upload size exceeds allowed file limit.' });
+        return;
+      }
+
+      fs.appendFileSync(session.tmpPath, chunk);
+      session.uploadedBytes += chunk.length;
+      res.json({ uploadId, uploadedBytes: session.uploadedBytes, expectedSize: session.expectedSize });
+    },
+  );
+
+  app.post('/api/admin/community-media/complete/:uploadId', requireAuth, (req: AuthedRequest, res: Response) => {
+    if (!isVerifiedAdminRequest(req) || !req.uid) {
+      res.status(403).json({ error: 'Only verified administrators can finalize community media.' });
+      return;
+    }
+    const uploadId = String(req.params.uploadId || '');
+    const session = pendingMediaUploads.get(uploadId);
+    if (!session || session.adminUid !== req.uid || !fs.existsSync(session.tmpPath)) {
+      res.status(404).json({ error: 'Upload session not found or expired.' });
+      return;
+    }
+
+    try {
+      const stat = fs.statSync(session.tmpPath);
+      if (stat.size !== session.expectedSize) {
+        fs.unlinkSync(session.tmpPath);
+        pendingMediaUploads.delete(uploadId);
+        res.status(400).json({ error: 'Incomplete upload: file size mismatch.' });
+        return;
+      }
+      if (session.kind === 'video' && (stat.size < VIDEO_MIN_BYTES || stat.size > VIDEO_MAX_BYTES)) {
+        fs.unlinkSync(session.tmpPath);
+        pendingMediaUploads.delete(uploadId);
+        res.status(400).json({ error: 'Video must be between 1 MB and 80 MB.' });
+        return;
+      }
+
+      const fd = fs.openSync(session.tmpPath, 'r');
+      const head = Buffer.alloc(16);
+      fs.readSync(fd, head, 0, 16, 0);
+      fs.closeSync(fd);
+
+      if (!validateMediaMagicBytes(head, session.kind, session.ext)) {
+        fs.unlinkSync(session.tmpPath);
+        pendingMediaUploads.delete(uploadId);
+        res.status(400).json({
+          error: `File header does not match ${session.mimeType}. Please upload a valid ${session.ext.toUpperCase()} file.`,
+        });
+        return;
+      }
+
+      const finalFilename = `cm_${Date.now()}_${crypto.randomBytes(5).toString('hex')}.${session.ext}`;
+      const finalPath = path.join(communityMediaDir, finalFilename);
+      fs.renameSync(session.tmpPath, finalPath);
+      pendingMediaUploads.delete(uploadId);
+
+      res.json({
+        url: `/api/community/media/${finalFilename}`,
+        filename: finalFilename,
+        name: session.originalName,
+        kind: session.kind,
+        mimeType: session.mimeType,
+        sizeBytes: stat.size,
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to finalize uploaded media.',
+      });
+    }
+  });
+
+  app.delete('/api/admin/community-media/:filename', requireAuth, (req: AuthedRequest, res: Response) => {
+    if (!isVerifiedAdminRequest(req)) {
+      res.status(403).json({ error: 'Admin privileges required.' });
+      return;
+    }
+    const filename = String(req.params.filename || '');
+    if (!/^[a-zA-Z0-9_-]+\.(png|jpg|webp|gif|mp4|webm|ogv)$/.test(filename)) {
+      res.status(400).json({ error: 'Invalid media filename.' });
+      return;
+    }
+    const target = path.join(communityMediaDir, filename);
+    if (fs.existsSync(target)) {
+      fs.unlinkSync(target);
+    }
+    res.json({ ok: true });
+  });
+
+  app.get('/api/community/media/:filename', (req: Request, res: Response) => {
+    const filename = String(req.params.filename || '');
+    if (!/^[a-zA-Z0-9_-]+\.(png|jpg|webp|gif|mp4|webm|ogv)$/.test(filename)) {
+      res.status(400).json({ error: 'Invalid community media filename.' });
+      return;
+    }
+    const filePath = path.join(communityMediaDir, filename);
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'Community media not found.' });
+      return;
+    }
+
+    const ext = path.extname(filename).toLowerCase();
+    const mimeMap: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.webp': 'image/webp',
+      '.gif': 'image/gif',
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.ogv': 'video/ogg',
+    };
+    const contentType = mimeMap[ext] || 'application/octet-stream';
+    const isVideo = contentType.startsWith('video/');
+
+    if (!isVideo) {
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.sendFile(filePath);
+      return;
+    }
+
+    const stat = fs.statSync(filePath);
+    const totalSize = stat.size;
+    const range = req.headers.range;
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'no-cache');
+
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+      if (!match) {
+        res.status(416).setHeader('Content-Range', `bytes */${totalSize}`).end();
+        return;
+      }
+      const start = match[1] ? Number.parseInt(match[1], 10) : 0;
+      const requestedEnd = match[2] ? Number.parseInt(match[2], 10) : totalSize - 1;
+      const maxChunkEnd = Math.min(totalSize - 1, start + 4 * 1024 * 1024 - 1);
+      const end = match[2] ? Math.min(requestedEnd, totalSize - 1) : maxChunkEnd;
+      if (!Number.isFinite(start) || start >= totalSize || start > end) {
+        res.status(416).setHeader('Content-Range', `bytes */${totalSize}`).end();
+        return;
+      }
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${totalSize}`);
+      res.setHeader('Content-Length', String(end - start + 1));
+      fs.createReadStream(filePath, { start, end }).pipe(res);
+      return;
+    }
+
+    res.status(200);
+    res.setHeader('Content-Length', String(totalSize));
+    fs.createReadStream(filePath).pipe(res);
+  });
+
+  // -------------------------------------------------------------------------
+  // MideoCode Project Rescue AI Endpoints
+  // -------------------------------------------------------------------------
+  app.post('/api/rescue/scan', requireAuth, async (req: AuthedRequest, res: Response) => {
+    const uid = req.uid || 'anon';
+    if (!checkRateLimit(`rescue-scan:${uid}`, 30, 10 * 60_000)) {
+      res.status(429).json({ error: 'Scan rate limit reached. Please wait a moment before re-scanning.' });
+      return;
+    }
+    const { projectId, projectTitle, scanMode, files } = req.body as {
+      projectId?: string;
+      projectTitle?: string;
+      scanMode?: RescueScanMode;
+      files?: RescueWorkspaceFile[];
+    };
+    if (!projectId || !Array.isArray(files) || files.length === 0) {
+      res.status(400).json({ error: 'projectId and non-empty files array are required.' });
+      return;
+    }
+    const safeMode: RescueScanMode =
+      scanMode === 'quick' || scanMode === 'deep' || scanMode === 'full' ? scanMode : 'deep';
+    try {
+      const report = await scanProjectWorkspace({
+        userId: uid,
+        projectId,
+        projectTitle: projectTitle || 'Workspace Project',
+        scanMode: safeMode,
+        files,
+      });
+      res.json(report);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Project Rescue scan failed.',
+      });
+    }
+  });
+
+  app.post('/api/rescue/investigate', requireAuth, async (req: AuthedRequest, res: Response) => {
+    const uid = req.uid || 'anon';
+    if (!checkRateLimit(`rescue-inv:${uid}`, 25, 10 * 60_000)) {
+      res.status(429).json({ error: 'Investigation rate limit reached. Wait a moment before retrying.' });
+      return;
+    }
+    const { projectTitle, files, issue, userProblemDescription } = req.body as {
+      projectTitle?: string;
+      files?: RescueWorkspaceFile[];
+      issue?: RescueIssue | null;
+      userProblemDescription?: string;
+    };
+    if (!Array.isArray(files) || files.length === 0) {
+      res.status(400).json({ error: 'Workspace files are required for investigation.' });
+      return;
+    }
+    try {
+      const analysis = await investigateProjectIssue({
+        projectTitle: projectTitle || 'Workspace Project',
+        files,
+        issue,
+        userProblemDescription,
+      });
+      res.json(analysis);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Root cause investigation failed.';
+      res.status(msg.includes('GEMINI_API_KEY') ? 503 : 500).json({ error: msg });
+    }
+  });
+
+  app.post('/api/rescue/propose-fix', requireAuth, async (req: AuthedRequest, res: Response) => {
+    const uid = req.uid || 'anon';
+    if (!checkRateLimit(`rescue-fix:${uid}`, 20, 10 * 60_000)) {
+      res.status(429).json({ error: 'Fix proposal rate limit reached. Wait a moment before retrying.' });
+      return;
+    }
+    const { projectTitle, files, targetFilePath, problemDescription, rootCause, issueId } = req.body as {
+      projectTitle?: string;
+      files?: RescueWorkspaceFile[];
+      targetFilePath?: string;
+      problemDescription?: string;
+      rootCause?: RescueRootCauseAnalysis | null;
+      issueId?: string;
+    };
+    if (!Array.isArray(files) || !targetFilePath || !problemDescription) {
+      res.status(400).json({ error: 'files, targetFilePath, and problemDescription are required.' });
+      return;
+    }
+    try {
+      const proposal = await proposeFixAndAnalyzeImpact({
+        projectTitle: projectTitle || 'Workspace Project',
+        files,
+        targetFilePath,
+        problemDescription,
+        rootCause,
+        issueId,
+      });
+      res.json(proposal);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to generate fix proposal.';
+      res.status(msg.includes('GEMINI_API_KEY') ? 503 : 500).json({ error: msg });
+    }
+  });
+
+  app.post('/api/rescue/verify', requireAuth, async (req: AuthedRequest, res: Response) => {
+    const uid = req.uid || 'anon';
+    const { projectId, projectTitle, files, previousIssueIds, targetFilePath, testSuite } = req.body as {
+      projectId?: string;
+      projectTitle?: string;
+      files?: RescueWorkspaceFile[];
+      previousIssueIds?: string[];
+      targetFilePath?: string;
+      testSuite?: TestSuite | null;
+    };
+    if (!projectId || !Array.isArray(files) || !targetFilePath) {
+      res.status(400).json({ error: 'projectId, files, and targetFilePath are required.' });
+      return;
+    }
+    try {
+      const verification = await verifyPatchedWorkspace({
+        userId: uid,
+        projectId,
+        projectTitle: projectTitle || 'Workspace Project',
+        files,
+        previousIssueIds,
+        targetFilePath,
+        testSuite,
+      });
+      res.json(verification);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Fix verification check failed.',
+      });
+    }
+  });
+
+  app.post('/api/rescue/chat', requireAuth, async (req: AuthedRequest, res: Response) => {
+    const uid = req.uid || 'anon';
+    if (!checkRateLimit(`rescue-chat:${uid}`, 40, 10 * 60_000)) {
+      res.status(429).json({ error: 'Rescue Chat rate limit reached. Wait a moment before sending more messages.' });
+      return;
+    }
+    const { projectTitle, files, message, history, latestIssues } = req.body as {
+      projectTitle?: string;
+      files?: RescueWorkspaceFile[];
+      message?: string;
+      history?: RescueChatMessage[];
+      latestIssues?: RescueIssue[];
+    };
+    if (!Array.isArray(files) || !message?.trim()) {
+      res.status(400).json({ error: 'files and message are required.' });
+      return;
+    }
+    try {
+      const reply = await chatWithRescueAssistant({
+        projectTitle: projectTitle || 'Workspace Project',
+        files,
+        message: message.trim(),
+        history: Array.isArray(history) ? history : [],
+        latestIssues,
+      });
+      res.json(reply);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Rescue Chat could not respond.';
+      res.status(msg.includes('GEMINI_API_KEY') ? 503 : 500).json({ error: msg });
+    }
+  });
+
   // Dedicated Range-streaming handler for video assets (ensures HTTP 206 compliance across proxies)
   app.get('/assets/aistudio/:filename', (req: Request, res: Response, next) => {
     const filename = String(req.params.filename || '');
@@ -1867,12 +2371,20 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
       res.status(206);
       res.setHeader('Content-Range', `bytes ${start}-${end}/${totalSize}`);
       res.setHeader('Content-Length', String(chunkSize));
+      if (req.method === 'HEAD') {
+        res.end();
+        return;
+      }
       fs.createReadStream(filePath, { start, end }).pipe(res);
       return;
     }
 
     res.status(200);
     res.setHeader('Content-Length', String(totalSize));
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
     fs.createReadStream(filePath).pipe(res);
   });
 

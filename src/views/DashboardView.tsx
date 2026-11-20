@@ -23,7 +23,7 @@ import { GUIDED_PROJECTS } from '../data/projectsData';
 import { CHALLENGES, CAREER_PATHWAYS } from '../data/challengesData';
 import { resendVerificationEmailReal } from '../services/authService';
 import { buildMissionRecommendations } from '../services/missionService';
-import { INTRO_VIDEO_URL, IntroVideoModal } from '../components/IntroVideoModal';
+import { INTRO_VIDEO_URL, INTRO_WEBM_URL, IntroVideoModal } from '../components/IntroVideoModal';
 
 export function DashboardView() {
   const {
@@ -251,12 +251,14 @@ export function DashboardView() {
               className="relative w-28 sm:w-32 aspect-video rounded-lg overflow-hidden border border-blue-500/40 bg-black shrink-0 group cursor-pointer"
             >
               <video
-                src={`${INTRO_VIDEO_URL}#t=3.5`}
                 preload="metadata"
                 muted
                 playsInline
                 className="w-full h-full object-cover"
-              />
+              >
+                <source src={`${INTRO_VIDEO_URL}#t=3.5`} type="video/mp4" />
+                {INTRO_WEBM_URL && <source src={`${INTRO_WEBM_URL}#t=3.5`} type="video/webm" />}
+              </video>
               <span className="absolute inset-0 bg-black/30 group-hover:bg-black/15 flex items-center justify-center transition-colors">
                 <span className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shadow">
                   <Play className="w-3.5 h-3.5 fill-current ml-0.5" />

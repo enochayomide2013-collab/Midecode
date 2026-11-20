@@ -257,6 +257,11 @@
         "category": { "type": "string", "enum": ["question", "showcase", "discussion", "tip", "announcement"] },
         "tags": { "type": "array" },
         "codeSnippet": { "type": "string", "maxLength": 8000 },
+        "imageUrls": { "type": "array" },
+        "videoUrl": { "type": "string", "maxLength": 300 },
+        "videoName": { "type": "string", "maxLength": 160 },
+        "videoMimeType": { "type": "string", "maxLength": 80 },
+        "videoSizeBytes": { "type": "number" },
         "visibility": { "type": "string", "enum": ["public", "hidden"] },
         "likesCount": { "type": "number" },
         "commentsCount": { "type": "number" },
@@ -869,6 +874,51 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "userId", "category", "action", "aiAssisted", "dayKey", "createdAt"]
+    },
+    "RescueScanReport": {
+      "title": "RescueScanReport",
+      "description": "Persisted Project Rescue AI diagnostic scan report, health score, and prioritized issues.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectTitle": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "scanMode": { "type": "string", "enum": ["quick", "deep", "full"] },
+        "healthScore": { "type": "number" },
+        "filesInspected": { "type": "number" },
+        "confirmedCount": { "type": "number" },
+        "potentialCount": { "type": "number" },
+        "severityCounts": { "type": "object" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "recommendedRepairOrder": { "type": "array" },
+        "suggestedImprovements": { "type": "array" },
+        "projectIndex": { "type": "object" },
+        "issues": { "type": "array" },
+        "runtimeAudit": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "projectId", "projectTitle", "scanMode", "healthScore", "filesInspected", "confirmedCount", "potentialCount", "severityCounts", "summary", "recommendedRepairOrder", "suggestedImprovements", "projectIndex", "issues", "runtimeAudit", "createdAt"]
+    },
+    "RescueAppliedFix": {
+      "title": "RescueAppliedFix",
+      "description": "Audit and rollback record for an approved Project Rescue AI code fix.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectTitle": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "filePath": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "problemIdentified": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "snapshotVersionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "snapshotVersionNumber": { "type": "number" },
+        "verificationPassed": { "type": "boolean" },
+        "verificationSummary": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["applied", "rolled_back"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "projectId", "projectTitle", "filePath", "problemIdentified", "snapshotVersionId", "snapshotVersionNumber", "verificationPassed", "verificationSummary", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -1047,6 +1097,14 @@
     "/activityEvents/{eventId}": {
       "schema": { "$ref": "#/entities/ActivityEvent" },
       "description": "Private per-user activity events backing Developer Insights analytics."
+    },
+    "/rescueScans/{scanId}": {
+      "schema": { "$ref": "#/entities/RescueScanReport" },
+      "description": "Per-user Project Rescue AI diagnostic scan reports and repair priorities."
+    },
+    "/rescueFixes/{fixId}": {
+      "schema": { "$ref": "#/entities/RescueAppliedFix" },
+      "description": "User-approved Project Rescue AI fix application and rollback records."
     }
   }
 }

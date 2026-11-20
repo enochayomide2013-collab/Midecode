@@ -37,6 +37,8 @@ import type {
   Mission,
   MissionAttempt,
   MissionSubView,
+  RescueInternalTab,
+  RescueLaunchContext,
 } from '../types/mideocode';
 
 export interface AiLaunchContext {
@@ -125,6 +127,13 @@ interface MideoContextValue {
   collabProjectId: string | null;
   setCollabProjectId: (id: string | null) => void;
   openCollabForProject: (projectId: string) => void;
+  rescueLaunch: RescueLaunchContext | null;
+  clearRescueLaunch: () => void;
+  openRescueForProject: (
+    projectId: string,
+    initialTab?: RescueInternalTab,
+    initialPrompt?: string,
+  ) => void;
   sendArchitectureToBuild: (plan: ArchitecturePlan) => Promise<void>;
   aiLaunch: AiLaunchContext | null;
   clearAiLaunch: () => void;
@@ -184,7 +193,7 @@ function parseLocationRoute(): {
   }
   const validViews: NavSection[] = [
     'dashboard', 'insights', 'academy', 'missions', 'ide', 'ai', 'projects',
-    'versions', 'collaboration', 'testlab', 'architect',
+    'rescue', 'versions', 'collaboration', 'testlab', 'architect',
     'docs', 'lab', 'challenges', 'quest', 'community', 'career',
     'cloud', 'playground', 'profile', 'admin',
   ];
@@ -247,6 +256,7 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
   } | null>(null);
   const [versionsProjectId, setVersionsProjectId] = useState<string | null>(null);
   const [collabProjectId, setCollabProjectId] = useState<string | null>(null);
+  const [rescueLaunch, setRescueLaunch] = useState<RescueLaunchContext | null>(null);
   const [aiLaunch, setAiLaunch] = useState<AiLaunchContext | null>(null);
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -583,6 +593,16 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
     [setActiveView],
   );
 
+  const openRescueForProject = useCallback(
+    (projectId: string, initialTab?: RescueInternalTab, initialPrompt?: string) => {
+      setActiveIdeProjectId(projectId);
+      setRescueLaunch({ projectId, initialTab, initialPrompt });
+      setActiveView('rescue');
+    },
+    [setActiveView],
+  );
+  const clearRescueLaunch = useCallback(() => setRescueLaunch(null), []);
+
   const sendArchitectureToBuild = useCallback(
     async (plan: ArchitecturePlan) => {
       if (!firebaseUser || !profile) {
@@ -770,6 +790,9 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
         collabProjectId,
         setCollabProjectId,
         openCollabForProject,
+        rescueLaunch,
+        clearRescueLaunch,
+        openRescueForProject,
         sendArchitectureToBuild,
         aiLaunch,
         clearAiLaunch,

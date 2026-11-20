@@ -133,23 +133,63 @@ export function getCountryInfoFromPhone(phoneNumber?: string | null): {
   };
 }
 
+export class AuthServiceError extends Error {
+  code?: string;
+  hostname?: string;
+
+  constructor(message: string, code?: string, hostname?: string) {
+    super(message);
+    this.name = 'AuthServiceError';
+    this.code = code;
+    this.hostname = hostname;
+  }
+}
+
+const pendingRegistrationNames = new Map<string, string>();
+
+export function setPendingRegistrationName(uid: string, fullName: string): void {
+  const cleaned = fullName.trim();
+  if (uid && cleaned) {
+    pendingRegistrationNames.set(uid, cleaned.slice(0, 80));
+  }
+}
+
+export function getPendingRegistrationName(uid: string): string | null {
+  return pendingRegistrationNames.get(uid) || null;
+}
+
+export function clearPendingRegistrationName(uid: string): void {
+  pendingRegistrationNames.delete(uid);
+}
+
+export function getCurrentAuthHostname(): string {
+  return typeof window !== 'undefined' && window.location?.hostname
+    ? window.location.hostname
+    : '';
+}
+
 export function mapFirebaseAuthError(err: unknown): string {
   const code =
     typeof err === 'object' && err !== null && 'code' in err
       ? String((err as { code: unknown }).code)
       : '';
+  const hostname = getCurrentAuthHostname();
 
   switch (code) {
+    case 'auth/unauthorized-domain':
+      return `Google Sign-In is not authorized for "${hostname || 'this domain'}" yet. Add "${hostname || 'this domain'}" in Firebase Console > Authentication > Settings > Authorized domains, or sign up / sign in directly with Full Name, Email & Password below.`;
     case 'auth/popup-closed-by-user':
       return 'Sign-in window was closed before completing authentication.';
     case 'auth/cancelled-popup-request':
       return 'Authentication request was cancelled.';
     case 'auth/popup-blocked':
-      return 'Popup was blocked by your browser. Switching to redirect authentication or allow popups.';
+      return 'Popup was blocked by your browser. Please allow popups for MideoCode or use Email & Password below.';
     case 'auth/network-request-failed':
       return 'Network interruption occurred. Please check your connection and retry.';
     case 'auth/email-already-in-use':
       return 'An account with this email address already exists. Please sign in or link accounts from your profile.';
+    case 'auth/account-exists-with-different-credential':
+      return 'An account already exists with the same email under a different sign-in method. Sign in with your original method and link Google from Profile.';
     case 'auth/invalid-email':
       return 'Please enter a valid email address.';
     case 'auth/weak-password':
@@ -161,7 +201,7 @@ export function mapFirebaseAuthError(err: unknown): string {
     case 'auth/too-many-requests':
       return 'Too many attempts detected. For security, please wait before trying again.';
     case 'auth/internal-error':
-      return 'Firebase Auth encountered an internal error. Please check that Email/Password and Google sign-in providers are enabled in your Firebase Console > Authentication, or try clearing browser cookies/site data.';
+      return 'Firebase Auth encountered an internal error. Please verify Email/Password and Google sign-in are enabled in Firebase Console > Authentication, or clear cookies and retry.';
     case 'auth/operation-not-allowed':
       return 'This sign-in provider is not enabled yet in Firebase Console > Authentication > Sign-in method.';
     case 'auth/credential-already-in-use':
@@ -181,11 +221,20 @@ export async function signInWithGoogleReal(): Promise<User | null> {
     return result.user;
   } catch (err) {
     const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
-    if (code === 'auth/popup-blocked') {
-      await signInWithRedirect(auth, googleProvider);
-      return null;
+    const isInsideIframe = typeof window !== 'undefined' && window.self !== window.top;
+    if (code === 'auth/popup-blocked' && !isInsideIframe) {
+      try {
+        await signInWithRedirect(auth, googleProvider);
+        return null;
+      } catch (redirErr) {
+        const redirCode =
+          typeof redirErr === 'object' && redirErr !== null && 'code' in redirErr
+            ? String((redirErr as { code: unknown }).code)
+            : code;
+        throw new AuthServiceError(mapFirebaseAuthError(redirErr), redirCode, getCurrentAuthHostname());
+      }
     }
-    throw new Error(mapFirebaseAuthError(err));
+    throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname());
   }
 }
 
@@ -194,24 +243,30 @@ export async function checkGoogleRedirectResult(): Promise<User | null> {
     const res = await getRedirectResult(auth);
     return res?.user ?? null;
   } catch (err) {
-    throw new Error(mapFirebaseAuthError(err));
+    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
+    throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname());
   }
 }
 
 export async function registerWithEmailReal(
-  displayName: string,
+  fullName: string,
   email: string,
   password: string,
 ): Promise<User> {
   try {
+    const cleanedName = fullName.trim();
     const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-    if (displayName.trim()) {
-      await updateProfile(cred.user, { displayName: displayName.trim() });
+    if (cleanedName) {
+      setPendingRegistrationName(cred.user.uid, cleanedName);
+      await updateProfile(cred.user, { displayName: cleanedName }).catch(() => {});
+      await reload(cred.user).catch(() => {});
     }
-    await sendEmailVerification(cred.user);
-    return cred.user;
+    // Non-blocking verification email so user stays signed in immediately upon account creation
+    void sendEmailVerification(cred.user).catch(() => {});
+    return auth.currentUser || cred.user;
   } catch (err) {
-    throw new Error(mapFirebaseAuthError(err));
+    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
+    throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname());
   }
 }
 
@@ -220,7 +275,8 @@ export async function loginWithEmailReal(email: string, password: string): Promi
     const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
     return cred.user;
   } catch (err) {
-    throw new Error(mapFirebaseAuthError(err));
+    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
+    throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname());
   }
 }
 
