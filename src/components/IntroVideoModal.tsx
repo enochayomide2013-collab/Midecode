@@ -19,8 +19,18 @@ interface IntroVideoModalProps {
   onComplete?: () => void;
 }
 
-export const INTRO_VIDEO_URL =
-  ((import.meta.env.VITE_INTRO_VIDEO_URL as string | undefined) || '').trim();
+const DEFAULT_MP4_URL =
+  '/assets/aistudio/Untitled_Scene_11-18_19_52_26_20261118205722_b7453f54.mp4?v=3';
+const DEFAULT_WEBM_URL =
+  '/assets/aistudio/Untitled_Scene_11-18_19_52_26_20261118205722_b7453f54.webm?v=3';
+
+export const INTRO_VIDEO_URL = (
+  (import.meta.env.VITE_INTRO_VIDEO_URL as string | undefined) || DEFAULT_MP4_URL
+).trim();
+
+const INTRO_WEBM_URL =
+  import.meta.env.VITE_INTRO_VIDEO_URL ? '' : DEFAULT_WEBM_URL;
+
 const INTRO_POS_STORAGE_KEY = 'mideocode_intro_last_pos';
 
 function formatTime(secs: number): string {
@@ -43,13 +53,27 @@ export function IntroVideoModal({ isOpen, onClose, onComplete }: IntroVideoModal
   const [duration, setDuration] = useState(40);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [completedRecorded, setCompletedRecorded] = useState(false);
+  const [blobFallbackUrl, setBlobFallbackUrl] = useState<string | null>(null);
+  const blobUrlRef = useRef<string | null>(null);
+  const attemptedFallbackRef = useRef(false);
+
+  const revokeBlobFallback = () => {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+    setBlobFallbackUrl(null);
+  };
 
   useEffect(() => {
     if (!isOpen) {
       setIsPlaying(false);
+      attemptedFallbackRef.current = false;
+      revokeBlobFallback();
       return;
     }
     setVideoError(null);
+    attemptedFallbackRef.current = false;
     const v = videoRef.current;
     if (v && v.readyState >= 2) {
       setLoading(false);
@@ -57,6 +81,15 @@ export function IntroVideoModal({ isOpen, onClose, onComplete }: IntroVideoModal
       setLoading(true);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -155,9 +188,61 @@ export function IntroVideoModal({ isOpen, onClose, onComplete }: IntroVideoModal
   const handleRetry = () => {
     setVideoError(null);
     setLoading(true);
+    attemptedFallbackRef.current = false;
+    revokeBlobFallback();
     if (videoRef.current) {
       videoRef.current.load();
     }
+  };
+
+  const tryBlobFallbackOrFail = async (code?: number) => {
+    if (!attemptedFallbackRef.current && INTRO_VIDEO_URL) {
+      attemptedFallbackRef.current = true;
+      setLoading(true);
+      const v = videoRef.current;
+      const supportsWebm = Boolean(
+        INTRO_WEBM_URL && v?.canPlayType('video/webm; codecs="vp8, opus"')
+      );
+      const supportsMp4 = Boolean(
+        v?.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"') || v?.canPlayType('video/mp4')
+      );
+      const candidates = INTRO_WEBM_URL
+        ? supportsWebm && !supportsMp4
+          ? [INTRO_WEBM_URL, INTRO_VIDEO_URL]
+          : [INTRO_VIDEO_URL, INTRO_WEBM_URL]
+        : [INTRO_VIDEO_URL];
+      for (const candidateUrl of candidates) {
+        try {
+          const resp = await fetch(candidateUrl, { credentials: 'same-origin', cache: 'no-store' });
+          const ctype = (resp.headers.get('content-type') || '').toLowerCase();
+          if (resp.ok && ctype.startsWith('video/')) {
+            const blob = await resp.blob();
+            if (blob.size > 1024) {
+              revokeBlobFallback();
+              const objUrl = URL.createObjectURL(blob);
+              blobUrlRef.current = objUrl;
+              setBlobFallbackUrl(objUrl);
+              setVideoError(null);
+              return;
+            }
+          }
+        } catch {
+          // Try next candidate
+        }
+      }
+    }
+
+    setLoading(false);
+    setIsPlaying(false);
+    const detail =
+      code === 2
+        ? ' (network interruption)'
+        : code === 3
+          ? ' (media decode error)'
+          : code === 4
+            ? ' (media source not supported)'
+            : '';
+    setVideoError(`Unable to load the Introduction to MideoCode video right now${detail}. Click Retry Video to try again.`);
   };
 
   return (
@@ -187,51 +272,54 @@ export function IntroVideoModal({ isOpen, onClose, onComplete }: IntroVideoModal
             </div>
           ) : (
             <video
+              key={blobFallbackUrl || 'multi-source'}
               ref={videoRef}
-              src={INTRO_VIDEO_URL}
+              src={blobFallbackUrl || undefined}
               playsInline
               preload="metadata"
-            onLoadedMetadata={() => {
-              if (videoRef.current?.duration) setDuration(videoRef.current.duration);
-              restorePosition();
-              setLoading(false);
-            }}
-            onLoadedData={() => setLoading(false)}
-            onCanPlay={() => setLoading(false)}
-            onCanPlayThrough={() => setLoading(false)}
-            onWaiting={() => setLoading(true)}
-            onPlaying={() => {
-              setLoading(false);
-              setIsPlaying(true);
-            }}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onError={() => {
-              setLoading(false);
-              setIsPlaying(false);
-              const code = videoRef.current?.error?.code;
-              const detail =
-                code === 2
-                  ? ' (network interruption)'
-                  : code === 3
-                    ? ' (media decode error)'
-                    : code === 4
-                      ? ' (media source not supported)'
-                      : '';
-              setVideoError(`Unable to load the Introduction to MideoCode video right now${detail}. Click Retry Video to try again.`);
-            }}
-            onTimeUpdate={handleTimeUpdate}
-            onEnded={() => {
-              setIsPlaying(false);
-              persistPosition(0);
-              if (!completedRecorded) {
-                setCompletedRecorded(true);
-                if (onComplete) onComplete();
-              }
-            }}
+              onLoadedMetadata={() => {
+                if (videoRef.current?.duration) setDuration(videoRef.current.duration);
+                restorePosition();
+                setLoading(false);
+              }}
+              onLoadedData={() => setLoading(false)}
+              onCanPlay={() => setLoading(false)}
+              onCanPlayThrough={() => setLoading(false)}
+              onWaiting={() => setLoading(true)}
+              onPlaying={() => {
+                setLoading(false);
+                setIsPlaying(true);
+              }}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onError={() => {
+                void tryBlobFallbackOrFail(videoRef.current?.error?.code);
+              }}
+              onTimeUpdate={handleTimeUpdate}
+              onEnded={() => {
+                setIsPlaying(false);
+                persistPosition(0);
+                if (!completedRecorded) {
+                  setCompletedRecorded(true);
+                  if (onComplete) onComplete();
+                }
+              }}
               className="w-full h-full object-contain cursor-pointer"
               onClick={togglePlay}
-            />
+            >
+              {!blobFallbackUrl && INTRO_WEBM_URL && (
+                <source src={INTRO_WEBM_URL} type="video/webm" />
+              )}
+              {!blobFallbackUrl && (
+                <source
+                  src={INTRO_VIDEO_URL}
+                  type="video/mp4"
+                  onError={() => {
+                    void tryBlobFallbackOrFail(videoRef.current?.error?.code ?? 4);
+                  }}
+                />
+              )}
+            </video>
           )}
 
           {loading && !videoError && (

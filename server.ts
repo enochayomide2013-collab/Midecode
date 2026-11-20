@@ -1818,10 +1818,13 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
     res.json(computeSnapshotDiff(baseSnapshot, targetSnapshot));
   });
 
-  // Dedicated Range-streaming handler for large video assets (ensures HTTP 206 compliance across proxies)
+  // Dedicated Range-streaming handler for video assets (ensures HTTP 206 compliance across proxies)
   app.get('/assets/aistudio/:filename', (req: Request, res: Response, next) => {
     const filename = String(req.params.filename || '');
-    if (!filename.toLowerCase().endsWith('.mp4') || !/^[a-zA-Z0-9._-]+$/.test(filename)) {
+    const lower = filename.toLowerCase();
+    const isMp4 = lower.endsWith('.mp4');
+    const isWebm = lower.endsWith('.webm');
+    if ((!isMp4 && !isWebm) || !/^[a-zA-Z0-9._-]+$/.test(filename)) {
       next();
       return;
     }
@@ -1840,8 +1843,8 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
     const range = req.headers.range;
 
     res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Content-Type', isWebm ? 'video/webm' : 'video/mp4');
+    res.setHeader('Cache-Control', 'no-cache');
 
     if (range) {
       const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
