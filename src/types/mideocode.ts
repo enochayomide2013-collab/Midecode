@@ -1273,7 +1273,7 @@ export interface DeveloperInsightsSnapshot {
 // ---------------------------------------------------------------------------
 // 6. MideoCode Project Rescue AI Domain Types
 // ---------------------------------------------------------------------------
-export type RescueScanMode = 'quick' | 'deep' | 'full';
+export type RescueScanMode = 'quick' | 'deep' | 'full' | 'custom';
 export type RescueSeverity = 'critical' | 'high' | 'medium' | 'low' | 'suggestion';
 export type RescueCertainty = 'confirmed' | 'possible';
 export type RescueIssueCategory =
@@ -1288,22 +1288,70 @@ export type RescueIssueCategory =
   | 'auth'
   | 'security'
   | 'performance'
-  | 'architecture';
+  | 'architecture'
+  | 'documentation';
 
 export type RescueInternalTab =
   | 'overview'
+  | 'files'
+  | 'intelligence'
+  | 'documentation'
   | 'scanner'
   | 'investigate'
   | 'root_cause'
   | 'fixes'
   | 'rescue_mode'
   | 'history'
-  | 'chat';
+  | 'chat'
+  | 'settings';
+
+export type RescueImportSourceType = 'zip' | 'folder' | 'files' | 'git' | 'workspace';
+
+export interface RescueImportSummary {
+  sourceType: RescueImportSourceType;
+  projectTitle: string;
+  importedCount: number;
+  skippedCount: number;
+  totalBytes: number;
+  languages: Record<string, number>;
+  frameworks: string[];
+  skippedReasons?: string[];
+  branch?: string;
+  repoUrl?: string;
+}
+
+export interface RescueZipRootCandidate {
+  rootPath: string;
+  fileCount: number;
+  hasConfigFile: boolean;
+}
+
+export interface RescueCustomScanConfig {
+  checks: RescueIssueCategory[];
+  excludedPaths: string[];
+}
+
+export type RescueFileRole =
+  | 'entry'
+  | 'component'
+  | 'page'
+  | 'route'
+  | 'api_client'
+  | 'service'
+  | 'state'
+  | 'database'
+  | 'auth'
+  | 'config'
+  | 'documentation'
+  | 'test'
+  | 'utility'
+  | 'module';
 
 export interface RescueFileSummary {
   fileId?: string;
   path: string;
   language: string;
+  role?: RescueFileRole;
   linesCount: number;
   bytes: number;
   imports: string[];
@@ -1330,6 +1378,28 @@ export interface RescueProjectIndex {
     matchedBackendFile?: string;
     status: 'connected' | 'unmatched_endpoint' | 'static_only';
   }[];
+}
+
+export interface RescueDocumentationDiscrepancy {
+  kind: 'missing_documented_route' | 'missing_script' | 'missing_referenced_file';
+  docFile: string;
+  target: string;
+  details: string;
+}
+
+export interface RescueDocumentationReport {
+  docFiles: {
+    path: string;
+    title: string;
+    wordCount: number;
+    headings: string[];
+    excerpt: string;
+  }[];
+  purposeSummary: string;
+  setupInstructions: string[];
+  documentedEndpoints: string[];
+  referencedPaths: string[];
+  discrepancies: RescueDocumentationDiscrepancy[];
 }
 
 export interface RescueIssue {
@@ -1371,10 +1441,14 @@ export interface RescueRootCauseAnalysis {
   unverifiedScopeNotes: string[];
 }
 
+export type RescueRiskLevel = 'Low Risk' | 'Moderate Risk' | 'High Risk';
+
 export interface RescueImpactReport {
   dependentFiles: string[];
   affectedFeatures: string[];
   removedOrChangedExports: string[];
+  riskLevel?: RescueRiskLevel;
+  riskRationale?: string;
   preFlightPassed: boolean;
   preFlightChecks: {
     checkName: string;
@@ -1392,6 +1466,7 @@ export interface RescueFixProposal {
   fileId?: string;
   filePath: string;
   language: string;
+  targetFileHash?: string;
   originalCode: string;
   proposedCode: string;
   explanation: string;
@@ -1401,8 +1476,15 @@ export interface RescueFixProposal {
   status: 'pending' | 'applied' | 'rejected' | 'rolled_back';
 }
 
+export type RescueVerificationStatus =
+  | 'VERIFIED'
+  | 'PARTIALLY_VERIFIED'
+  | 'FAILED'
+  | 'NOT_VERIFIED';
+
 export interface RescueVerificationResult {
   passed: boolean;
+  verificationStatus?: RescueVerificationStatus;
   summary: string;
   checksExecuted: {
     name: string;
@@ -1428,6 +1510,42 @@ export interface RescueRuntimeAudit {
   note: string;
 }
 
+export interface RescueDismissedIssue {
+  issueId: string;
+  reason: 'wont_fix' | 'false_positive' | 'deferred' | 'reviewed';
+  note?: string;
+  dismissedAt: string;
+}
+
+export type RescueScanStage =
+  | 'Preparing Project'
+  | 'Loading File Inventory'
+  | 'Inspecting Source Files'
+  | 'Reading Documentation'
+  | 'Analyzing Dependencies'
+  | 'Mapping Project Architecture'
+  | 'Running Static Diagnostics'
+  | 'Investigating Detected Problems'
+  | 'Classifying Issues'
+  | 'Generating Scan Report';
+
+export interface RescueScanJob {
+  jobId: string;
+  userId: string;
+  projectId: string;
+  projectTitle: string;
+  scanMode: RescueScanMode;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  currentStage: RescueScanStage;
+  progressPct: number;
+  filesProcessed: number;
+  totalFiles: number;
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+  report?: RescueScanReport;
+}
+
 export interface RescueScanReport {
   id: string;
   userId: string;
@@ -1449,8 +1567,13 @@ export interface RescueScanReport {
   recommendedRepairOrder: string[];
   suggestedImprovements: string[];
   projectIndex: RescueProjectIndex;
+  documentationReport?: RescueDocumentationReport;
   issues: RescueIssue[];
   runtimeAudit: RescueRuntimeAudit[];
+  reviewedIssueIds?: string[];
+  dismissedIssues?: RescueDismissedIssue[];
+  excludedPaths?: string[];
+  projectFingerprint?: string;
   createdAt: unknown;
 }
 
@@ -1464,9 +1587,48 @@ export interface RescueAppliedFixRecord {
   snapshotVersionId: string;
   snapshotVersionNumber: number;
   verificationPassed: boolean;
+  verificationStatus?: RescueVerificationStatus;
   verificationSummary: string;
   status: 'applied' | 'rolled_back';
   createdAt: unknown;
+}
+
+export interface RescueInvestigationRecord {
+  id: string;
+  userId: string;
+  projectId: string;
+  projectTitle: string;
+  issueId?: string;
+  problemTitle: string;
+  responsibleFile: string;
+  certainty: RescueCertainty;
+  confidence: number;
+  expectedBehavior?: string;
+  actualBehavior?: string;
+  analysis: RescueRootCauseAnalysis;
+  status: 'open' | 'fix_proposed' | 'resolved';
+  createdAt: unknown;
+  updatedAt: unknown;
+}
+
+export interface RescueAdminEvent {
+  id: string;
+  kind: 'failed_import' | 'failed_scan' | 'ai_error' | 'security_event';
+  userId?: string;
+  projectTitle?: string;
+  message: string;
+  details?: string;
+  createdAt: string;
+}
+
+export interface RescueAdminTelemetry {
+  activeJobs: RescueScanJob[];
+  recentJobs: RescueScanJob[];
+  failedImports: RescueAdminEvent[];
+  failedScans: RescueAdminEvent[];
+  aiErrors: RescueAdminEvent[];
+  securityEvents: RescueAdminEvent[];
+  generatedAt: string;
 }
 
 export interface RescueChatMessage {
@@ -1483,3 +1645,4 @@ export interface RescueLaunchContext {
   initialTab?: RescueInternalTab;
   initialPrompt?: string;
 }
+

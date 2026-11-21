@@ -507,16 +507,37 @@ export function ProfileView() {
               <div className="space-y-2">
                 <p className="text-xs text-slate-500 break-all">{firebaseUser.email}</p>
                 {!firebaseUser.emailVerified && (
-                  <button
-                    onClick={() =>
-                      resendVerificationEmailReal(firebaseUser)
-                        .then(() => notify('success', 'Verification email sent.'))
-                        .catch((err) => notify('error', err.message))
-                    }
-                    className="w-full py-1.5 rounded-lg bg-amber-600 text-white text-xs font-medium cursor-pointer"
-                  >
-                    Resend Verification Email
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        resendVerificationEmailReal(firebaseUser)
+                          .then(() => notify('success', 'Verification email sent.'))
+                          .catch((err) => notify('error', err.message))
+                      }
+                      className="flex-1 py-1.5 px-2.5 rounded-lg bg-amber-600 text-white text-xs font-medium cursor-pointer"
+                    >
+                      Resend Verification Email
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await refreshAuthState();
+                          await refreshUserData();
+                          notify('info', 'Checked latest email verification status.');
+                        } catch (err) {
+                          notify(
+                            'error',
+                            err instanceof Error ? err.message : 'Unable to refresh auth state.',
+                          );
+                        }
+                      }}
+                      className="py-1.5 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium cursor-pointer"
+                    >
+                      I&apos;ve Verified — Refresh
+                    </button>
+                  </div>
                 )}
               </div>
             ) : (

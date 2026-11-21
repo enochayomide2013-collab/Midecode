@@ -21,16 +21,24 @@ import {
 } from './dataService';
 import type {
   ProjectFile,
+  RescueAdminTelemetry,
   RescueAppliedFixRecord,
   RescueChatMessage,
+  RescueCustomScanConfig,
+  RescueDismissedIssue,
   RescueFixProposal,
+  RescueImpactReport,
+  RescueImportSummary,
   RescueInternalTab,
+  RescueInvestigationRecord,
   RescueIssue,
   RescueProjectIndex,
   RescueRootCauseAnalysis,
+  RescueScanJob,
   RescueScanMode,
   RescueScanReport,
   RescueVerificationResult,
+  RescueZipRootCandidate,
   TestSuite,
 } from '../types/mideocode';
 
@@ -74,7 +82,7 @@ function toTimestampMs(val: unknown): number {
 // File & Folder Import Normalizer / Validator (shared by pickers & drag-drop)
 // ---------------------------------------------------------------------------
 export const RESCUE_IMPORT_ACCEPT =
-  '.js,.jsx,.mjs,.cjs,.ts,.tsx,.mts,.cts,.py,.pyw,.html,.htm,.css,.scss,.sass,.less,.sql,.json,.md,.mdx,.yml,.yaml,.toml,.xml,.txt,.sh,.vue,.svelte,.env.example';
+  '.js,.jsx,.mjs,.cjs,.ts,.tsx,.mts,.cts,.py,.pyw,.php,.java,.cpp,.cc,.cxx,.hpp,.c,.h,.cs,.go,.rs,.html,.htm,.css,.scss,.sass,.less,.sql,.json,.jsonc,.md,.mdx,.rst,.adoc,.yml,.yaml,.toml,.xml,.txt,.sh,.vue,.svelte,.astro,.prisma,.graphql,.gql,.env.example';
 
 const IGNORED_IMPORT_SEGMENTS = new Set([
   'node_modules',
@@ -97,11 +105,12 @@ const SUPPORTED_IMPORT_EXTENSIONS = new Set([
   'js', 'jsx', 'mjs', 'cjs',
   'ts', 'tsx', 'mts', 'cts',
   'py', 'pyw',
+  'php', 'java', 'cpp', 'cc', 'cxx', 'hpp', 'c', 'h', 'cs', 'go', 'rs',
   'html', 'htm',
   'css', 'scss', 'sass', 'less',
   'sql',
   'json', 'jsonc',
-  'md', 'mdx',
+  'md', 'mdx', 'rst', 'adoc',
   'yml', 'yaml',
   'toml', 'xml', 'txt', 'sh', 'bash',
   'vue', 'svelte', 'astro', 'prisma', 'graphql', 'gql',
@@ -159,17 +168,31 @@ export function isSupportedCodeFilename(filename: string): boolean {
 
 export function detectImportLanguage(filename: string): string {
   const lower = filename.toLowerCase();
-  if (lower.endsWith('.tsx') || lower.endsWith('.ts') || lower.endsWith('.mts') || lower.endsWith('.cts')) {
+  if (lower.endsWith('.tsx')) return 'tsx';
+  if (lower.endsWith('.ts') || lower.endsWith('.mts') || lower.endsWith('.cts')) {
     return 'typescript';
   }
+  if (lower.endsWith('.jsx')) return 'jsx';
+  if (lower.endsWith('.js') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) return 'javascript';
   if (lower.endsWith('.py') || lower.endsWith('.pyw')) return 'python';
+  if (lower.endsWith('.php')) return 'php';
+  if (lower.endsWith('.java')) return 'java';
+  if (lower.endsWith('.cpp') || lower.endsWith('.cc') || lower.endsWith('.cxx') || lower.endsWith('.hpp')) return 'cpp';
+  if (lower.endsWith('.c') || lower.endsWith('.h')) return 'c';
+  if (lower.endsWith('.cs')) return 'csharp';
+  if (lower.endsWith('.go')) return 'go';
+  if (lower.endsWith('.rs')) return 'rust';
   if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
   if (lower.endsWith('.css') || lower.endsWith('.scss') || lower.endsWith('.sass') || lower.endsWith('.less')) {
     return 'css';
   }
   if (lower.endsWith('.sql')) return 'sql';
   if (lower.endsWith('.json') || lower.endsWith('.jsonc')) return 'json';
-  return 'javascript';
+  if (lower.endsWith('.md') || lower.endsWith('.mdx') || lower.endsWith('.rst') || lower.endsWith('.adoc')) return 'markdown';
+  if (lower.endsWith('.yml') || lower.endsWith('.yaml')) return 'yaml';
+  if (lower.endsWith('.toml')) return 'toml';
+  if (lower.endsWith('.xml')) return 'xml';
+  return 'text';
 }
 
 export interface ImportedFileInput {
@@ -268,14 +291,195 @@ export function prepareImportedProjectFiles(entries: ImportedFileInput[]): {
   };
 }
 
+export async function computeClientWorkspaceFingerprint(
+  files: Array<{ folder?: string; name: string; content: string }>,
+): Promise<string> {
+  const canonical = [...files]
+    .map((f) => ({
+      path: f.folder ? `${f.folder}/${f.name}` : f.name,
+      content: f.content || '',
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path))
+    .map((f) => `${f.path}\n${f.content.length}\n${f.content}`)
+    .join('\n---\n');
+
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const encoded = new TextEncoder().encode(canonical);
+    const digest = await crypto.subtle.digest('SHA-256', encoded);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')
+      .slice(0, 32);
+  }
+  let hash = 2166136261;
+  for (let i = 0; i < canonical.length; i++) {
+    hash ^= canonical.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `fnv_${(hash >>> 0).toString(16)}`;
+}
+
+export function computeProjectRefreshDiff(
+  prevFiles: Array<{ folder?: string; name: string; content: string }>,
+  nextFiles: Array<{ folder?: string; name: string; content: string }>,
+): {
+  added: string[];
+  modified: string[];
+  removed: string[];
+  unchanged: number;
+} {
+  const toMap = (list: Array<{ folder?: string; name: string; content: string }>) => {
+    const m = new Map<string, string>();
+    for (const f of list) {
+      const p = f.folder ? `${f.folder}/${f.name}` : f.name;
+      m.set(p, f.content || '');
+    }
+    return m;
+  };
+  const prevMap = toMap(prevFiles);
+  const nextMap = toMap(nextFiles);
+  const added: string[] = [];
+  const modified: string[] = [];
+  const removed: string[] = [];
+  let unchanged = 0;
+
+  for (const [p, nextContent] of nextMap.entries()) {
+    if (!prevMap.has(p)) {
+      added.push(p);
+    } else if (prevMap.get(p) !== nextContent) {
+      modified.push(p);
+    } else {
+      unchanged += 1;
+    }
+  }
+  for (const p of prevMap.keys()) {
+    if (!nextMap.has(p)) {
+      removed.push(p);
+    }
+  }
+  return { added, modified, removed, unchanged };
+}
+
 // ---------------------------------------------------------------------------
-// Project Rescue AI Server Engine Calls
+// Project Rescue AI Server Engine Calls & Multi-Source Importers
 // ---------------------------------------------------------------------------
+export async function importZipArchiveViaApi(
+  file: File,
+  options?: { selectedRoot?: string; projectNameHint?: string },
+): Promise<{
+  requiresRootSelection: boolean;
+  rootCandidates: RescueZipRootCandidate[];
+  summary: RescueImportSummary;
+  files: NormalizedImportedFile[];
+}> {
+  const params = new URLSearchParams();
+  if (options?.selectedRoot) params.set('selectedRoot', options.selectedRoot);
+  if (options?.projectNameHint) params.set('projectName', options.projectNameHint);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const buffer = await file.arrayBuffer();
+  const res = await fetchWithAuthAndRetry(`/api/rescue/import/zip${qs}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/zip' },
+    body: buffer,
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to inspect and extract ZIP archive.');
+  }
+  return data as {
+    requiresRootSelection: boolean;
+    rootCandidates: RescueZipRootCandidate[];
+    summary: RescueImportSummary;
+    files: NormalizedImportedFile[];
+  };
+}
+
+export async function importGitRepoViaApi(input: {
+  repoUrl: string;
+  branch?: string;
+  githubToken?: string;
+}): Promise<{
+  summary: RescueImportSummary;
+  files: NormalizedImportedFile[];
+  branch: string;
+  availableBranches: string[];
+}> {
+  const res = await fetchWithAuthAndRetry('/api/rescue/import/git', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      repoUrl: input.repoUrl.trim(),
+      branch: input.branch?.trim() || undefined,
+      githubToken: input.githubToken?.trim() || undefined,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Git repository import failed.');
+  }
+  return data as {
+    summary: RescueImportSummary;
+    files: NormalizedImportedFile[];
+    branch: string;
+    availableBranches: string[];
+  };
+}
+
+export async function startScanJobViaApi(input: {
+  projectId: string;
+  projectTitle: string;
+  scanMode: RescueScanMode;
+  files: ProjectFile[];
+  customConfig?: RescueCustomScanConfig;
+}): Promise<RescueScanJob> {
+  const res = await fetchWithAuthAndRetry('/api/rescue/jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      projectId: input.projectId,
+      projectTitle: input.projectTitle,
+      scanMode: input.scanMode,
+      files: serializeProjectFiles(input.files),
+      customConfig: input.customConfig,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Unable to start background scan job.');
+  }
+  return data as RescueScanJob;
+}
+
+export async function getScanJobStatusViaApi(jobId: string): Promise<RescueScanJob> {
+  const res = await fetchWithAuthAndRetry(`/api/rescue/jobs/${encodeURIComponent(jobId)}`, {
+    method: 'GET',
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Scan job not found.');
+  }
+  return data as RescueScanJob;
+}
+
+export async function cancelScanJobViaApi(jobId: string): Promise<RescueScanJob> {
+  const res = await fetchWithAuthAndRetry(`/api/rescue/jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Could not cancel scan job.');
+  }
+  return data as RescueScanJob;
+}
+
 export async function scanProjectViaApi(input: {
   projectId: string;
   projectTitle: string;
   scanMode: RescueScanMode;
   files: ProjectFile[];
+  customConfig?: RescueCustomScanConfig;
 }): Promise<RescueScanReport> {
   const res = await fetchWithAuthAndRetry('/api/rescue/scan', {
     method: 'POST',
@@ -285,6 +489,7 @@ export async function scanProjectViaApi(input: {
       projectTitle: input.projectTitle,
       scanMode: input.scanMode,
       files: serializeProjectFiles(input.files),
+      customConfig: input.customConfig,
     }),
   });
   const data = await res.json();
@@ -299,6 +504,9 @@ export async function investigateIssueViaApi(input: {
   files: ProjectFile[];
   issue?: RescueIssue | null;
   userProblemDescription?: string;
+  expectedBehavior?: string;
+  actualBehavior?: string;
+  screenshot?: { mimeType: string; dataBase64: string } | null;
 }): Promise<RescueRootCauseAnalysis> {
   const res = await fetchWithAuthAndRetry('/api/rescue/investigate', {
     method: 'POST',
@@ -308,6 +516,9 @@ export async function investigateIssueViaApi(input: {
       files: serializeProjectFiles(input.files),
       issue: input.issue || null,
       userProblemDescription: input.userProblemDescription?.trim() || undefined,
+      expectedBehavior: input.expectedBehavior?.trim() || undefined,
+      actualBehavior: input.actualBehavior?.trim() || undefined,
+      screenshot: input.screenshot || null,
     }),
   });
   const data = await res.json();
@@ -315,6 +526,36 @@ export async function investigateIssueViaApi(input: {
     throw new Error(data.error || 'Root cause investigation failed.');
   }
   return data as RescueRootCauseAnalysis;
+}
+
+export async function analyzeFixImpactViaApi(input: {
+  files: ProjectFile[];
+  targetFilePath: string;
+  proposedCode: string;
+}): Promise<RescueImpactReport> {
+  const res = await fetchWithAuthAndRetry('/api/rescue/analyze-impact', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      files: serializeProjectFiles(input.files),
+      targetFilePath: input.targetFilePath,
+      proposedCode: input.proposedCode,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Fix impact analysis failed.');
+  }
+  return data as RescueImpactReport;
+}
+
+export async function fetchRescueAdminTelemetry(): Promise<RescueAdminTelemetry> {
+  const res = await fetchWithAuthAndRetry('/api/rescue/admin/telemetry', { method: 'GET' });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Unable to load Project Rescue telemetry.');
+  }
+  return data as RescueAdminTelemetry;
 }
 
 export async function proposeFixViaApi(input: {
@@ -413,6 +654,7 @@ function encodeProjectIndexForFirestore(index: RescueProjectIndex): Record<strin
       fileId: f.fileId || '',
       path: f.path,
       language: f.language,
+      role: f.role || 'module',
       linesCount: f.linesCount,
       bytes: f.bytes,
       imports: (f.imports || []).slice(0, 20),
@@ -500,8 +742,24 @@ export async function saveRescueScanReport(
         .map((s) => truncateToUtf8Bytes(String(s), 280))
         .slice(0, 30),
       projectIndex: idxObj,
+      documentationReport: report.documentationReport
+        ? {
+            docFiles: (report.documentationReport.docFiles || []).slice(0, 12),
+            purposeSummary: truncateToUtf8Bytes(report.documentationReport.purposeSummary || '', 1200),
+            setupInstructions: (report.documentationReport.setupInstructions || []).slice(0, 15),
+            documentedEndpoints: (report.documentationReport.documentedEndpoints || []).slice(0, 25),
+            referencedPaths: (report.documentationReport.referencedPaths || []).slice(0, 30),
+            discrepancies: (report.documentationReport.discrepancies || []).slice(0, 20),
+          }
+        : undefined,
       issues: issuesList,
       runtimeAudit: (report.runtimeAudit || []).slice(0, 15),
+      reviewedIssueIds: (report.reviewedIssueIds || []).slice(0, 100),
+      dismissedIssues: (report.dismissedIssues || []).slice(0, 100),
+      excludedPaths: (report.excludedPaths || []).slice(0, 60),
+      projectFingerprint: report.projectFingerprint
+        ? truncateToUtf8Bytes(report.projectFingerprint, 128)
+        : undefined,
       createdAt: serverTimestamp(),
     });
 
@@ -527,6 +785,21 @@ export async function saveRescueScanReport(
     return decodeScanReportFromFirestore(saved.data() as Record<string, unknown>);
   } catch (err) {
     handleFirestoreError(err, OperationType.CREATE, `rescueScans/${scanId}`);
+  }
+}
+
+export async function updateRescueScanReviewState(
+  scanId: string,
+  reviewedIssueIds: string[],
+  dismissedIssues: RescueDismissedIssue[],
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'rescueScans', scanId), sanitizeForFirestore({
+      reviewedIssueIds: reviewedIssueIds.slice(0, 100),
+      dismissedIssues: dismissedIssues.slice(0, 100),
+    }));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `rescueScans/${scanId}`);
   }
 }
 
@@ -565,6 +838,7 @@ export async function recordRescueFixRecord(
     snapshotVersionId: input.snapshotVersionId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120),
     snapshotVersionNumber: Math.max(1, Math.min(10000, Math.round(input.snapshotVersionNumber))),
     verificationPassed: Boolean(input.verificationPassed),
+    verificationStatus: input.verificationStatus,
     verificationSummary: truncateToUtf8Bytes(input.verificationSummary.trim(), 1000) || 'Verified',
     status: 'applied',
     createdAt: serverTimestamp(),
@@ -595,6 +869,83 @@ export async function markRescueFixRolledBack(fixId: string): Promise<void> {
     await updateDoc(doc(db, 'rescueFixes', fixId), { status: 'rolled_back' });
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, `rescueFixes/${fixId}`);
+  }
+}
+
+export async function saveRescueInvestigationRecord(
+  uid: string,
+  input: {
+    projectId: string;
+    projectTitle: string;
+    issueId?: string;
+    expectedBehavior?: string;
+    actualBehavior?: string;
+    analysis: RescueRootCauseAnalysis;
+    status?: RescueInvestigationRecord['status'];
+  },
+): Promise<RescueInvestigationRecord> {
+  const invId = `rinv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const payload = sanitizeForFirestore<Record<string, unknown>>({
+    id: invId,
+    userId: uid,
+    projectId: input.projectId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120),
+    projectTitle: truncateToUtf8Bytes(input.projectTitle.trim(), 140) || 'Workspace',
+    issueId: input.issueId ? truncateToUtf8Bytes(input.issueId, 120) : undefined,
+    problemTitle: truncateToUtf8Bytes(input.analysis.problemTitle || 'Investigation', 220),
+    responsibleFile: truncateToUtf8Bytes(input.analysis.responsibleFile || 'unknown', 240),
+    certainty: input.analysis.certainty,
+    confidence: Math.max(0, Math.min(100, Math.round(Number(input.analysis.confidence) || 0))),
+    expectedBehavior: input.expectedBehavior
+      ? truncateToUtf8Bytes(input.expectedBehavior.trim(), 950)
+      : undefined,
+    actualBehavior: input.actualBehavior
+      ? truncateToUtf8Bytes(input.actualBehavior.trim(), 950)
+      : undefined,
+    analysis: sanitizeForFirestore(input.analysis),
+    status: input.status || 'open',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  try {
+    await setDoc(doc(db, 'rescueInvestigations', invId), payload);
+    const snap = await getDoc(doc(db, 'rescueInvestigations', invId));
+    return snap.data() as RescueInvestigationRecord;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, `rescueInvestigations/${invId}`);
+  }
+}
+
+export async function listRescueInvestigationRecords(uid: string): Promise<RescueInvestigationRecord[]> {
+  try {
+    const q = query(collection(db, 'rescueInvestigations'), where('userId', '==', uid), limit(30));
+    const snap = await getDocs(q);
+    return snap.docs
+      .map((d) => d.data() as RescueInvestigationRecord)
+      .sort((a, b) => toTimestampMs(b.createdAt) - toTimestampMs(a.createdAt));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'rescueInvestigations');
+  }
+}
+
+export async function updateRescueInvestigationStatus(
+  investigationId: string,
+  status: RescueInvestigationRecord['status'],
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'rescueInvestigations', investigationId), {
+      status,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `rescueInvestigations/${investigationId}`);
+  }
+}
+
+export async function deleteRescueInvestigationRecord(investigationId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'rescueInvestigations', investigationId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `rescueInvestigations/${investigationId}`);
   }
 }
 

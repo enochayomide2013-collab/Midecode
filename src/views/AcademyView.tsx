@@ -6,11 +6,9 @@ import {
   Code2,
   FlaskConical,
   FileText,
-  Play,
   Sparkles,
   Terminal,
   Trash2,
-  Video,
 } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
 import { ACADEMY_COURSES } from '../data/academyData';
@@ -21,7 +19,6 @@ import {
   saveNote,
   deleteNote,
 } from '../services/dataService';
-import { INTRO_VIDEO_URL, INTRO_WEBM_URL, IntroVideoModal } from '../components/IntroVideoModal';
 import { extractReadableError } from '../services/firebase';
 import type { NoteItem } from '../types/mideocode';
 
@@ -47,7 +44,6 @@ export function AcademyView() {
   const [exerciseFeedback, setExerciseFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
-  const [introModalOpen, setIntroModalOpen] = useState(false);
 
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [noteTitle, setNoteTitle] = useState('');
@@ -73,13 +69,11 @@ export function AcademyView() {
       .catch(() => {});
   }, [firebaseUser, lesson.id]);
 
-  const categories = ['All', 'Video Academy', 'Web Development', 'Programming Languages', 'Databases', 'Development Tools', 'Computer Science'];
+  const categories = ['All', 'Web Development', 'Programming Languages', 'Databases', 'Development Tools', 'Computer Science'];
   const filteredCourses =
     categoryFilter === 'All'
       ? ACADEMY_COURSES
-      : categoryFilter === 'Video Academy'
-        ? ACADEMY_COURSES.slice(0, 1)
-        : ACADEMY_COURSES.filter((c) => c.category === categoryFilter);
+      : ACADEMY_COURSES.filter((c) => c.category === categoryFilter);
 
   const isLessonComplete = progress?.completedLessonIds.includes(lesson.id) ?? false;
   const isExerciseComplete = progress?.completedExerciseIds.includes(lesson.exercise.id) ?? false;
@@ -205,60 +199,6 @@ export function AcademyView() {
 
   return (
     <div className="space-y-6">
-      {/* Video Academy Featured Section */}
-      {Boolean(INTRO_VIDEO_URL) && (
-      <section className="rounded-2xl border border-blue-500/50 bg-gradient-to-r from-blue-950/60 via-[#0D1322] to-slate-900 p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 shadow-xl">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 max-w-3xl">
-          <button
-            type="button"
-            onClick={() => setIntroModalOpen(true)}
-            aria-label="Play Introduction to MideoCode video"
-            className="relative w-full sm:w-48 aspect-video rounded-xl overflow-hidden border border-blue-500/40 bg-black shrink-0 group cursor-pointer"
-          >
-            <video
-              preload="metadata"
-              muted
-              playsInline
-              className="w-full h-full object-cover"
-            >
-              <source src={`${INTRO_VIDEO_URL}#t=3.5`} type="video/mp4" />
-              {INTRO_WEBM_URL && <source src={`${INTRO_WEBM_URL}#t=3.5`} type="video/webm" />}
-            </video>
-            <span className="absolute inset-0 bg-black/30 group-hover:bg-black/15 flex items-center justify-center transition-colors">
-              <span className="w-11 h-11 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg">
-                <Play className="w-5 h-5 fill-current ml-0.5" />
-              </span>
-            </span>
-            <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/80 text-[11px] font-mono text-white tabular-nums">
-              0:40
-            </span>
-          </button>
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-400">
-              <Video className="w-4 h-4" />
-              Welcome to MideoCode · Platform Introduction
-            </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white">
-              Introduction to MideoCode
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              Discover how MideoCode helps you learn programming, practice your skills, build real projects, and become a confident developer.
-            </p>
-            <div className="text-xs text-slate-400">
-              Duration: 40 seconds · Category: Getting Started · All Levels
-            </div>
-          </div>
-        </div>
-        <button
-          onClick={() => setIntroModalOpen(true)}
-          className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold transition-all shadow-lg hover:scale-105 whitespace-nowrap cursor-pointer shrink-0"
-        >
-          <Play className="w-4 h-4 fill-current" />
-          Watch Introduction Video
-        </button>
-      </section>
-      )}
-
       {/* Course Catalog Filter Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -640,9 +580,6 @@ export function AcademyView() {
           </section>
         </div>
       </div>
-      {Boolean(INTRO_VIDEO_URL) && (
-        <IntroVideoModal isOpen={introModalOpen} onClose={() => setIntroModalOpen(false)} />
-      )}
     </div>
   );
 }

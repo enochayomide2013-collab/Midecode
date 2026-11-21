@@ -128,8 +128,10 @@ export function redactSecrets(text: string, filePath = ''): string {
   return text
     .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]')
     .replace(/\bAIza[0-9A-Za-z\-_]{25,}\b/g, '[REDACTED_GOOGLE_API_KEY]')
+    .replace(/\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{12,}\b/g, '[REDACTED_STRIPE_KEY]')
     .replace(/\bsk-[A-Za-z0-9\-_]{16,}\b/g, '[REDACTED_API_KEY]')
-    .replace(/\bghp_[A-Za-z0-9]{20,}\b/g, '[REDACTED_GITHUB_TOKEN]')
+    .replace(/\b(?:ghp|gho|ghu|ghs)_[A-Za-z0-9]{20,}\b/g, '[REDACTED_GITHUB_TOKEN]')
+    .replace(/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, '[REDACTED_GITHUB_TOKEN]')
     .replace(/((?:api_?key|secret|password|passwd|private_?key|access_?token|auth_?token)\s*[:=]\s*['"`])([^'"`\n]{6,})(['"`])/gi, '$1[REDACTED]$3');
 }
 
@@ -780,7 +782,7 @@ export function analyzeProjectDocumentation(
     }
 
     // Extract documented /api/... endpoints
-    const apiMatches = text.match(/\b(\/api\/[a-zA-Z0-9_/:.-]+)/g) || [];
+    const apiMatches = Array.from(text.matchAll(/(?:^|[\s`'"(])(\/api\/[a-zA-Z0-9_/:.-]+)/g)).map((m) => m[1]);
     for (const ep of apiMatches) {
       const normalizedEp = ep.replace(/\/+$/, '');
       documentedEndpointsSet.add(normalizedEp);
@@ -1495,7 +1497,7 @@ except Exception as e:
 
       lines.forEach((lineText, idx) => {
         const lineNo = idx + 1;
-        if (/\b(?:AIza[0-9A-Za-z\-_]{25,}|sk-[A-Za-z0-9\-_]{16,}|ghp_[A-Za-z0-9]{20,})\b/.test(lineText) ||
+        if (/\b(?:AIza[0-9A-Za-z\-_]{25,}|(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9\-_]{16,}|(?:ghp|gho|ghs)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/.test(lineText) ||
             (/\b(?:API_KEY|SECRET_KEY|PASSWORD|PRIVATE_KEY)\s*[:=]\s*['"][^'"]{8,}['"]/i.test(lineText) && !filePath.includes('.example'))) {
           issues.push({
             id: makeIssueId('sec', `${filePath}:${lineNo}`),

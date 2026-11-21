@@ -188,7 +188,7 @@ export async function loadOrCreateUserProfile(firebaseUser: User): Promise<UserP
     const snap = await getDoc(userRef);
     let resolvedProfile: UserProfile | null = snap.exists() ? (snap.data() as UserProfile) : null;
 
-    const pendingName = getPendingRegistrationName(firebaseUser.uid);
+    const pendingName = getPendingRegistrationName(firebaseUser.uid, firebaseUser.email);
     const preferredDisplayName =
       pendingName ||
       firebaseUser.displayName?.trim() ||
@@ -220,16 +220,26 @@ export async function loadOrCreateUserProfile(firebaseUser: User): Promise<UserP
       await setDoc(userRef, newProfile);
       const createdSnap = await getDoc(userRef);
       resolvedProfile = createdSnap.data() as UserProfile;
-    } else if (pendingName && resolvedProfile.displayName !== pendingName) {
-      await updateDoc(userRef, {
-        displayName: pendingName.slice(0, 80),
-        updatedAt: serverTimestamp(),
-      }).catch(() => {});
-      resolvedProfile = { ...resolvedProfile, displayName: pendingName.slice(0, 80) };
+    } else {
+      const patch: Record<string, unknown> = {};
+      if (pendingName && resolvedProfile.displayName !== pendingName) {
+        patch.displayName = pendingName.slice(0, 80);
+      }
+      if (!resolvedProfile.photoURL && firebaseUser.photoURL) {
+        patch.photoURL = firebaseUser.photoURL.slice(0, 500);
+      }
+      if (!resolvedProfile.email && firebaseUser.email) {
+        patch.email = firebaseUser.email.slice(0, 254);
+      }
+      if (Object.keys(patch).length > 0) {
+        patch.updatedAt = serverTimestamp();
+        await updateDoc(userRef, patch).catch(() => {});
+        resolvedProfile = { ...resolvedProfile, ...patch } as UserProfile;
+      }
     }
 
     if (pendingName) {
-      clearPendingRegistrationName(firebaseUser.uid);
+      clearPendingRegistrationName(firebaseUser.uid, firebaseUser.email);
     }
 
     const displayName = resolvedProfile?.displayName || preferredDisplayName;

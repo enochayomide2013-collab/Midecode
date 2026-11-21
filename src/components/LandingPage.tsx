@@ -1,15 +1,12 @@
-import { useState } from 'react';
-import { ArrowRight, Code2, ShieldCheck, Layers, Cpu, Terminal, BookOpen, Play } from 'lucide-react';
+import { ArrowRight, Code2, ShieldCheck, Layers, Cpu, Terminal, BookOpen } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
 import { MideoLogo } from './MideoLogo';
-import { INTRO_VIDEO_URL, IntroVideoModal } from './IntroVideoModal';
 import heroWorkspaceImg from '../assets/images/hero_mideocode_workspace_1795027184634.jpg';
 import academySystemsImg from '../assets/images/academy_systems_visual_1795027183898.jpg';
 import projectsBuilderImg from '../assets/images/projects_builder_visual_1795027185442.jpg';
 
 export function LandingPage() {
   const { openAuthModal, theme, toggleTheme } = useMideo();
-  const [introOpen, setIntroOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#070B14] dark:text-slate-100">
@@ -76,15 +73,6 @@ export function LandingPage() {
                 >
                   Sign In
                 </button>
-                {INTRO_VIDEO_URL && (
-                  <button
-                    onClick={() => setIntroOpen(true)}
-                    className="inline-flex items-center gap-2 px-5 py-3 rounded-lg border border-blue-500/40 bg-blue-600/10 hover:bg-blue-600/20 text-blue-600 dark:text-blue-300 text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer"
-                  >
-                    <Play className="w-4 h-4 fill-current" />
-                    Watch Intro (40s)
-                  </button>
-                )}
               </div>
             </div>
 
@@ -96,16 +84,6 @@ export function LandingPage() {
                   className="w-full h-full object-cover"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/15 to-transparent pointer-events-none" />
-                {INTRO_VIDEO_URL && (
-                  <button
-                    type="button"
-                    onClick={() => setIntroOpen(true)}
-                    aria-label="Play Introduction to MideoCode"
-                    className="absolute inset-0 m-auto w-16 h-16 rounded-full bg-blue-600/95 hover:bg-blue-500 text-white flex items-center justify-center shadow-2xl border border-white/25 transition-transform hover:scale-105 cursor-pointer"
-                  >
-                    <Play className="w-7 h-7 fill-current ml-0.5" />
-                  </button>
-                )}
                 <div className="absolute bottom-5 left-5 right-5 flex items-center justify-between gap-2 text-xs text-slate-200">
                   <span>Multi-file CodeMirror IDE · Live Preview</span>
                   <span>Isolated JS & Python Runtimes</span>
@@ -269,10 +247,6 @@ export function LandingPage() {
           </div>
         </div>
       </footer>
-
-      {INTRO_VIDEO_URL && (
-        <IntroVideoModal isOpen={introOpen} onClose={() => setIntroOpen(false)} />
-      )}
     </div>
   );
 }

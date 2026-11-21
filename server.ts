@@ -36,13 +36,26 @@ import {
   verifyInvitationPayload,
 } from './src/server/collabAndDiffHelpers.ts';
 import {
+  analyzeFixImpact,
+  cancelRescueScanJob,
   chatWithRescueAssistant,
+  getUserRescueScanJob,
   investigateProjectIssue,
   proposeFixAndAnalyzeImpact,
   scanProjectWorkspace,
+  startRescueScanJob,
   verifyPatchedWorkspace,
   type RescueWorkspaceFile,
 } from './src/server/rescueEngine.ts';
+import {
+  importGitRepository,
+  inspectAndExtractZipBuffer,
+  ZipSecurityError,
+} from './src/server/rescueImporters.ts';
+import {
+  getRescueAdminTelemetry,
+  recordRescueAdminEvent,
+} from './src/server/rescueTelemetry.ts';
 import type {
   ArchitecturePlan,
   MissionRuntimeTestSpec,
@@ -50,6 +63,7 @@ import type {
   MissionTestCaseResult,
   ProjectVersionSnapshot,
   RescueChatMessage,
+  RescueCustomScanConfig,
   RescueIssue,
   RescueRootCauseAnalysis,
   RescueScanMode,
@@ -613,11 +627,14 @@ except Exception as _ex:
 async function startServer() {
   const app = express();
   app.use((req: Request, res: Response, next: NextFunction) => {
-    if (req.path.startsWith('/api/admin/community-media/chunk/')) {
+    if (
+      req.path.startsWith('/api/admin/community-media/chunk/') ||
+      req.path === '/api/rescue/import/zip'
+    ) {
       next();
       return;
     }
-    const limit = req.path.startsWith('/api/rescue/') ? '5mb' : '512kb';
+    const limit = req.path.startsWith('/api/rescue/') ? '10mb' : '512kb';
     express.json({ limit })(req, res, next);
   });
 
@@ -1910,11 +1927,12 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
       res.status(429).json({ error: 'Too many upload requests. Wait a moment and try again.' });
       return;
     }
-    const { kind, mimeType, fileName, sizeBytes } = req.body as {
+    const { kind, mimeType, fileName, sizeBytes, totalSize: bodyTotalSize } = req.body as {
       kind?: 'image' | 'video';
       mimeType?: string;
       fileName?: string;
       sizeBytes?: number;
+      totalSize?: number;
     };
 
     const normalizedMime = String(mimeType || '').toLowerCase().split(';')[0].trim();
@@ -1926,7 +1944,7 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
       return;
     }
 
-    const totalSize = Number(sizeBytes);
+    const totalSize = Number(sizeBytes ?? bodyTotalSize);
     if (!Number.isFinite(totalSize) || totalSize <= 0) {
       res.status(400).json({ error: 'Invalid file size.' });
       return;
@@ -2160,24 +2178,165 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
   // -------------------------------------------------------------------------
   // MideoCode Project Rescue AI Endpoints
   // -------------------------------------------------------------------------
-  app.post('/api/rescue/scan', requireAuth, async (req: AuthedRequest, res: Response) => {
+  app.post(
+    '/api/rescue/import/zip',
+    express.raw({
+      type: ['application/zip', 'application/x-zip-compressed', 'application/octet-stream'],
+      limit: '25mb',
+    }),
+    requireAuth,
+    async (req: AuthedRequest, res: Response) => {
+      const uid = req.uid || 'anon';
+      if (!checkRateLimit(`rescue-zip:${uid}`, 20, 10 * 60_000)) {
+        res.status(429).json({ error: 'ZIP import rate limit reached. Wait a moment before retrying.' });
+        return;
+      }
+      const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      if (buffer.length < 4) {
+        res.status(400).json({ error: 'Upload a valid non-empty .zip archive.' });
+        return;
+      }
+      const selectedRoot =
+        typeof req.query.selectedRoot === 'string'
+          ? req.query.selectedRoot
+          : typeof req.headers['x-selected-root'] === 'string'
+            ? req.headers['x-selected-root']
+            : undefined;
+      const projectNameHint =
+        typeof req.query.projectName === 'string'
+          ? req.query.projectName
+          : typeof req.headers['x-project-name'] === 'string'
+            ? req.headers['x-project-name']
+            : undefined;
+      try {
+        const result = await inspectAndExtractZipBuffer(buffer, {
+          selectedRoot,
+          projectNameHint,
+          userId: uid,
+        });
+        res.json(result);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to extract ZIP archive.';
+        res.status(err instanceof ZipSecurityError ? 400 : 422).json({ error: msg });
+      }
+    },
+  );
+
+  app.post('/api/rescue/import/git', requireAuth, async (req: AuthedRequest, res: Response) => {
     const uid = req.uid || 'anon';
-    if (!checkRateLimit(`rescue-scan:${uid}`, 30, 10 * 60_000)) {
-      res.status(429).json({ error: 'Scan rate limit reached. Please wait a moment before re-scanning.' });
+    if (!checkRateLimit(`rescue-git:${uid}`, 20, 10 * 60_000)) {
+      res.status(429).json({ error: 'Git import rate limit reached. Wait a moment before retrying.' });
       return;
     }
-    const { projectId, projectTitle, scanMode, files } = req.body as {
+    const { repoUrl, branch, githubToken } = req.body as {
+      repoUrl?: string;
+      branch?: string;
+      githubToken?: string;
+    };
+    if (!repoUrl?.trim()) {
+      res.status(400).json({ error: 'An HTTPS GitHub repository URL is required.' });
+      return;
+    }
+    try {
+      const result = await importGitRepository({
+        repoUrl: repoUrl.trim(),
+        branch: branch?.trim() || undefined,
+        githubToken: githubToken?.trim() || undefined,
+        userId: uid,
+      });
+      res.json(result);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Git repository import failed.';
+      res.status(err instanceof ZipSecurityError ? 400 : 422).json({ error: msg });
+    }
+  });
+
+  app.post('/api/rescue/jobs', requireAuth, (req: AuthedRequest, res: Response) => {
+    const uid = req.uid || 'anon';
+    if (!checkRateLimit(`rescue-job:${uid}`, 30, 10 * 60_000)) {
+      res.status(429).json({ error: 'Scan rate limit reached. Wait a moment before launching another scan.' });
+      return;
+    }
+    const { projectId, projectTitle, scanMode, files, customConfig } = req.body as {
       projectId?: string;
       projectTitle?: string;
       scanMode?: RescueScanMode;
       files?: RescueWorkspaceFile[];
+      customConfig?: RescueCustomScanConfig;
     };
     if (!projectId || !Array.isArray(files) || files.length === 0) {
       res.status(400).json({ error: 'projectId and non-empty files array are required.' });
       return;
     }
     const safeMode: RescueScanMode =
-      scanMode === 'quick' || scanMode === 'deep' || scanMode === 'full' ? scanMode : 'deep';
+      scanMode === 'quick' || scanMode === 'deep' || scanMode === 'full' || scanMode === 'custom'
+        ? scanMode
+        : 'deep';
+    try {
+      const job = startRescueScanJob({
+        userId: uid,
+        projectId,
+        projectTitle: projectTitle || 'Workspace Project',
+        scanMode: safeMode,
+        files,
+        customConfig,
+      });
+      res.json(job);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to launch background scan job.';
+      recordRescueAdminEvent({
+        kind: 'failed_scan',
+        userId: uid,
+        projectTitle,
+        message: msg,
+      });
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  app.get('/api/rescue/jobs/:jobId', requireAuth, (req: AuthedRequest, res: Response) => {
+    const uid = req.uid || 'anon';
+    const jobId = String(req.params.jobId || '');
+    const job = getUserRescueScanJob(jobId, uid);
+    if (!job) {
+      res.status(404).json({ error: 'Scan job not found or expired.' });
+      return;
+    }
+    res.json(job);
+  });
+
+  app.post('/api/rescue/jobs/:jobId/cancel', requireAuth, (req: AuthedRequest, res: Response) => {
+    const uid = req.uid || 'anon';
+    const jobId = String(req.params.jobId || '');
+    const job = cancelRescueScanJob(jobId, uid);
+    if (!job) {
+      res.status(404).json({ error: 'Scan job not found.' });
+      return;
+    }
+    res.json(job);
+  });
+
+  app.post('/api/rescue/scan', requireAuth, async (req: AuthedRequest, res: Response) => {
+    const uid = req.uid || 'anon';
+    if (!checkRateLimit(`rescue-scan:${uid}`, 30, 10 * 60_000)) {
+      res.status(429).json({ error: 'Scan rate limit reached. Please wait a moment before re-scanning.' });
+      return;
+    }
+    const { projectId, projectTitle, scanMode, files, customConfig } = req.body as {
+      projectId?: string;
+      projectTitle?: string;
+      scanMode?: RescueScanMode;
+      files?: RescueWorkspaceFile[];
+      customConfig?: RescueCustomScanConfig;
+    };
+    if (!projectId || !Array.isArray(files) || files.length === 0) {
+      res.status(400).json({ error: 'projectId and non-empty files array are required.' });
+      return;
+    }
+    const safeMode: RescueScanMode =
+      scanMode === 'quick' || scanMode === 'deep' || scanMode === 'full' || scanMode === 'custom'
+        ? scanMode
+        : 'deep';
     try {
       const report = await scanProjectWorkspace({
         userId: uid,
@@ -2185,12 +2344,18 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
         projectTitle: projectTitle || 'Workspace Project',
         scanMode: safeMode,
         files,
+        customConfig,
       });
       res.json(report);
     } catch (err) {
-      res.status(500).json({
-        error: err instanceof Error ? err.message : 'Project Rescue scan failed.',
+      const msg = err instanceof Error ? err.message : 'Project Rescue scan failed.';
+      recordRescueAdminEvent({
+        kind: 'failed_scan',
+        userId: uid,
+        projectTitle,
+        message: msg,
       });
+      res.status(500).json({ error: msg });
     }
   });
 
@@ -2200,12 +2365,16 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
       res.status(429).json({ error: 'Investigation rate limit reached. Wait a moment before retrying.' });
       return;
     }
-    const { projectTitle, files, issue, userProblemDescription } = req.body as {
-      projectTitle?: string;
-      files?: RescueWorkspaceFile[];
-      issue?: RescueIssue | null;
-      userProblemDescription?: string;
-    };
+    const { projectTitle, files, issue, userProblemDescription, expectedBehavior, actualBehavior, screenshot } =
+      req.body as {
+        projectTitle?: string;
+        files?: RescueWorkspaceFile[];
+        issue?: RescueIssue | null;
+        userProblemDescription?: string;
+        expectedBehavior?: string;
+        actualBehavior?: string;
+        screenshot?: { mimeType: string; dataBase64: string } | null;
+      };
     if (!Array.isArray(files) || files.length === 0) {
       res.status(400).json({ error: 'Workspace files are required for investigation.' });
       return;
@@ -2216,11 +2385,40 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
         files,
         issue,
         userProblemDescription,
+        expectedBehavior,
+        actualBehavior,
+        screenshot,
       });
       res.json(analysis);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Root cause investigation failed.';
+      recordRescueAdminEvent({
+        kind: 'ai_error',
+        userId: uid,
+        projectTitle,
+        message: msg,
+      });
       res.status(msg.includes('GEMINI_API_KEY') ? 503 : 500).json({ error: msg });
+    }
+  });
+
+  app.post('/api/rescue/analyze-impact', requireAuth, (req: AuthedRequest, res: Response) => {
+    const { files, targetFilePath, proposedCode } = req.body as {
+      files?: RescueWorkspaceFile[];
+      targetFilePath?: string;
+      proposedCode?: string;
+    };
+    if (!Array.isArray(files) || !targetFilePath || typeof proposedCode !== 'string') {
+      res.status(400).json({ error: 'files, targetFilePath, and proposedCode are required.' });
+      return;
+    }
+    try {
+      const impact = analyzeFixImpact(files, targetFilePath, proposedCode);
+      res.json(impact);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Impact analysis failed.',
+      });
     }
   });
 
@@ -2254,6 +2452,12 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
       res.json(proposal);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unable to generate fix proposal.';
+      recordRescueAdminEvent({
+        kind: 'ai_error',
+        userId: uid,
+        projectTitle,
+        message: msg,
+      });
       res.status(msg.includes('GEMINI_API_KEY') ? 503 : 500).json({ error: msg });
     }
   });
@@ -2318,74 +2522,22 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
       res.json(reply);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Rescue Chat could not respond.';
+      recordRescueAdminEvent({
+        kind: 'ai_error',
+        userId: uid,
+        projectTitle,
+        message: msg,
+      });
       res.status(msg.includes('GEMINI_API_KEY') ? 503 : 500).json({ error: msg });
     }
   });
 
-  // Dedicated Range-streaming handler for video assets (ensures HTTP 206 compliance across proxies)
-  app.get('/assets/aistudio/:filename', (req: Request, res: Response, next) => {
-    const filename = String(req.params.filename || '');
-    const lower = filename.toLowerCase();
-    const isMp4 = lower.endsWith('.mp4');
-    const isWebm = lower.endsWith('.webm');
-    if ((!isMp4 && !isWebm) || !/^[a-zA-Z0-9._-]+$/.test(filename)) {
-      next();
+  app.get('/api/rescue/admin/telemetry', requireAuth, (req: AuthedRequest, res: Response) => {
+    if (!isVerifiedAdminRequest(req)) {
+      res.status(403).json({ error: 'Only verified administrators can view Rescue AI operations telemetry.' });
       return;
     }
-    const candidatePaths = [
-      path.resolve(__dirname, 'public', 'assets', 'aistudio', filename),
-      path.resolve(__dirname, 'dist', 'assets', 'aistudio', filename),
-    ];
-    const filePath = candidatePaths.find((p) => fs.existsSync(p));
-    if (!filePath) {
-      res.status(404).json({ error: 'Video asset not found.' });
-      return;
-    }
-
-    const stat = fs.statSync(filePath);
-    const totalSize = stat.size;
-    const range = req.headers.range;
-
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('Content-Type', isWebm ? 'video/webm' : 'video/mp4');
-    res.setHeader('Cache-Control', 'no-cache');
-
-    if (range) {
-      const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
-      if (!match) {
-        res.status(416).setHeader('Content-Range', `bytes */${totalSize}`).end();
-        return;
-      }
-      const start = match[1] ? Number.parseInt(match[1], 10) : 0;
-      const requestedEnd = match[2] ? Number.parseInt(match[2], 10) : totalSize - 1;
-      // Cap single open-ended chunk at 4 MiB for proxy compatibility
-      const maxChunkEnd = Math.min(totalSize - 1, start + 4 * 1024 * 1024 - 1);
-      const end = match[2] ? Math.min(requestedEnd, totalSize - 1) : maxChunkEnd;
-
-      if (!Number.isFinite(start) || start >= totalSize || start > end) {
-        res.status(416).setHeader('Content-Range', `bytes */${totalSize}`).end();
-        return;
-      }
-
-      const chunkSize = end - start + 1;
-      res.status(206);
-      res.setHeader('Content-Range', `bytes ${start}-${end}/${totalSize}`);
-      res.setHeader('Content-Length', String(chunkSize));
-      if (req.method === 'HEAD') {
-        res.end();
-        return;
-      }
-      fs.createReadStream(filePath, { start, end }).pipe(res);
-      return;
-    }
-
-    res.status(200);
-    res.setHeader('Content-Length', String(totalSize));
-    if (req.method === 'HEAD') {
-      res.end();
-      return;
-    }
-    fs.createReadStream(filePath).pipe(res);
+    res.json(getRescueAdminTelemetry());
   });
 
   // Vite dev middleware or production static build
@@ -2404,7 +2556,14 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
     });
   }
 
-  const PORT = Number(process.env.PORT) || 3000;
+  const rawEnvPort = Number(process.env.PORT);
+  const nginxPort = Number(process.env.NGINX_PORT);
+  const PORT =
+    process.env.NODE_ENV !== 'production'
+      ? Number(process.env.DEFAULT_APP_PORT) || 3000
+      : rawEnvPort && rawEnvPort !== nginxPort
+        ? rawEnvPort
+        : Number(process.env.DEFAULT_APP_PORT) || 3000;
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`MideoCode server listening on http://0.0.0.0:${PORT}`);
   });

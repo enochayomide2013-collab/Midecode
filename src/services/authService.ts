@@ -1,17 +1,22 @@
 import {
+  browserLocalPersistence,
+  browserSessionPersistence,
+  createUserWithEmailAndPassword,
+  EmailAuthProvider,
+  getRedirectResult,
+  GoogleAuthProvider,
+  linkWithCredential,
+  linkWithPopup,
+  reload,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  setPersistence,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signInWithRedirect,
-  getRedirectResult,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  sendPasswordResetEmail,
-  sendEmailVerification,
   signOut,
   updateProfile,
-  linkWithPopup,
-  EmailAuthProvider,
-  linkWithCredential,
-  reload,
+  type AuthCredential,
   type User,
 } from 'firebase/auth';
 import {
@@ -136,36 +141,62 @@ export function getCountryInfoFromPhone(phoneNumber?: string | null): {
 export class AuthServiceError extends Error {
   code?: string;
   hostname?: string;
+  pendingEmail?: string;
 
-  constructor(message: string, code?: string, hostname?: string) {
+  constructor(message: string, code?: string, hostname?: string, pendingEmail?: string) {
     super(message);
     this.name = 'AuthServiceError';
     this.code = code;
     this.hostname = hostname;
+    this.pendingEmail = pendingEmail;
   }
 }
 
 const pendingRegistrationNames = new Map<string, string>();
+const pendingRegistrationByEmail = new Map<string, string>();
+let pendingGoogleCredential: { email: string; credential: AuthCredential } | null = null;
 
-export function setPendingRegistrationName(uid: string, fullName: string): void {
-  const cleaned = fullName.trim();
+export function setPendingRegistrationName(uid: string, fullName: string, email?: string): void {
+  const cleaned = fullName.trim().slice(0, 80);
   if (uid && cleaned) {
-    pendingRegistrationNames.set(uid, cleaned.slice(0, 80));
+    pendingRegistrationNames.set(uid, cleaned);
+  }
+  if (email && cleaned) {
+    pendingRegistrationByEmail.set(email.trim().toLowerCase(), cleaned);
   }
 }
 
-export function getPendingRegistrationName(uid: string): string | null {
-  return pendingRegistrationNames.get(uid) || null;
+export function getPendingRegistrationName(uid: string, email?: string | null): string | null {
+  return (
+    pendingRegistrationNames.get(uid) ||
+    (email ? pendingRegistrationByEmail.get(email.trim().toLowerCase()) : undefined) ||
+    null
+  );
 }
 
-export function clearPendingRegistrationName(uid: string): void {
+export function clearPendingRegistrationName(uid: string, email?: string | null): void {
   pendingRegistrationNames.delete(uid);
+  if (email) {
+    pendingRegistrationByEmail.delete(email.trim().toLowerCase());
+  }
+}
+
+export function getPendingGoogleLink(): { email: string; credential: AuthCredential } | null {
+  return pendingGoogleCredential;
+}
+
+export function clearPendingGoogleLink(): void {
+  pendingGoogleCredential = null;
 }
 
 export function getCurrentAuthHostname(): string {
   return typeof window !== 'undefined' && window.location?.hostname
     ? window.location.hostname
     : '';
+}
+
+export function isValidEmailAddress(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
 }
 
 export function mapFirebaseAuthError(err: unknown): string {
@@ -177,33 +208,35 @@ export function mapFirebaseAuthError(err: unknown): string {
 
   switch (code) {
     case 'auth/unauthorized-domain':
-      return `Google Sign-In is not authorized for "${hostname || 'this domain'}" yet. Add "${hostname || 'this domain'}" in Firebase Console > Authentication > Settings > Authorized domains, or sign up / sign in directly with Full Name, Email & Password below.`;
+      return `Google Sign-In is not yet authorized for "${hostname || 'this domain'}". Add "${hostname || 'this domain'}" in Firebase Console > Authentication > Settings > Authorized domains, or sign up / sign in with Email & Password below.`;
     case 'auth/popup-closed-by-user':
-      return 'Sign-in window was closed before completing authentication.';
+      return 'Google Sign-In was cancelled. You can try again.';
     case 'auth/cancelled-popup-request':
-      return 'Authentication request was cancelled.';
+      return 'Google Sign-In was cancelled. You can try again.';
     case 'auth/popup-blocked':
-      return 'Popup was blocked by your browser. Please allow popups for MideoCode or use Email & Password below.';
+      return 'Google popup was blocked by your browser. Allow popups for MideoCode and click Continue with Google again.';
     case 'auth/network-request-failed':
-      return 'Network interruption occurred. Please check your connection and retry.';
+      return 'Network interruption occurred. Please check your internet connection and retry.';
     case 'auth/email-already-in-use':
-      return 'An account with this email address already exists. Please sign in or link accounts from your profile.';
+      return 'An account with this email address already exists. Sign in below or reset your password.';
     case 'auth/account-exists-with-different-credential':
-      return 'An account already exists with the same email under a different sign-in method. Sign in with your original method and link Google from Profile.';
+      return 'This email is already registered with Email & Password. Sign in with your password below to securely link your Google account.';
     case 'auth/invalid-email':
-      return 'Please enter a valid email address.';
+      return 'Enter a valid email address.';
     case 'auth/weak-password':
-      return 'Password must be at least 8 characters and include a mix of letters and numbers.';
+      return 'Password must be at least 8 characters and include both letters and numbers.';
+    case 'auth/user-disabled':
+      return 'This account has been disabled. Contact an administrator if you need assistance.';
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
     case 'auth/user-not-found':
-      return 'Incorrect email or password. Double-check your credentials or reset your password.';
+      return 'Incorrect email or password. Double-check your credentials or use Forgot Password.';
     case 'auth/too-many-requests':
-      return 'Too many attempts detected. For security, please wait before trying again.';
+      return 'Too many attempts detected. For security, please wait a moment before trying again.';
     case 'auth/internal-error':
-      return 'Firebase Auth encountered an internal error. Please verify Email/Password and Google sign-in are enabled in Firebase Console > Authentication, or clear cookies and retry.';
+      return 'Google authentication is temporarily unavailable. Please verify connection/configuration and try again.';
     case 'auth/operation-not-allowed':
-      return 'This sign-in provider is not enabled yet in Firebase Console > Authentication > Sign-in method.';
+      return 'This sign-in provider is not enabled in Firebase Console > Authentication > Sign-in method.';
     case 'auth/credential-already-in-use':
       return 'This credential is already linked to a different MideoCode account. Sign in to that account instead.';
     case 'auth/provider-already-linked':
@@ -217,10 +250,28 @@ export function mapFirebaseAuthError(err: unknown): string {
 
 export async function signInWithGoogleReal(): Promise<User | null> {
   try {
+    await setPersistence(auth, browserLocalPersistence).catch(() => {});
     const result = await signInWithPopup(auth, googleProvider);
+    clearPendingGoogleLink();
     return result.user;
   } catch (err) {
     const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
+    const customEmail =
+      typeof err === 'object' &&
+      err !== null &&
+      'customData' in err &&
+      typeof (err as { customData?: { email?: string } }).customData?.email === 'string'
+        ? (err as { customData: { email: string } }).customData.email
+        : undefined;
+
+    if (code === 'auth/account-exists-with-different-credential') {
+      const cred = GoogleAuthProvider.credentialFromError(err as Parameters<typeof GoogleAuthProvider.credentialFromError>[0]);
+      if (cred && customEmail) {
+        pendingGoogleCredential = { email: customEmail, credential: cred };
+      }
+      throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname(), customEmail);
+    }
+
     const isInsideIframe = typeof window !== 'undefined' && window.self !== window.top;
     if (code === 'auth/popup-blocked' && !isInsideIframe) {
       try {
@@ -253,11 +304,17 @@ export async function registerWithEmailReal(
   email: string,
   password: string,
 ): Promise<User> {
+  const cleanedName = fullName.trim().slice(0, 80);
+  const cleanEmail = email.trim();
+  // Store fullName BEFORE creating the account so onAuthStateChanged reads the real name immediately
+  if (cleanedName && cleanEmail) {
+    pendingRegistrationByEmail.set(cleanEmail.toLowerCase(), cleanedName);
+  }
   try {
-    const cleanedName = fullName.trim();
-    const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+    await setPersistence(auth, browserLocalPersistence).catch(() => {});
+    const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
     if (cleanedName) {
-      setPendingRegistrationName(cred.user.uid, cleanedName);
+      setPendingRegistrationName(cred.user.uid, cleanedName, cleanEmail);
       await updateProfile(cred.user, { displayName: cleanedName }).catch(() => {});
       await reload(cred.user).catch(() => {});
     }
@@ -265,15 +322,32 @@ export async function registerWithEmailReal(
     void sendEmailVerification(cred.user).catch(() => {});
     return auth.currentUser || cred.user;
   } catch (err) {
+    if (cleanEmail) {
+      pendingRegistrationByEmail.delete(cleanEmail.toLowerCase());
+    }
     const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
     throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname());
   }
 }
 
-export async function loginWithEmailReal(email: string, password: string): Promise<User> {
+export async function loginWithEmailReal(
+  email: string,
+  password: string,
+  rememberMe = true,
+): Promise<User> {
   try {
+    await setPersistence(
+      auth,
+      rememberMe ? browserLocalPersistence : browserSessionPersistence,
+    ).catch(() => {});
     const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-    return cred.user;
+    const pendingLink = getPendingGoogleLink();
+    if (pendingLink && pendingLink.email.toLowerCase() === email.trim().toLowerCase()) {
+      await linkWithCredential(cred.user, pendingLink.credential).catch(() => {});
+      clearPendingGoogleLink();
+      await reload(cred.user).catch(() => {});
+    }
+    return auth.currentUser || cred.user;
   } catch (err) {
     const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
     throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname());

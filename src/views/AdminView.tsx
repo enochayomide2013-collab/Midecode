@@ -22,6 +22,8 @@ import {
   Trash2,
   Trophy,
   Users,
+  AlertTriangle,
+  LifeBuoy,
   Video,
   X,
   XCircle,
@@ -42,16 +44,24 @@ import {
   COMMUNITY_VIDEO_MAX_BYTES,
   COMMUNITY_VIDEO_MIN_BYTES,
   deleteAdminCommunityMedia,
+  fetchRescueAdminTelemetry,
   formatMediaBytes,
   uploadAdminCommunityMediaChunked,
   type UploadedCommunityMediaResult,
 } from '../services/rescueService';
-import type { CommunityPost, ModerationReport, UserProfile } from '../types/mideocode';
+import type {
+  CommunityPost,
+  ModerationReport,
+  RescueAdminTelemetry,
+  UserProfile,
+} from '../types/mideocode';
 
 export function AdminView() {
   const { firebaseUser, profile, capabilities, missions, notify } = useMideo();
 
-  const [adminTab, setAdminTab] = useState<'moderation' | 'missions'>('moderation');
+  const [adminTab, setAdminTab] = useState<'moderation' | 'missions' | 'rescue_ops'>('moderation');
+  const [rescueTelemetry, setRescueTelemetry] = useState<RescueAdminTelemetry | null>(null);
+  const [loadingRescueTelemetry, setLoadingRescueTelemetry] = useState(false);
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [passwordUnlocked, setPasswordUnlocked] = useState(
     () => sessionStorage.getItem('mideocode_admin_password_unlocked') === 'true',
@@ -112,9 +122,28 @@ export function AdminView() {
     }
   };
 
+  const loadRescueTelemetry = async () => {
+    if (!isAuthorizedAdmin || !passwordUnlocked) return;
+    setLoadingRescueTelemetry(true);
+    try {
+      const data = await fetchRescueAdminTelemetry();
+      setRescueTelemetry(data);
+    } catch (err) {
+      notify('error', err instanceof Error ? err.message : 'Unable to load Project Rescue telemetry.');
+    } finally {
+      setLoadingRescueTelemetry(false);
+    }
+  };
+
   useEffect(() => {
     loadAdminData();
   }, [isAuthorizedAdmin, passwordUnlocked]);
+
+  useEffect(() => {
+    if (adminTab === 'rescue_ops' && isAuthorizedAdmin && passwordUnlocked) {
+      loadRescueTelemetry();
+    }
+  }, [adminTab, isAuthorizedAdmin, passwordUnlocked]);
 
   useEffect(() => {
     if (!selectedUser) return;
@@ -324,7 +353,7 @@ export function AdminView() {
       </div>
 
       {/* Admin View Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
         <button
           onClick={() => setAdminTab('moderation')}
           className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer ${
@@ -347,10 +376,225 @@ export function AdminView() {
           <Flag className="w-4 h-4" />
           Mission Management ({missions.length})
         </button>
+        <button
+          onClick={() => setAdminTab('rescue_ops')}
+          className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer ${
+            adminTab === 'rescue_ops'
+              ? 'bg-blue-600 text-white'
+              : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] text-slate-600 dark:text-slate-300'
+          }`}
+        >
+          <LifeBuoy className="w-4 h-4" />
+          Rescue Operations
+        </button>
       </div>
 
       {adminTab === 'missions' ? (
         <AdminMissionStudio />
+      ) : adminTab === 'rescue_ops' ? (
+        <div className="space-y-6">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                  <LifeBuoy className="w-4 h-4 text-blue-500" />
+                  Project Rescue Operations &amp; Security Telemetry
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Live monitor of active background Rescue scan jobs, failed ZIP/Git imports, AI investigation errors, and ZIP-Slip/decompression-bomb blocks.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={loadRescueTelemetry}
+                disabled={loadingRescueTelemetry}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-blue-500 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingRescueTelemetry ? 'animate-spin' : ''}`} />
+                Refresh Telemetry
+              </button>
+            </div>
+
+            {/* Summary KPIs */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17]">
+                <div className="text-[11px] text-slate-500">Active Scan Jobs</div>
+                <div className="text-xl font-bold font-mono tabular-nums text-blue-600 dark:text-blue-400 mt-1">
+                  {rescueTelemetry?.activeJobs.length ?? 0}
+                </div>
+              </div>
+              <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17]">
+                <div className="text-[11px] text-slate-500">Recent Jobs</div>
+                <div className="text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-1">
+                  {rescueTelemetry?.recentJobs.length ?? 0}
+                </div>
+              </div>
+              <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17]">
+                <div className="text-[11px] text-slate-500">Failed Imports</div>
+                <div className="text-xl font-bold font-mono tabular-nums text-amber-600 dark:text-amber-400 mt-1">
+                  {rescueTelemetry?.failedImports.length ?? 0}
+                </div>
+              </div>
+              <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17]">
+                <div className="text-[11px] text-slate-500">Failed Scans / AI Errors</div>
+                <div className="text-xl font-bold font-mono tabular-nums text-orange-600 dark:text-orange-400 mt-1">
+                  {(rescueTelemetry?.failedScans.length ?? 0) + (rescueTelemetry?.aiErrors.length ?? 0)}
+                </div>
+              </div>
+              <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17]">
+                <div className="text-[11px] text-slate-500">Security Blocks</div>
+                <div className="text-xl font-bold font-mono tabular-nums text-red-600 dark:text-red-400 mt-1">
+                  {rescueTelemetry?.securityEvents.length ?? 0}
+                </div>
+              </div>
+            </div>
+
+            {/* Active Jobs */}
+            <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <h3 className="text-xs font-semibold text-slate-900 dark:text-white">
+                Active Scan Jobs ({rescueTelemetry?.activeJobs.length ?? 0})
+              </h3>
+              {!rescueTelemetry || rescueTelemetry.activeJobs.length === 0 ? (
+                <p className="text-xs text-slate-500">No scan jobs are currently running.</p>
+              ) : (
+                <div className="space-y-2">
+                  {rescueTelemetry.activeJobs.map((job) => (
+                    <div
+                      key={job.jobId}
+                      className="p-3 rounded-lg border border-blue-500/30 bg-blue-500/5 flex flex-wrap items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="space-y-0.5 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-900 dark:text-white">{job.projectTitle}</span>
+                          <span className="px-1.5 py-0.5 rounded bg-blue-600/15 text-blue-600 dark:text-blue-400 font-mono text-[10px] uppercase">
+                            {job.scanMode}
+                          </span>
+                          <span className="font-mono text-[11px] text-slate-500">{job.jobId}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          Stage: {job.currentStage} · {job.filesProcessed}/{job.totalFiles} files
+                        </p>
+                      </div>
+                      <span className="font-mono font-bold text-blue-600 dark:text-blue-400 tabular-nums">
+                        {job.progressPct}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Recent Jobs */}
+            <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <h3 className="text-xs font-semibold text-slate-900 dark:text-white">
+                Recent Scan Jobs ({rescueTelemetry?.recentJobs.length ?? 0})
+              </h3>
+              {!rescueTelemetry || rescueTelemetry.recentJobs.length === 0 ? (
+                <p className="text-xs text-slate-500">No recent background scan jobs recorded yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500">
+                        <th className="py-2 pr-3 font-medium">Project</th>
+                        <th className="py-2 pr-3 font-medium">Mode</th>
+                        <th className="py-2 pr-3 font-medium">Status</th>
+                        <th className="py-2 pr-3 font-medium">Stage</th>
+                        <th className="py-2 pr-3 font-medium">Progress</th>
+                        <th className="py-2 font-medium">Error</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                      {rescueTelemetry.recentJobs.slice(0, 20).map((job) => (
+                        <tr key={job.jobId}>
+                          <td className="py-2 pr-3 font-medium text-slate-900 dark:text-white">{job.projectTitle}</td>
+                          <td className="py-2 pr-3 font-mono uppercase text-[11px]">{job.scanMode}</td>
+                          <td className="py-2 pr-3">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                                job.status === 'completed'
+                                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                  : job.status === 'failed'
+                                    ? 'bg-red-500/15 text-red-600 dark:text-red-400'
+                                    : job.status === 'cancelled'
+                                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                                      : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                              }`}
+                            >
+                              {job.status}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-3 text-slate-600 dark:text-slate-300">{job.currentStage}</td>
+                          <td className="py-2 pr-3 font-mono tabular-nums">{job.progressPct}%</td>
+                          <td className="py-2 text-red-500 truncate max-w-[240px]">{job.error || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Diagnostic Event Logs Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {[
+              {
+                title: 'Security Blocks (ZIP-Slip, Bombs, Blocked URLs)',
+                items: rescueTelemetry?.securityEvents || [],
+                badgeClass: 'border-red-500/30 bg-red-500/5 text-red-600 dark:text-red-400',
+              },
+              {
+                title: 'Failed Imports (ZIP & GitHub)',
+                items: rescueTelemetry?.failedImports || [],
+                badgeClass: 'border-amber-500/30 bg-amber-500/5 text-amber-600 dark:text-amber-400',
+              },
+              {
+                title: 'Failed Scans',
+                items: rescueTelemetry?.failedScans || [],
+                badgeClass: 'border-orange-500/30 bg-orange-500/5 text-orange-600 dark:text-orange-400',
+              },
+              {
+                title: 'AI Investigation / Fix Errors',
+                items: rescueTelemetry?.aiErrors || [],
+                badgeClass: 'border-violet-500/30 bg-violet-500/5 text-violet-600 dark:text-violet-400',
+              },
+            ].map((group) => (
+              <div
+                key={group.title}
+                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] p-5 space-y-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                    {group.title}
+                  </h3>
+                  <span className="text-[11px] font-mono tabular-nums text-slate-500">
+                    {group.items.length}
+                  </span>
+                </div>
+                {group.items.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-2">No events recorded in this category.</p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {group.items.slice(0, 20).map((ev) => (
+                      <div key={ev.id} className={`p-3 rounded-lg border text-xs space-y-1 ${group.badgeClass}`}>
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="font-semibold truncate">{ev.projectTitle || 'Workspace'}</span>
+                          <span className="font-mono text-slate-500 shrink-0">
+                            {formatTimestamp(ev.createdAt)}
+                          </span>
+                        </div>
+                        <p className="text-slate-900 dark:text-white font-medium">{ev.message}</p>
+                        {ev.details && <p className="text-[11px] text-slate-500 font-mono break-all">{ev.details}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       ) : (
         <>
           {/* Direct Community Broadcast & Media Publisher */}

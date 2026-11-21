@@ -1098,14 +1098,16 @@ service cloud.firestore {
         'id', 'userId', 'projectId', 'projectTitle', 'scanMode', 'healthScore',
         'filesInspected', 'confirmedCount', 'potentialCount', 'severityCounts',
         'summary', 'recommendedRepairOrder', 'suggestedImprovements',
-        'projectIndex', 'issues', 'runtimeAudit', 'createdAt'
+        'projectIndex', 'documentationReport', 'issues', 'runtimeAudit',
+        'reviewedIssueIds', 'dismissedIssues', 'excludedPaths',
+        'projectFingerprint', 'createdAt'
       ]) &&
       data.id == scanId &&
       isValidId(data.id) &&
       isValidId(data.userId) &&
       isValidId(data.projectId) &&
       isValidString(data.projectTitle, 1, 140) &&
-      data.scanMode in ['quick', 'deep', 'full'] &&
+      data.scanMode in ['quick', 'deep', 'full', 'custom'] &&
       data.healthScore is number && data.healthScore >= 0 && data.healthScore <= 100 &&
       data.filesInspected is number && data.filesInspected >= 0 && data.filesInspected <= 500 &&
       data.confirmedCount is number && data.confirmedCount >= 0 && data.confirmedCount <= 500 &&
@@ -1115,8 +1117,13 @@ service cloud.firestore {
       isValidStringArray(data.recommendedRepairOrder, 30) &&
       isValidStringArray(data.suggestedImprovements, 30) &&
       data.projectIndex is map && data.projectIndex.size() <= 20 &&
+      (!('documentationReport' in data) || (data.documentationReport is map && data.documentationReport.size() <= 12)) &&
       data.issues is list && data.issues.size() <= 50 &&
       data.runtimeAudit is list && data.runtimeAudit.size() <= 15 &&
+      (!('reviewedIssueIds' in data) || isValidStringArray(data.reviewedIssueIds, 100)) &&
+      (!('dismissedIssues' in data) || (data.dismissedIssues is list && data.dismissedIssues.size() <= 100)) &&
+      (!('excludedPaths' in data) || isValidStringArray(data.excludedPaths, 60)) &&
+      isValidOptionalString(data, 'projectFingerprint', 128) &&
       data.createdAt is timestamp;
     }
 
@@ -1129,7 +1136,7 @@ service cloud.firestore {
       data.keys().hasOnly([
         'id', 'userId', 'projectId', 'projectTitle', 'filePath',
         'problemIdentified', 'snapshotVersionId', 'snapshotVersionNumber',
-        'verificationPassed', 'verificationSummary', 'status', 'createdAt'
+        'verificationPassed', 'verificationStatus', 'verificationSummary', 'status', 'createdAt'
       ]) &&
       data.id == fixId &&
       isValidId(data.id) &&
@@ -1141,9 +1148,39 @@ service cloud.firestore {
       isValidId(data.snapshotVersionId) &&
       data.snapshotVersionNumber is number && data.snapshotVersionNumber >= 1 && data.snapshotVersionNumber <= 10000 &&
       data.verificationPassed is bool &&
+      (!('verificationStatus' in data) || data.verificationStatus in ['VERIFIED', 'PARTIALLY_VERIFIED', 'FAILED', 'NOT_VERIFIED']) &&
       isValidString(data.verificationSummary, 1, 1000) &&
       data.status in ['applied', 'rolled_back'] &&
       data.createdAt is timestamp;
+    }
+
+    function isValidRescueInvestigation(data, invId) {
+      return data.keys().hasAll([
+        'id', 'userId', 'projectId', 'projectTitle', 'problemTitle',
+        'responsibleFile', 'certainty', 'confidence', 'analysis',
+        'status', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'userId', 'projectId', 'projectTitle', 'issueId', 'problemTitle',
+        'responsibleFile', 'certainty', 'confidence', 'expectedBehavior',
+        'actualBehavior', 'analysis', 'status', 'createdAt', 'updatedAt'
+      ]) &&
+      data.id == invId &&
+      isValidId(data.id) &&
+      isValidId(data.userId) &&
+      isValidId(data.projectId) &&
+      isValidString(data.projectTitle, 1, 140) &&
+      isValidOptionalString(data, 'issueId', 128) &&
+      isValidString(data.problemTitle, 1, 220) &&
+      isValidString(data.responsibleFile, 1, 240) &&
+      data.certainty in ['confirmed', 'possible'] &&
+      data.confidence is number && data.confidence >= 0 && data.confidence <= 100 &&
+      isValidOptionalString(data, 'expectedBehavior', 1000) &&
+      isValidOptionalString(data, 'actualBehavior', 1000) &&
+      data.analysis is map && data.analysis.size() <= 20 &&
+      data.status in ['open', 'fix_proposed', 'resolved'] &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
     }
 
     // -------------------------------------------------------------------------
@@ -2371,7 +2408,19 @@ service cloud.firestore {
         isValidRescueScan(incoming(), scanId) &&
         incoming().userId == request.auth.uid &&
         incoming().createdAt == request.time;
-      allow update: if false;
+      allow update: if isValidId(scanId) && isSignedIn() &&
+        isValidRescueScan(incoming(), scanId) && (
+          isAdmin() ||
+          (
+            existing().userId == request.auth.uid &&
+            incoming().userId == existing().userId &&
+            incoming().projectId == existing().projectId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().scanMode == existing().scanMode &&
+            incoming().healthScore == existing().healthScore &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['reviewedIssueIds', 'dismissedIssues'])
+          )
+        );
       allow delete: if isValidId(scanId) && isSignedIn() && (
         existing().userId == request.auth.uid || isAdmin()
       );
@@ -2406,6 +2455,38 @@ service cloud.firestore {
           )
         );
       allow delete: if isValidId(fixId) && isSignedIn() && (
+        existing().userId == request.auth.uid || isAdmin()
+      );
+    }
+
+    // Project Rescue AI Root Cause Investigation History
+    match /rescueInvestigations/{investigationId} {
+      allow get: if isValidId(investigationId) && isSignedIn() && (
+        resource == null ||
+        existing().userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      allow create: if isValidId(investigationId) && isSignedIn() &&
+        isValidRescueInvestigation(incoming(), investigationId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(investigationId) && isSignedIn() &&
+        isValidRescueInvestigation(incoming(), investigationId) && (
+          isAdmin() ||
+          (
+            existing().userId == request.auth.uid &&
+            incoming().userId == existing().userId &&
+            incoming().projectId == existing().projectId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(investigationId) && isSignedIn() && (
         existing().userId == request.auth.uid || isAdmin()
       );
     }

@@ -884,7 +884,7 @@
         "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "projectTitle": { "type": "string", "minLength": 1, "maxLength": 140 },
-        "scanMode": { "type": "string", "enum": ["quick", "deep", "full"] },
+        "scanMode": { "type": "string", "enum": ["quick", "deep", "full", "custom"] },
         "healthScore": { "type": "number" },
         "filesInspected": { "type": "number" },
         "confirmedCount": { "type": "number" },
@@ -894,8 +894,13 @@
         "recommendedRepairOrder": { "type": "array" },
         "suggestedImprovements": { "type": "array" },
         "projectIndex": { "type": "object" },
+        "documentationReport": { "type": "object" },
         "issues": { "type": "array" },
         "runtimeAudit": { "type": "array" },
+        "reviewedIssueIds": { "type": "array" },
+        "dismissedIssues": { "type": "array" },
+        "excludedPaths": { "type": "array" },
+        "projectFingerprint": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "userId", "projectId", "projectTitle", "scanMode", "healthScore", "filesInspected", "confirmedCount", "potentialCount", "severityCounts", "summary", "recommendedRepairOrder", "suggestedImprovements", "projectIndex", "issues", "runtimeAudit", "createdAt"]
@@ -914,11 +919,35 @@
         "snapshotVersionId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "snapshotVersionNumber": { "type": "number" },
         "verificationPassed": { "type": "boolean" },
+        "verificationStatus": { "type": "string", "enum": ["VERIFIED", "PARTIALLY_VERIFIED", "FAILED", "NOT_VERIFIED"] },
         "verificationSummary": { "type": "string", "minLength": 1, "maxLength": 1000 },
         "status": { "type": "string", "enum": ["applied", "rolled_back"] },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "userId", "projectId", "projectTitle", "filePath", "problemIdentified", "snapshotVersionId", "snapshotVersionNumber", "verificationPassed", "verificationSummary", "status", "createdAt"]
+    },
+    "RescueInvestigation": {
+      "title": "RescueInvestigation",
+      "description": "Persisted Project Rescue AI root-cause investigation record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectTitle": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "issueId": { "type": "string", "maxLength": 128 },
+        "problemTitle": { "type": "string", "minLength": 1, "maxLength": 220 },
+        "responsibleFile": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "certainty": { "type": "string", "enum": ["confirmed", "possible"] },
+        "confidence": { "type": "number" },
+        "expectedBehavior": { "type": "string", "maxLength": 1000 },
+        "actualBehavior": { "type": "string", "maxLength": 1000 },
+        "analysis": { "type": "object" },
+        "status": { "type": "string", "enum": ["open", "fix_proposed", "resolved"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "projectId", "projectTitle", "problemTitle", "responsibleFile", "certainty", "confidence", "analysis", "status", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -1105,6 +1134,10 @@
     "/rescueFixes/{fixId}": {
       "schema": { "$ref": "#/entities/RescueAppliedFix" },
       "description": "User-approved Project Rescue AI fix application and rollback records."
+    },
+    "/rescueInvestigations/{investigationId}": {
+      "schema": { "$ref": "#/entities/RescueInvestigation" },
+      "description": "Per-user saved Project Rescue AI root-cause investigations."
     }
   }
 }

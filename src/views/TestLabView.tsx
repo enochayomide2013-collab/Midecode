@@ -20,7 +20,14 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
-import { getProjectFiles } from '../services/dataService';
+import {
+  TESTLAB_LANGUAGES,
+  fileMatchesTestLabLanguage,
+  getTestLabLanguageSpec,
+  normalizeTestLabLanguage,
+  type TestLabLanguageId,
+} from '../data/testLabLanguages';
+import { addProjectFile, getProjectFiles } from '../services/dataService';
 import {
   askTestLabAssistant,
   deleteTestSuite,
@@ -82,6 +89,15 @@ export function TestLabView() {
   const [runs, setRuns] = useState<TestRunSession[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Target language (9 supported languages)
+  const [selectedLanguage, setSelectedLanguage] = useState<TestLabLanguageId>('javascript');
+  const [addingStarterFile, setAddingStarterFile] = useState(false);
+
+  // Inline editing in Suites tab
+  const [editingSuiteId, setEditingSuiteId] = useState<string | null>(null);
+  const [editingCases, setEditingCases] = useState<TestCaseItem[]>([]);
+  const [savingSuiteEdit, setSavingSuiteEdit] = useState(false);
 
   // Generation & Review Draft state
   const [genTypes, setGenTypes] = useState<TestType[]>(['unit', 'edge_case']);
@@ -166,9 +182,22 @@ export function TestLabView() {
       return;
     }
     getProjectFiles(activeProject.id)
-      .then((files) => setProjectFiles(files))
+      .then((files) => {
+        setProjectFiles(files);
+        setSelectedLanguage(normalizeTestLabLanguage(activeProject.language, files));
+      })
       .catch(() => setProjectFiles([]));
-  }, [activeProject?.id]);
+  }, [activeProject?.id, activeProject?.language]);
+
+  const activeLangSpec = useMemo(
+    () => getTestLabLanguageSpec(selectedLanguage),
+    [selectedLanguage],
+  );
+
+  const matchingLangFiles = useMemo(
+    () => projectFiles.filter((f) => fileMatchesTestLabLanguage(f, selectedLanguage)),
+    [projectFiles, selectedLanguage],
+  );
 
   const projectSuites = useMemo(
     () => (activeProject ? suites.filter((s) => s.projectId === activeProject.id) : suites),
@@ -197,29 +226,68 @@ export function TestLabView() {
     return { totalExecuted, passed, failed, skipped, successPct };
   }, [runs]);
 
+  const handleAddStarterFileToProject = async () => {
+    if (!firebaseUser || !activeProject) return;
+    setAddingStarterFile(true);
+    try {
+      const created = await addProjectFile(firebaseUser.uid, activeProject.id, {
+        name: activeLangSpec.starterTargetFile,
+        folder: '',
+        language: activeLangSpec.id,
+        content: activeLangSpec.starterProjectContent,
+        visibility: activeProject.visibility || 'private',
+      });
+      setProjectFiles((prev) => [...prev, created]);
+      notify('success', `Added starter file "${created.name}" (${activeLangSpec.label}) to ${activeProject.title}.`);
+    } catch (err) {
+      notify('error', err instanceof Error ? err.message : 'Unable to add starter file to project.');
+    } finally {
+      setAddingStarterFile(false);
+    }
+  };
+
   const handleGenerateTests = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeProject || projectFiles.length === 0) {
-      notify('error', 'Select a project with at least one file before generating tests.');
+    if (!activeProject) {
+      notify('error', 'Select a project before generating tests.');
       return;
     }
     if (genTypes.length === 0) {
       notify('error', 'Choose at least one test category.');
       return;
     }
+    const candidateFiles: ProjectFile[] =
+      matchingLangFiles.length > 0
+        ? matchingLangFiles
+        : projectFiles.length > 0
+          ? projectFiles
+          : [
+              {
+                id: 'virtual_starter',
+                projectId: activeProject.id,
+                ownerId: firebaseUser?.uid || activeProject.ownerId,
+                name: activeLangSpec.starterTargetFile,
+                folder: '',
+                language: activeLangSpec.id,
+                visibility: activeProject.visibility || 'private',
+                content: activeLangSpec.starterProjectContent,
+                updatedAt: new Date().toISOString(),
+              },
+            ];
+
     setGenerating(true);
     try {
       const res = await generateTestsViaApi({
         projectTitle: activeProject.title,
-        language: activeProject.language,
-        files: projectFiles,
+        language: selectedLanguage,
+        files: candidateFiles,
         testTypes: genTypes,
         focusPrompt: genFocusPrompt.trim() || undefined,
       });
       setDraftTitle(res.suiteTitle);
-      setDraftFramework(res.framework);
+      setDraftFramework(res.framework || activeLangSpec.framework);
       setDraftCases(res.cases);
-      notify('success', `Generated ${res.cases.length} candidate tests. Review and approve before saving.`);
+      notify('success', `Generated ${res.cases.length} ${activeLangSpec.label} test(s). Review and approve before saving.`);
     } catch (err) {
       notify('error', err instanceof Error ? err.message : 'Test generation failed.');
     } finally {
@@ -231,9 +299,9 @@ export function TestLabView() {
     if (!firebaseUser || !activeProject || draftCases.length === 0) return;
     try {
       const saved = await saveTestSuite(firebaseUser.uid, activeProject, {
-        title: draftTitle || `${activeProject.title} Suite`,
-        language: activeProject.language,
-        framework: draftFramework || 'Mideo TestLab Runner',
+        title: draftTitle || `${activeProject.title} (${activeLangSpec.label}) Suite`,
+        language: selectedLanguage,
+        framework: draftFramework || activeLangSpec.framework,
         testType: genTypes[0] || 'unit',
         cases: draftCases,
         approved: true,
@@ -242,44 +310,68 @@ export function TestLabView() {
       setActiveSuiteId(saved.id);
       setDraftCases([]);
       setTab('suites');
-      notify('success', `Approved and saved "${saved.title}" to project.`);
+      notify('success', `Approved and saved "${saved.title}" (${activeLangSpec.label}) to project.`);
     } catch (err) {
       notify('error', err instanceof Error ? err.message : 'Failed to save test suite.');
     }
   };
 
-  const handleCreateBlankSuite = async () => {
+  const handleCreateBlankSuite = async (langOverride?: TestLabLanguageId) => {
     if (!firebaseUser || !activeProject) return;
-    const firstFile = projectFiles[0];
-    const isPy = activeProject.language === 'python' || firstFile?.language === 'python';
+    const spec = getTestLabLanguageSpec(langOverride || selectedLanguage);
+    const matchingFile = projectFiles.find((f) => fileMatchesTestLabLanguage(f, spec.id));
     const starterCase: TestCaseItem = {
       id: `tc_${Date.now()}`,
-      name: isPy ? 'Smoke check returns expected value' : 'Basic assertion passes',
-      description: 'Verify core module behavior using isolated runner.',
+      name: spec.starterTestName,
+      description: `Verify ${spec.label} behavior using ${spec.runtimeLabel}.`,
       testType: 'unit',
-      targetFile: firstFile?.name || (isPy ? 'main.py' : 'script.js'),
-      code: isPy
-        ? 'assert True, "Update assertion to test your function"'
-        : 'expect(typeof 1).toBe("number");',
-      expectedResult: 'Assertion completes cleanly',
+      targetFile: matchingFile?.name || spec.starterTargetFile,
+      code: spec.starterTestCode,
+      expectedResult: spec.starterExpected,
       enabled: true,
       aiGenerated: false,
     };
     try {
       const saved = await saveTestSuite(firebaseUser.uid, activeProject, {
-        title: `${activeProject.title} Custom Suite`,
-        language: activeProject.language,
-        framework: isPy ? 'python-unittest' : 'node-vm-assert',
+        title: `${activeProject.title} · ${spec.label} Suite`,
+        language: spec.id,
+        framework: spec.framework,
         testType: 'unit',
         cases: [starterCase],
         approved: true,
       });
       setSuites((prev) => [saved, ...prev]);
       setActiveSuiteId(saved.id);
+      setEditingSuiteId(saved.id);
+      setEditingCases(saved.cases);
       setTab('suites');
-      notify('success', 'Created custom test suite.');
+      notify('success', `Created ${spec.label} test suite.`);
     } catch (err) {
       notify('error', err instanceof Error ? err.message : 'Unable to create test suite.');
+    }
+  };
+
+  const handleSaveSuiteCases = async (suite: TestSuite) => {
+    if (!firebaseUser || !activeProject) return;
+    setSavingSuiteEdit(true);
+    try {
+      const updated = await saveTestSuite(firebaseUser.uid, activeProject, {
+        id: suite.id,
+        title: suite.title,
+        language: suite.language,
+        framework: suite.framework,
+        testType: suite.testType,
+        cases: editingCases,
+        approved: suite.approved,
+      });
+      setSuites((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+      setEditingSuiteId(null);
+      setEditingCases([]);
+      notify('success', `Updated test cases in "${updated.title}".`);
+    } catch (err) {
+      notify('error', err instanceof Error ? err.message : 'Unable to update suite test cases.');
+    } finally {
+      setSavingSuiteEdit(false);
     }
   };
 
@@ -467,33 +559,74 @@ export function TestLabView() {
       {/* DASHBOARD TAB */}
       {tab === 'dashboard' && (
         <div className="space-y-6">
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-            <div className="space-y-1.5 max-w-2xl">
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                Isolated Verification & Quality Gate
-              </h2>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Tests execute inside isolated Node VM and restricted Python 3 sandboxes with strict timeouts—never on the main application server. All metrics below come strictly from your saved execution records.
-              </p>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] p-6 space-y-5">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+              <div className="space-y-1.5 max-w-2xl">
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                  Isolated Verification Across 9 Programming Languages
+                </h2>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Run tests across HTML, CSS, JavaScript, TypeScript, Python, SQL, C++, C#, and Java. Execution uses isolated Node VM, esbuild, Python 3, in-memory SQLite, g++ C++17 native compilation, and static structural analyzers—never risking the host application.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setTab('generate')}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold whitespace-nowrap cursor-pointer"
+                >
+                  <FlaskConical className="w-3.5 h-3.5" />
+                  Quick-Start AI Tests
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCreateBlankSuite()}
+                  disabled={!activeProject}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap disabled:opacity-50 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  New {activeLangSpec.label} Suite
+                </button>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setTab('generate')}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold whitespace-nowrap cursor-pointer"
-              >
-                <FlaskConical className="w-3.5 h-3.5" />
-                Quick-Start AI Tests
-              </button>
-              <button
-                type="button"
-                onClick={handleCreateBlankSuite}
-                disabled={!activeProject}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap disabled:opacity-50 cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                New Custom Suite
-              </button>
+
+            {/* Quick 9-Language Matrix */}
+            <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+              {TESTLAB_LANGUAGES.map((lang) => {
+                const isSelected = selectedLanguage === lang.id;
+                return (
+                  <button
+                    key={lang.id}
+                    type="button"
+                    onClick={() => setSelectedLanguage(lang.id)}
+                    className={`px-2.5 py-2 rounded-lg border text-left transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'border-blue-600 bg-blue-600/10 text-blue-700 dark:text-blue-300'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-[#080C17] text-slate-700 dark:text-slate-300 hover:border-slate-400 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="text-xs font-bold whitespace-nowrap">{lang.label}</div>
+                    <div className="text-[10px] text-slate-500 font-mono truncate">{lang.extension}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="text-xs text-slate-600 dark:text-slate-400 flex flex-wrap items-center justify-between gap-2">
+              <span>
+                <strong className="text-slate-900 dark:text-white">{activeLangSpec.label} Runner:</strong>{' '}
+                {activeLangSpec.runtimeLabel} — {activeLangSpec.runnerNote}
+              </span>
+              {activeProject && matchingLangFiles.length === 0 && (
+                <button
+                  type="button"
+                  onClick={handleAddStarterFileToProject}
+                  disabled={addingStarterFile}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-blue-500/40 text-blue-600 dark:text-blue-400 text-xs font-medium hover:bg-blue-500/10 whitespace-nowrap cursor-pointer"
+                >
+                  {addingStarterFile ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                  Add {activeLangSpec.starterTargetFile} to Project
+                </button>
+              )}
             </div>
           </div>
 
@@ -672,8 +805,27 @@ export function TestLabView() {
                 AI Test Generator
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Inspects your actual files in {activeProject?.title || 'your project'} and proposes executable assertions for you to review before saving.
+                Inspects {activeProject?.title || 'your project'} and synthesizes executable {activeLangSpec.label} assertions for review before saving.
               </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Target Programming Language (9 Supported)
+              </label>
+              <select
+                value={selectedLanguage}
+                onChange={(e) => setSelectedLanguage(e.target.value as TestLabLanguageId)}
+                aria-label="Target programming language"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-900 dark:text-white"
+              >
+                {TESTLAB_LANGUAGES.map((lang) => (
+                  <option key={lang.id} value={lang.id}>
+                    {lang.label} ({lang.extension}) — {lang.runtimeLabel}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-slate-500 mt-1">{activeLangSpec.runnerNote}</p>
             </div>
 
             <div>
@@ -706,14 +858,28 @@ export function TestLabView() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                Files Included ({projectFiles.length})
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Matching {activeLangSpec.label} Files ({matchingLangFiles.length})
+                </label>
+                {activeProject && matchingLangFiles.length === 0 && (
+                  <button
+                    type="button"
+                    onClick={handleAddStarterFileToProject}
+                    disabled={addingStarterFile}
+                    className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                  >
+                    + Add {activeLangSpec.starterTargetFile}
+                  </button>
+                )}
+              </div>
               <div className="max-h-36 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17] divide-y divide-slate-200 dark:divide-slate-800">
-                {projectFiles.length === 0 ? (
-                  <p className="p-3 text-xs text-slate-500">No files found in selected project.</p>
+                {matchingLangFiles.length === 0 ? (
+                  <p className="p-3 text-xs text-slate-500">
+                    No {activeLangSpec.extension} files in project yet. You can still generate self-contained {activeLangSpec.label} tests or add {activeLangSpec.starterTargetFile}.
+                  </p>
                 ) : (
-                  projectFiles.map((f) => (
+                  matchingLangFiles.map((f) => (
                     <div key={f.id} className="px-3 py-1.5 flex items-center justify-between text-xs">
                       <span className="font-mono text-slate-700 dark:text-slate-300 truncate">{f.name}</span>
                       <span className="text-[11px] text-slate-500">{f.language}</span>
@@ -731,18 +897,18 @@ export function TestLabView() {
                 rows={3}
                 value={genFocusPrompt}
                 onChange={(e) => setGenFocusPrompt(e.target.value)}
-                placeholder="e.g., Validate null inputs, boundary arrays, error status codes, and async edge cases..."
+                placeholder="e.g., Validate null inputs, boundary arrays, SQL constraints, C++ edge cases, or DOM semantics..."
                 className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-900 dark:text-white"
               />
             </div>
 
             <button
               type="submit"
-              disabled={generating || !activeProject || projectFiles.length === 0}
+              disabled={generating || !activeProject}
               className="w-full py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 cursor-pointer"
             >
               {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              {generating ? 'Inspecting Code & Generating...' : 'Generate Candidate Tests'}
+              {generating ? `Generating ${activeLangSpec.label} Tests...` : `Generate ${activeLangSpec.label} Candidate Tests`}
             </button>
           </form>
 
@@ -843,39 +1009,65 @@ export function TestLabView() {
       {/* SUITES & EXECUTION TAB */}
       {tab === 'suites' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-base font-bold text-slate-900 dark:text-white">
               Saved Suites for {activeProject?.title || 'Project'}
             </h2>
-            <button
-              type="button"
-              onClick={handleCreateBlankSuite}
-              disabled={!activeProject}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add Custom Suite
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={selectedLanguage}
+                onChange={(e) => setSelectedLanguage(e.target.value as TestLabLanguageId)}
+                aria-label="Choose language for new suite"
+                className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322] text-xs font-medium"
+              >
+                {TESTLAB_LANGUAGES.map((lang) => (
+                  <option key={lang.id} value={lang.id}>
+                    {lang.label} ({lang.extension})
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => handleCreateBlankSuite()}
+                disabled={!activeProject}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add {activeLangSpec.label} Suite
+              </button>
+            </div>
           </div>
 
           {projectSuites.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322] p-12 text-center space-y-3">
               <p className="text-sm text-slate-500">
-                No saved test suites for this project yet.
+                No saved test suites for this project yet. Pick any of the 9 languages above to create a custom suite or generate tests with AI.
               </p>
-              <button
-                type="button"
-                onClick={() => setTab('generate')}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold cursor-pointer"
-              >
-                Generate Tests with AI
-              </button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleCreateBlankSuite()}
+                  className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-semibold cursor-pointer"
+                >
+                  Create {activeLangSpec.label} Starter Suite
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTab('generate')}
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold cursor-pointer"
+                >
+                  Generate Tests with AI
+                </button>
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {projectSuites.map((suite) => {
                 const isRunning = executingSuiteId === suite.id;
-                const enabledCount = suite.cases.filter((c) => c.enabled !== false).length;
+                const isEditing = editingSuiteId === suite.id;
+                const suiteCases = isEditing ? editingCases : suite.cases;
+                const enabledCount = suiteCases.filter((c) => c.enabled !== false).length;
+                const suiteSpec = getTestLabLanguageSpec(suite.language);
                 return (
                   <div
                     key={suite.id}
@@ -884,44 +1076,147 @@ export function TestLabView() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="text-[11px] text-slate-500">
-                          {suite.language} · {suite.framework} · {suite.testType}
+                          {suiteSpec.label} · {suite.framework} · {suite.testType}
                         </div>
                         <h3 className="text-base font-bold text-slate-900 dark:text-white mt-0.5">
                           {suite.title}
                         </h3>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeleteSuite(suite)}
-                        aria-label={`Delete ${suite.title}`}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isEditing) {
+                              setEditingSuiteId(null);
+                              setEditingCases([]);
+                            } else {
+                              setEditingSuiteId(suite.id);
+                              setEditingCases(suite.cases.map((c) => ({ ...c })));
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 text-[11px] font-medium hover:border-blue-500 cursor-pointer"
+                        >
+                          {isEditing ? 'Cancel Edit' : 'Edit Cases'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteSuite(suite)}
+                          aria-label={`Delete ${suite.title}`}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="space-y-1.5 max-h-40 overflow-y-auto border-t border-b border-slate-200 dark:border-slate-800 py-2.5">
-                      {suite.cases.map((tc) => (
-                        <div key={tc.id} className="flex items-center justify-between text-xs">
-                          <span className="truncate text-slate-700 dark:text-slate-300">
-                            {tc.enabled === false ? '[Skipped] ' : ''}
-                            {tc.name}
-                          </span>
-                          <span className="text-[11px] font-mono text-slate-500 shrink-0 ml-2">
-                            {tc.targetFile}
-                          </span>
+                    {isEditing ? (
+                      <div className="space-y-3 max-h-80 overflow-y-auto border-t border-b border-slate-200 dark:border-slate-800 py-3 pr-1">
+                        {editingCases.map((tc, idx) => (
+                          <div
+                            key={tc.id}
+                            className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17] space-y-2"
+                          >
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={tc.enabled !== false}
+                                onChange={(e) =>
+                                  setEditingCases((prev) =>
+                                    prev.map((x, i) => (i === idx ? { ...x, enabled: e.target.checked } : x)),
+                                  )
+                                }
+                              />
+                              <input
+                                value={tc.name}
+                                onChange={(e) =>
+                                  setEditingCases((prev) =>
+                                    prev.map((x, i) => (i === idx ? { ...x, name: e.target.value } : x)),
+                                  )
+                                }
+                                placeholder="Test case name"
+                                className="flex-1 px-2.5 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322] text-xs font-medium"
+                              />
+                              <input
+                                value={tc.targetFile}
+                                onChange={(e) =>
+                                  setEditingCases((prev) =>
+                                    prev.map((x, i) => (i === idx ? { ...x, targetFile: e.target.value } : x)),
+                                  )
+                                }
+                                placeholder={suiteSpec.starterTargetFile}
+                                className="w-28 px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322] font-mono text-[11px]"
+                              />
+                            </div>
+                            <textarea
+                              rows={3}
+                              value={tc.code}
+                              onChange={(e) =>
+                                setEditingCases((prev) =>
+                                  prev.map((x, i) => (i === idx ? { ...x, code: e.target.value } : x)),
+                                )
+                              }
+                              className="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322] font-mono text-[11px]"
+                            />
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingCases((prev) => [
+                                ...prev,
+                                {
+                                  id: `tc_${Date.now()}_${prev.length}`,
+                                  name: `${suiteSpec.label} Case ${prev.length + 1}`,
+                                  description: `Verify ${suiteSpec.label} behavior`,
+                                  testType: suite.testType,
+                                  targetFile: suiteSpec.starterTargetFile,
+                                  code: suiteSpec.starterTestCode,
+                                  expectedResult: suiteSpec.starterExpected,
+                                  enabled: true,
+                                  aiGenerated: false,
+                                },
+                              ])
+                            }
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Add Case
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveSuiteCases(suite)}
+                            disabled={savingSuiteEdit}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer"
+                          >
+                            {savingSuiteEdit ? 'Saving...' : 'Save Cases'}
+                          </button>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto border-t border-b border-slate-200 dark:border-slate-800 py-2.5">
+                        {suite.cases.map((tc) => (
+                          <div key={tc.id} className="flex items-center justify-between text-xs">
+                            <span className="truncate text-slate-700 dark:text-slate-300">
+                              {tc.enabled === false ? '[Skipped] ' : ''}
+                              {tc.name}
+                            </span>
+                            <span className="text-[11px] font-mono text-slate-500 shrink-0 ml-2">
+                              {tc.targetFile}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-xs text-slate-500 tabular-nums">
-                        {enabledCount} active / {suite.cases.length} total cases
+                        {enabledCount} active / {suiteCases.length} total cases
                       </span>
                       <button
                         type="button"
                         onClick={() => handleRunSuite(suite)}
-                        disabled={Boolean(executingSuiteId)}
+                        disabled={Boolean(executingSuiteId) || isEditing}
                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
                       >
                         {isRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}

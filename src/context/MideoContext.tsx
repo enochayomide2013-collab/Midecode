@@ -471,13 +471,16 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
   }, [loadWorkspaceData, notify]);
 
   const refreshUserData = useCallback(async () => {
-    if (!firebaseUser) return;
-    await loadWorkspaceData(firebaseUser);
+    const target = firebaseUser || auth.currentUser;
+    if (!target) return;
+    setFirebaseUser(target);
+    await loadWorkspaceData(target);
   }, [firebaseUser, loadWorkspaceData]);
 
   const refreshAuthState = useCallback(async () => {
-    if (!firebaseUser) return;
-    const updated = await refreshAuthUser(firebaseUser);
+    const target = firebaseUser || auth.currentUser;
+    if (!target) return;
+    const updated = await refreshAuthUser(target);
     setFirebaseUser(updated);
     setAuthRevision((r) => r + 1);
   }, [firebaseUser]);

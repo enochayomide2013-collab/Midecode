@@ -23,7 +23,6 @@ import { GUIDED_PROJECTS } from '../data/projectsData';
 import { CHALLENGES, CAREER_PATHWAYS } from '../data/challengesData';
 import { resendVerificationEmailReal } from '../services/authService';
 import { buildMissionRecommendations } from '../services/missionService';
-import { INTRO_VIDEO_URL, INTRO_WEBM_URL, IntroVideoModal } from '../components/IntroVideoModal';
 
 export function DashboardView() {
   const {
@@ -47,10 +46,6 @@ export function DashboardView() {
   } = useMideo();
 
   const [verifying, setVerifying] = useState(false);
-  const [introModalOpen, setIntroModalOpen] = useState(false);
-  const [dismissedIntro, setDismissedIntro] = useState(
-    () => localStorage.getItem('mideocode_intro_dismissed') === 'true',
-  );
 
   if (!profile) return null;
 
@@ -239,67 +234,6 @@ export function DashboardView() {
           </p>
         </div>
       </div>
-
-      {/* Intro Video Welcome Card */}
-      {Boolean(INTRO_VIDEO_URL) && !dismissedIntro && (
-        <section className="rounded-xl border border-blue-500/50 bg-gradient-to-r from-blue-950/40 via-[#0D1322] to-slate-900 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-5 shadow-lg">
-          <div className="flex items-start gap-4">
-            <button
-              type="button"
-              onClick={() => setIntroModalOpen(true)}
-              aria-label="Play Introduction to MideoCode"
-              className="relative w-28 sm:w-32 aspect-video rounded-lg overflow-hidden border border-blue-500/40 bg-black shrink-0 group cursor-pointer"
-            >
-              <video
-                preload="metadata"
-                muted
-                playsInline
-                className="w-full h-full object-cover"
-              >
-                <source src={`${INTRO_VIDEO_URL}#t=3.5`} type="video/mp4" />
-                {INTRO_WEBM_URL && <source src={`${INTRO_WEBM_URL}#t=3.5`} type="video/webm" />}
-              </video>
-              <span className="absolute inset-0 bg-black/30 group-hover:bg-black/15 flex items-center justify-center transition-colors">
-                <span className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shadow">
-                  <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-                </span>
-              </span>
-              <span className="absolute bottom-1 right-1 px-1 py-0.5 rounded bg-black/80 text-[10px] font-mono text-white tabular-nums">
-                0:40
-              </span>
-            </button>
-            <div className="space-y-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-blue-400">
-                New to MideoCode?
-              </span>
-              <h2 className="text-base font-bold text-white">
-                Introduction to MideoCode (40 seconds)
-              </h2>
-              <p className="text-xs text-slate-300">
-                Watch this quick introduction to discover everything you can learn, code, build, and become.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              onClick={() => setIntroModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer shadow"
-            >
-              <Play className="w-4 h-4 fill-current" />
-              Watch Introduction
-            </button>
-            <button
-              onClick={() => {
-                setDismissedIntro(true);
-                localStorage.setItem('mideocode_intro_dismissed', 'true');
-              }}
-              className="px-3 py-2.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-xs text-slate-300 cursor-pointer"
-            >
-              Dismiss
-            </button>
-          </div>
-        </section>
-      )}
 
       {/* Your Next Mission Flagship Section */}
       {nextMissionRec && (
@@ -654,16 +588,6 @@ export function DashboardView() {
           </section>
         </div>
       </div>
-      {Boolean(INTRO_VIDEO_URL) && (
-        <IntroVideoModal
-          isOpen={introModalOpen}
-          onClose={() => setIntroModalOpen(false)}
-          onComplete={() => {
-            setDismissedIntro(true);
-            localStorage.setItem('mideocode_intro_dismissed', 'true');
-          }}
-        />
-      )}
     </div>
   );
 }

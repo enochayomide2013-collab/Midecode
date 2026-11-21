@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CountryCode } from 'libphonenumber-js';
-import { Check, ArrowRight, Loader2, Phone, Camera, Play } from 'lucide-react';
+import { Check, ArrowRight, Loader2, Phone, Camera } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
 import { MideoLogo } from './MideoLogo';
-import { INTRO_VIDEO_URL, INTRO_WEBM_URL, IntroVideoModal } from './IntroVideoModal';
 import { processAndUploadAvatar, saveOnboardingProfile } from '../services/dataService';
 import {
   SUPPORTED_COUNTRIES,
@@ -41,7 +40,6 @@ export function OnboardingFlow() {
   const [interests, setInterests] = useState<string[]>(profile?.interests || ['Frontend UI']);
   const [careerPathId, setCareerPathId] = useState(profile?.activeCareerPathId || 'frontend-developer');
   const [saving, setSaving] = useState(false);
-  const [introOpen, setIntroOpen] = useState(false);
 
   useEffect(() => {
     if (profile?.displayName && !displayName) {
@@ -149,49 +147,6 @@ export function OnboardingFlow() {
             Skip optional steps
           </button>
         </div>
-
-        {/* Optional 40-second Introduction Video */}
-        {Boolean(INTRO_VIDEO_URL) && (
-        <div className="mb-7 p-4 rounded-xl border border-blue-500/40 bg-slate-950/90 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <button
-              type="button"
-              onClick={() => setIntroOpen(true)}
-              aria-label="Play Introduction to MideoCode"
-              className="relative w-24 aspect-video rounded-lg overflow-hidden border border-blue-500/40 bg-black shrink-0 cursor-pointer group"
-            >
-              <video
-                preload="metadata"
-                muted
-                playsInline
-                className="w-full h-full object-cover"
-              >
-                <source src={`${INTRO_VIDEO_URL}#t=3.5`} type="video/mp4" />
-                {INTRO_WEBM_URL && <source src={`${INTRO_WEBM_URL}#t=3.5`} type="video/webm" />}
-              </video>
-              <span className="absolute inset-0 bg-black/30 group-hover:bg-black/15 flex items-center justify-center">
-                <span className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center">
-                  <Play className="w-3 h-3 fill-current ml-0.5" />
-                </span>
-              </span>
-            </button>
-            <div>
-              <p className="text-xs font-semibold text-white">Welcome to MideoCode! (40s Intro)</p>
-              <p className="text-[11px] text-slate-300 mt-0.5">
-                Before you begin, discover what you can learn and build here—or skip and watch anytime later.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIntroOpen(true)}
-            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            Watch Introduction
-          </button>
-        </div>
-        )}
 
         <form onSubmit={(e) => handleSubmit(e, false)} className="space-y-7">
           {/* Profile Photo & Display Name */}
@@ -430,13 +385,6 @@ export function OnboardingFlow() {
           </div>
         </form>
       </div>
-      {Boolean(INTRO_VIDEO_URL) && (
-        <IntroVideoModal
-          isOpen={introOpen}
-          onClose={() => setIntroOpen(false)}
-          onComplete={() => localStorage.setItem('mideocode_intro_dismissed', 'true')}
-        />
-      )}
     </div>
   );
 }

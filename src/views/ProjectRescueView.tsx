@@ -9,21 +9,21 @@ import {
   CheckCircle2,
   ChevronRight,
   Code2,
-  Compass,
   Copy,
   FileCode2,
   FilePlus2,
-  FileWarning,
   Flag,
-  FolderGit2,
+  FolderOpen,
   FolderUp,
   GitBranch,
   History,
-  Info,
+  Home,
+  ImagePlus,
   LifeBuoy,
   Loader2,
   MessageSquare,
   Microscope,
+  Network,
   Play,
   RefreshCw,
   RotateCcw,
@@ -31,6 +31,7 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   UploadCloud,
@@ -40,6 +41,16 @@ import {
 } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
 import { RescueCodeDiff } from '../components/rescue/RescueCodeDiff';
+import { RescueImportModal, type RescueImportModalMode } from '../components/rescue/RescueImportModal';
+import {
+  ALL_RESCUE_CATEGORIES,
+  RescueCustomScanModal,
+  RescueDocumentationTab,
+  RescueFilesTab,
+  RescueIntelligenceTab,
+  RescueSettingsTab,
+  RescueWelcomeScreen,
+} from '../components/rescue/RescueWorkspacePanels';
 import { ACADEMY_COURSES } from '../data/academyData';
 import { DOC_ARTICLES } from '../data/docsData';
 import {
@@ -56,20 +67,33 @@ import { listTestSuitesForUser } from '../services/testLabService';
 import { logProjectActivity } from '../services/collaborationService';
 import {
   RESCUE_IMPORT_ACCEPT,
+  analyzeFixImpactViaApi,
+  cancelScanJobViaApi,
+  computeClientWorkspaceFingerprint,
+  computeProjectRefreshDiff,
+  deleteRescueInvestigationRecord,
   deleteRescueScanReport,
   detectImportLanguage,
+  formatMediaBytes,
+  getScanJobStatusViaApi,
   investigateIssueViaApi,
   listRescueFixRecords,
+  listRescueInvestigationRecords,
   listUserRescueScans,
   markRescueFixRolledBack,
   prepareImportedProjectFiles,
   proposeFixViaApi,
   recordRescueFixRecord,
+  saveRescueInvestigationRecord,
   saveRescueScanReport,
   scanProjectViaApi,
   sendRescueChatViaApi,
+  startScanJobViaApi,
+  updateRescueInvestigationStatus,
+  updateRescueScanReviewState,
   verifyRescueFixViaApi,
   type ImportedFileInput,
+  type NormalizedImportedFile,
 } from '../services/rescueService';
 import type {
   Project,
@@ -77,19 +101,28 @@ import type {
   ProjectFile,
   RescueAppliedFixRecord,
   RescueChatMessage,
+  RescueCustomScanConfig,
+  RescueDismissedIssue,
   RescueFixProposal,
+  RescueImportSummary,
   RescueInternalTab,
+  RescueInvestigationRecord,
   RescueIssue,
   RescueRootCauseAnalysis,
+  RescueScanJob,
   RescueScanMode,
   RescueScanReport,
   RescueSeverity,
   RescueVerificationResult,
+  RescueVerificationStatus,
   TestSuite,
 } from '../types/mideocode';
 
 const RESCUE_TABS: { id: RescueInternalTab; label: string; icon: typeof Activity }[] = [
   { id: 'overview', label: 'Project Overview', icon: Activity },
+  { id: 'files', label: 'Project Files', icon: FolderOpen },
+  { id: 'intelligence', label: 'Intelligence', icon: Network },
+  { id: 'documentation', label: 'Documentation', icon: BookOpen },
   { id: 'scanner', label: 'Project Scanner', icon: ScanSearch },
   { id: 'investigate', label: 'Error Investigation', icon: Microscope },
   { id: 'root_cause', label: 'Root Cause Analysis', icon: ShieldAlert },
@@ -97,7 +130,10 @@ const RESCUE_TABS: { id: RescueInternalTab; label: string; icon: typeof Activity
   { id: 'rescue_mode', label: 'Rescue Mode', icon: LifeBuoy },
   { id: 'history', label: 'Scan History', icon: History },
   { id: 'chat', label: 'Rescue Chat', icon: MessageSquare },
+  { id: 'settings', label: 'Settings', icon: SlidersHorizontal },
 ];
+
+const ACTIVE_RESCUE_JOB_STORAGE_KEY = 'mideocode_active_rescue_job';
 
 const SEVERITY_ORDER: Record<RescueSeverity, number> = {
   critical: 0,
@@ -120,6 +156,48 @@ function severityBadgeClass(severity: RescueSeverity): string {
     default:
       return 'bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/30';
   }
+}
+
+function verificationStatusMeta(status?: RescueVerificationStatus, passed?: boolean): {
+  label: string;
+  badgeClass: string;
+} {
+  const effective: RescueVerificationStatus =
+    status || (passed ? 'VERIFIED' : 'PARTIALLY_VERIFIED');
+  switch (effective) {
+    case 'VERIFIED':
+      return {
+        label: 'VERIFIED',
+        badgeClass: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400',
+      };
+    case 'PARTIALLY_VERIFIED':
+      return {
+        label: 'PARTIALLY VERIFIED',
+        badgeClass: 'bg-amber-500/15 border-amber-500/40 text-amber-600 dark:text-amber-400',
+      };
+    case 'FAILED':
+      return {
+        label: 'FAILED',
+        badgeClass: 'bg-red-500/15 border-red-500/40 text-red-600 dark:text-red-400',
+      };
+    default:
+      return {
+        label: 'NOT VERIFIED',
+        badgeClass: 'bg-slate-500/15 border-slate-500/40 text-slate-600 dark:text-slate-300',
+      };
+  }
+}
+
+async function computeSha256HexClient(text: string): Promise<string> {
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const encoded = new TextEncoder().encode(text);
+    const digest = await crypto.subtle.digest('SHA-256', encoded);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')
+      .slice(0, 32);
+  }
+  return `len_${text.length}`;
 }
 
 function getFileDisplayPath(f: { folder?: string; name: string }): string {
@@ -182,33 +260,58 @@ export function ProjectRescueView() {
   } = useMideo();
 
   const [tab, setTab] = useState<RescueInternalTab>('overview');
+  const [showWelcomeScreen, setShowWelcomeScreen] = useState<boolean>(
+    () => !rescueLaunch && !activeIdeProjectId,
+  );
   const [selectedProjectId, setSelectedProjectId] = useState<string>(
     rescueLaunch?.projectId || activeIdeProjectId || accessibleProjects[0]?.id || '',
   );
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
+  const [currentWorkspaceFingerprint, setCurrentWorkspaceFingerprint] = useState<string>('');
 
-  // Scan & Reports state
+  // Scan, 10-Stage Job Progress & Reports state
   const [scanMode, setScanMode] = useState<RescueScanMode>('deep');
   const [scanning, setScanning] = useState(false);
+  const [activeScanJob, setActiveScanJob] = useState<RescueScanJob | null>(null);
+  const [scanElapsedSec, setScanElapsedSec] = useState(0);
+  const [customScanConfig, setCustomScanConfig] = useState<RescueCustomScanConfig>({
+    checks: ALL_RESCUE_CATEGORIES.map((c) => c.id),
+    excludedPaths: [],
+  });
+  const [customScanModalOpen, setCustomScanModalOpen] = useState(false);
   const [activeReport, setActiveReport] = useState<RescueScanReport | null>(null);
   const [scanHistory, setScanHistory] = useState<RescueScanReport[]>([]);
   const [fixHistory, setFixHistory] = useState<RescueAppliedFixRecord[]>([]);
+  const [investigationHistory, setInvestigationHistory] = useState<RescueInvestigationRecord[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Issue Filtering & Explanation Mode
+  // Issue Filtering, Review/Dismissal & Explanation Mode
   const [severityFilter, setSeverityFilter] = useState<'all' | RescueSeverity>('all');
   const [certaintyFilter, setCertaintyFilter] = useState<'all' | 'confirmed' | 'possible'>('all');
   const [explanationLevel, setExplanationLevel] = useState<'beginner' | 'developer'>('beginner');
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
+  const [reviewedIssueIds, setReviewedIssueIds] = useState<string[]>([]);
+  const [dismissedIssues, setDismissedIssues] = useState<RescueDismissedIssue[]>([]);
+  const [hideDismissedIssues, setHideDismissedIssues] = useState(false);
 
   // Investigation & Root Cause state
   const [customProblemInput, setCustomProblemInput] = useState('');
+  const [expectedBehavior, setExpectedBehavior] = useState('');
+  const [actualBehavior, setActualBehavior] = useState('');
+  const [issueScreenshot, setIssueScreenshot] = useState<{
+    mimeType: string;
+    dataBase64: string;
+    name: string;
+  } | null>(null);
   const [investigating, setInvestigating] = useState(false);
   const [rootCause, setRootCause] = useState<RescueRootCauseAnalysis | null>(null);
 
-  // Fix Proposal, Authorization & Verification state
+  // Fix Proposal, Inline Edit, Authorization & Verification state
   const [fixProposal, setFixProposal] = useState<RescueFixProposal | null>(null);
+  const [editedProposedCode, setEditedProposedCode] = useState('');
+  const [isEditingProposedCode, setIsEditingProposedCode] = useState(false);
+  const [reanalyzingImpact, setReanalyzingImpact] = useState(false);
   const [proposingFix, setProposingFix] = useState(false);
   const [manualFixTargetPath, setManualFixTargetPath] = useState('');
   const [manualFixPrompt, setManualFixPrompt] = useState('');
@@ -233,9 +336,19 @@ export function ProjectRescueView() {
   const [chatInput, setChatInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
 
-  // Local folder / multi-file import & paste file state
+  // 4-Source Import Modal, Refresh Diff & Quick Add File state
   const [importingFiles, setImportingFiles] = useState(false);
-  const [importTargetMode, setImportTargetMode] = useState<'new' | 'current'>('new');
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importModalMode, setImportModalMode] = useState<RescueImportModalMode>('zip');
+  const [importModalRefresh, setImportModalRefresh] = useState(false);
+  const [lastImportSummary, setLastImportSummary] = useState<RescueImportSummary | null>(null);
+  const [lastRefreshDiff, setLastRefreshDiff] = useState<{
+    added: string[];
+    modified: string[];
+    removed: string[];
+    unchanged: number;
+  } | null>(null);
+  const [importTargetMode] = useState<'new' | 'current'>('new');
   const [dragOverImport, setDragOverImport] = useState(false);
   const [showNewFileModal, setShowNewFileModal] = useState(false);
   const [newFileName, setNewFileName] = useState('');
@@ -250,6 +363,7 @@ export function ProjectRescueView() {
   useEffect(() => {
     if (rescueLaunch) {
       setSelectedProjectId(rescueLaunch.projectId);
+      setShowWelcomeScreen(false);
       if (rescueLaunch.initialTab) setTab(rescueLaunch.initialTab);
       if (rescueLaunch.initialPrompt) {
         setCustomProblemInput(rescueLaunch.initialPrompt);
@@ -277,6 +391,40 @@ export function ProjectRescueView() {
   }, [activeProject, firebaseUser]);
 
   const canModifyProject = myRole === 'owner' || myRole === 'editor';
+
+  // Compute live workspace fingerprint when files load/change to detect staleness vs latest scan
+  useEffect(() => {
+    let active = true;
+    if (files.length === 0) {
+      setCurrentWorkspaceFingerprint('');
+      return;
+    }
+    computeClientWorkspaceFingerprint(files)
+      .then((fp) => {
+        if (active) setCurrentWorkspaceFingerprint(fp);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [files]);
+
+  const fingerprintStale = useMemo(() => {
+    if (!activeReport?.projectFingerprint || !currentWorkspaceFingerprint) return false;
+    return activeReport.projectFingerprint !== currentWorkspaceFingerprint;
+  }, [activeReport?.projectFingerprint, currentWorkspaceFingerprint]);
+
+  // Sync reviewed/dismissed issue states from activeReport
+  useEffect(() => {
+    setReviewedIssueIds(activeReport?.reviewedIssueIds || []);
+    setDismissedIssues(activeReport?.dismissedIssues || []);
+  }, [activeReport?.id, activeReport?.reviewedIssueIds, activeReport?.dismissedIssues]);
+
+  // Sync editable proposed code when fixProposal changes
+  useEffect(() => {
+    setEditedProposedCode(fixProposal?.proposedCode || '');
+    setIsEditingProposedCode(false);
+  }, [fixProposal?.id, fixProposal?.proposedCode]);
 
   // Load files & TestLab suites for active project
   const refreshActiveFiles = useCallback(async () => {
@@ -310,13 +458,14 @@ export function ProjectRescueView() {
     if (!firebaseUser) return;
     setLoadingHistory(true);
     try {
-      const [scans, fixes] = await Promise.all([
+      const [scans, fixes, investigations] = await Promise.all([
         listUserRescueScans(firebaseUser.uid),
         listRescueFixRecords(firebaseUser.uid),
+        listRescueInvestigationRecords(firebaseUser.uid).catch(() => [] as RescueInvestigationRecord[]),
       ]);
       setScanHistory(scans);
       setFixHistory(fixes);
-      // Hydrate latest scan for selected project if none loaded yet
+      setInvestigationHistory(investigations);
       if (activeProject && !activeReport) {
         const latestForProj = scans.find((s) => s.projectId === activeProject.id);
         if (latestForProj) setActiveReport(latestForProj);
@@ -368,13 +517,22 @@ export function ProjectRescueView() {
     return [...raw].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
   }, [activeReport]);
 
+  const dismissedMap = useMemo(() => {
+    const map = new Map<string, RescueDismissedIssue>();
+    for (const d of dismissedIssues) map.set(d.issueId, d);
+    return map;
+  }, [dismissedIssues]);
+
+  const reviewedSet = useMemo(() => new Set(reviewedIssueIds), [reviewedIssueIds]);
+
   const filteredIssues = useMemo(() => {
     return projectIssues.filter((issue) => {
+      if (hideDismissedIssues && dismissedMap.has(issue.id)) return false;
       if (severityFilter !== 'all' && issue.severity !== severityFilter) return false;
       if (certaintyFilter !== 'all' && issue.certainty !== certaintyFilter) return false;
       return true;
     });
-  }, [projectIssues, severityFilter, certaintyFilter]);
+  }, [projectIssues, hideDismissedIssues, dismissedMap, severityFilter, certaintyFilter]);
 
   const selectedIssue = useMemo(
     () => projectIssues.find((i) => i.id === selectedIssueId) || projectIssues[0] || null,
@@ -382,29 +540,11 @@ export function ProjectRescueView() {
   );
 
   // -------------------------------------------------------------------------
-  // Actions: Scan, Investigate, Propose Fix, Authorize/Apply, Rollback, Chat
+  // Resumable 10-Stage Scan Jobs & Polling
   // -------------------------------------------------------------------------
-  const runScanForWorkspace = async (
-    targetProject: Project,
-    workspaceFiles: ProjectFile[],
-    overrideMode?: RescueScanMode,
-  ): Promise<RescueScanReport | null> => {
-    if (!firebaseUser) return null;
-    if (workspaceFiles.length === 0) {
-      notify('error', 'This project has no files yet. Add files or import a folder first.');
-      return null;
-    }
-    const mode = overrideMode || scanMode;
-    setScanMode(mode);
-    setScanning(true);
-    try {
-      const rawReport = await scanProjectViaApi({
-        projectId: targetProject.id,
-        projectTitle: targetProject.title,
-        scanMode: mode,
-        files: workspaceFiles,
-      });
-      const savedReport = await saveRescueScanReport(firebaseUser.uid, rawReport);
+  const finalizeScanReport = useCallback(
+    async (rawReport: RescueScanReport, uid: string): Promise<RescueScanReport> => {
+      const savedReport = await saveRescueScanReport(uid, rawReport);
       setActiveReport(savedReport);
       setScanHistory((prev) => [savedReport, ...prev.filter((r) => r.id !== savedReport.id)]);
       if (savedReport.issues.length > 0) {
@@ -414,20 +554,229 @@ export function ProjectRescueView() {
       }
       notify(
         savedReport.issues.length === 0 ? 'success' : 'info',
-        `${mode.toUpperCase()} Scan complete: Health ${savedReport.healthScore}/100 · ${savedReport.confirmedCount} confirmed, ${savedReport.potentialCount} potential issues.`,
+        `${savedReport.scanMode.toUpperCase()} Scan complete: Health ${savedReport.healthScore}/100 · ${savedReport.confirmedCount} confirmed, ${savedReport.potentialCount} potential issues.`,
       );
       return savedReport;
-    } catch (err) {
-      notify('error', err instanceof Error ? err.message : 'Project Rescue scan failed.');
-      return null;
-    } finally {
+    },
+    [notify],
+  );
+
+  const pollJobUntilDone = useCallback(
+    async (jobId: string, uid: string): Promise<RescueScanReport | null> => {
+      const startedAtMs = Date.now();
+      while (true) {
+        await new Promise((r) => setTimeout(r, 1200));
+        setScanElapsedSec(Math.round((Date.now() - startedAtMs) / 1000));
+        const latestJob = await getScanJobStatusViaApi(jobId);
+        setActiveScanJob(latestJob);
+        if (latestJob.status === 'completed' && latestJob.report) {
+          localStorage.removeItem(ACTIVE_RESCUE_JOB_STORAGE_KEY);
+          const saved = await finalizeScanReport(latestJob.report, uid);
+          setActiveScanJob(null);
+          setScanning(false);
+          return saved;
+        }
+        if (latestJob.status === 'cancelled') {
+          localStorage.removeItem(ACTIVE_RESCUE_JOB_STORAGE_KEY);
+          setActiveScanJob(null);
+          setScanning(false);
+          notify('info', 'Project scan was cancelled.');
+          return null;
+        }
+        if (latestJob.status === 'failed') {
+          localStorage.removeItem(ACTIVE_RESCUE_JOB_STORAGE_KEY);
+          setActiveScanJob(null);
+          setScanning(false);
+          throw new Error(latestJob.error || 'Background scan job failed.');
+        }
+      }
+    },
+    [finalizeScanReport, notify],
+  );
+
+  // Resume active background job across reloads if one is still running
+  useEffect(() => {
+    if (!firebaseUser) return;
+    const raw = localStorage.getItem(ACTIVE_RESCUE_JOB_STORAGE_KEY);
+    if (!raw) return;
+    let parsed: { jobId?: string; projectId?: string } | null = null;
+    try {
+      parsed = JSON.parse(raw) as { jobId?: string; projectId?: string };
+    } catch {
+      localStorage.removeItem(ACTIVE_RESCUE_JOB_STORAGE_KEY);
+      return;
+    }
+    if (!parsed?.jobId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const job = await getScanJobStatusViaApi(parsed!.jobId!);
+        if (cancelled) return;
+        if (job.status === 'completed' && job.report) {
+          localStorage.removeItem(ACTIVE_RESCUE_JOB_STORAGE_KEY);
+          await finalizeScanReport(job.report, firebaseUser.uid);
+        } else if (job.status === 'running') {
+          setScanning(true);
+          setActiveScanJob(job);
+          if (job.projectId) {
+            setSelectedProjectId(job.projectId);
+            setShowWelcomeScreen(false);
+          }
+          await pollJobUntilDone(job.jobId, firebaseUser.uid);
+        } else {
+          localStorage.removeItem(ACTIVE_RESCUE_JOB_STORAGE_KEY);
+        }
+      } catch {
+        localStorage.removeItem(ACTIVE_RESCUE_JOB_STORAGE_KEY);
+        setScanning(false);
+        setActiveScanJob(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [firebaseUser?.uid, finalizeScanReport, pollJobUntilDone]);
+
+  const handleCancelScanJob = async () => {
+    if (!activeScanJob) return;
+    try {
+      await cancelScanJobViaApi(activeScanJob.jobId);
+      localStorage.removeItem(ACTIVE_RESCUE_JOB_STORAGE_KEY);
+      setActiveScanJob(null);
       setScanning(false);
+      notify('info', 'Scan job cancelled.');
+    } catch (err) {
+      notify('error', err instanceof Error ? err.message : 'Unable to cancel active scan job.');
     }
   };
 
-  const handleRunScan = async (overrideMode?: RescueScanMode) => {
+  const runScanForWorkspace = async (
+    targetProject: Project,
+    workspaceFiles: ProjectFile[],
+    overrideMode?: RescueScanMode,
+    overrideConfig?: RescueCustomScanConfig,
+  ): Promise<RescueScanReport | null> => {
+    if (!firebaseUser) return null;
+    if (workspaceFiles.length === 0) {
+      notify('error', 'This project has no files yet. Add files or import a folder first.');
+      return null;
+    }
+    const mode = overrideMode || scanMode;
+    setScanMode(mode);
+    setScanning(true);
+    setScanElapsedSec(0);
+    try {
+      const effectiveConfig = mode === 'custom' ? overrideConfig || customScanConfig : customScanConfig.excludedPaths.length > 0 ? customScanConfig : undefined;
+      const startedJob = await startScanJobViaApi({
+        projectId: targetProject.id,
+        projectTitle: targetProject.title,
+        scanMode: mode,
+        files: workspaceFiles,
+        customConfig: effectiveConfig,
+      });
+      setActiveScanJob(startedJob);
+      localStorage.setItem(
+        ACTIVE_RESCUE_JOB_STORAGE_KEY,
+        JSON.stringify({ jobId: startedJob.jobId, projectId: targetProject.id }),
+      );
+      if (startedJob.status === 'completed' && startedJob.report) {
+        localStorage.removeItem(ACTIVE_RESCUE_JOB_STORAGE_KEY);
+        setActiveScanJob(null);
+        setScanning(false);
+        return await finalizeScanReport(startedJob.report, firebaseUser.uid);
+      }
+      return await pollJobUntilDone(startedJob.jobId, firebaseUser.uid);
+    } catch (err) {
+      localStorage.removeItem(ACTIVE_RESCUE_JOB_STORAGE_KEY);
+      setActiveScanJob(null);
+      setScanning(false);
+      notify('error', err instanceof Error ? err.message : 'Project Rescue scan failed.');
+      return null;
+    }
+  };
+
+  const handleRunScan = async (overrideMode?: RescueScanMode, overrideConfig?: RescueCustomScanConfig) => {
     if (!activeProject) return null;
-    return runScanForWorkspace(activeProject, files, overrideMode);
+    return runScanForWorkspace(activeProject, files, overrideMode, overrideConfig);
+  };
+
+  const handleToggleIssueReviewed = async (issueId: string) => {
+    if (!activeReport) return;
+    const exists = reviewedIssueIds.includes(issueId);
+    const nextReviewed = exists
+      ? reviewedIssueIds.filter((id) => id !== issueId)
+      : [...reviewedIssueIds, issueId];
+    setReviewedIssueIds(nextReviewed);
+    setActiveReport((prev) => (prev ? { ...prev, reviewedIssueIds: nextReviewed } : prev));
+    setScanHistory((prev) =>
+      prev.map((s) => (s.id === activeReport.id ? { ...s, reviewedIssueIds: nextReviewed } : s)),
+    );
+    await updateRescueScanReviewState(activeReport.id, nextReviewed, dismissedIssues).catch((err) => {
+      notify('error', err instanceof Error ? err.message : 'Failed to save review marker.');
+    });
+  };
+
+  const handleDismissIssue = async (
+    issueId: string,
+    reason: RescueDismissedIssue['reason'],
+  ) => {
+    if (!activeReport) return;
+    const nextDismissed: RescueDismissedIssue[] = [
+      ...dismissedIssues.filter((d) => d.issueId !== issueId),
+      { issueId, reason, dismissedAt: new Date().toISOString() },
+    ];
+    setDismissedIssues(nextDismissed);
+    setActiveReport((prev) => (prev ? { ...prev, dismissedIssues: nextDismissed } : prev));
+    setScanHistory((prev) =>
+      prev.map((s) => (s.id === activeReport.id ? { ...s, dismissedIssues: nextDismissed } : s)),
+    );
+    await updateRescueScanReviewState(activeReport.id, reviewedIssueIds, nextDismissed).catch(
+      (err) => {
+        notify('error', err instanceof Error ? err.message : 'Failed to dismiss issue.');
+      },
+    );
+  };
+
+  const handleReopenIssue = async (issueId: string) => {
+    if (!activeReport) return;
+    const nextDismissed = dismissedIssues.filter((d) => d.issueId !== issueId);
+    setDismissedIssues(nextDismissed);
+    setActiveReport((prev) => (prev ? { ...prev, dismissedIssues: nextDismissed } : prev));
+    setScanHistory((prev) =>
+      prev.map((s) => (s.id === activeReport.id ? { ...s, dismissedIssues: nextDismissed } : s)),
+    );
+    await updateRescueScanReviewState(activeReport.id, reviewedIssueIds, nextDismissed).catch(
+      (err) => {
+        notify('error', err instanceof Error ? err.message : 'Failed to re-open issue.');
+      },
+    );
+  };
+
+  const handleScreenshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!/^image\/(png|jpeg|jpg|webp)$/i.test(file.type)) {
+      notify('error', 'Upload a PNG, JPG, or WebP screenshot image.');
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      notify('error', 'Screenshot must be 4 MB or smaller.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
+      setIssueScreenshot({
+        mimeType: file.type,
+        dataBase64: base64,
+        name: file.name,
+      });
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleInvestigate = async (
@@ -452,9 +801,28 @@ export function ProjectRescueView() {
         files,
         issue: issue || null,
         userProblemDescription: queryText || undefined,
+        expectedBehavior: expectedBehavior.trim() || undefined,
+        actualBehavior: actualBehavior.trim() || undefined,
+        screenshot: issueScreenshot
+          ? { mimeType: issueScreenshot.mimeType, dataBase64: issueScreenshot.dataBase64 }
+          : null,
       });
       setRootCause(analysis);
       setTab(targetTab);
+      if (firebaseUser) {
+        const savedInv = await saveRescueInvestigationRecord(firebaseUser.uid, {
+          projectId: activeProject.id,
+          projectTitle: activeProject.title,
+          issueId: issue?.id,
+          expectedBehavior: expectedBehavior.trim() || undefined,
+          actualBehavior: actualBehavior.trim() || undefined,
+          analysis,
+          status: 'open',
+        }).catch(() => null);
+        if (savedInv) {
+          setInvestigationHistory((prev) => [savedInv, ...prev.filter((i) => i.id !== savedInv.id)]);
+        }
+      }
       notify('success', `Root cause investigation ready (${analysis.confidence}% confidence).`);
       return analysis;
     } catch (err) {
@@ -504,6 +872,8 @@ export function ProjectRescueView() {
         issueId: opts?.issueId || selectedIssue?.id,
       });
       setFixProposal(proposal);
+      setEditedProposedCode(proposal.proposedCode);
+      setIsEditingProposedCode(false);
       if (!opts?.stayInRescueMode) {
         setTab('fixes');
       }
@@ -514,6 +884,36 @@ export function ProjectRescueView() {
       return null;
     } finally {
       setProposingFix(false);
+    }
+  };
+
+  const handleReanalyzeEditedFix = async () => {
+    if (!fixProposal) return;
+    setReanalyzingImpact(true);
+    try {
+      const nextImpact = await analyzeFixImpactViaApi({
+        files,
+        targetFilePath: fixProposal.filePath,
+        proposedCode: editedProposedCode,
+      });
+      setFixProposal((prev) =>
+        prev
+          ? {
+              ...prev,
+              proposedCode: editedProposedCode,
+              impact: nextImpact,
+            }
+          : prev,
+      );
+      setIsEditingProposedCode(false);
+      notify(
+        'success',
+        `Updated impact analysis (${nextImpact.riskLevel || 'Low Risk'}) for edited code.`,
+      );
+    } catch (err) {
+      notify('error', err instanceof Error ? err.message : 'Could not analyze edited fix impact.');
+    } finally {
+      setReanalyzingImpact(false);
     }
   };
 
@@ -531,6 +931,20 @@ export function ProjectRescueView() {
       return;
     }
 
+    // Staleness guard: prevent overwriting if the target file changed since proposal creation
+    if (fixProposal.targetFileHash) {
+      const liveHash = await computeSha256HexClient(targetFile.content);
+      if (liveHash !== fixProposal.targetFileHash) {
+        setAuthorizeModalOpen(false);
+        notify(
+          'error',
+          `${fixProposal.filePath} changed after this fix was generated. Re-generate the fix proposal against the latest file content first.`,
+        );
+        return;
+      }
+    }
+
+    const codeToApply = isEditingProposedCode ? editedProposedCode : fixProposal.proposedCode;
     setAuthorizeModalOpen(false);
     setApplyingFix(true);
     try {
@@ -553,7 +967,7 @@ export function ProjectRescueView() {
 
       // 2. Apply user-approved code modification
       const updatedFiles = files.map((f) =>
-        f.id === targetFile.id ? { ...f, content: fixProposal.proposedCode } : f,
+        f.id === targetFile.id ? { ...f, content: codeToApply } : f,
       );
       const totalBytes = Math.min(
         5_000_000,
@@ -562,7 +976,7 @@ export function ProjectRescueView() {
       await forceOverwriteProjectFile(
         activeProject.id,
         targetFile.id,
-        fixProposal.proposedCode,
+        codeToApply,
         activeProject.version,
         totalBytes,
         { uid: firebaseUser.uid, name: profile.displayName },
@@ -601,12 +1015,13 @@ export function ProjectRescueView() {
         snapshotVersionId: snapshot.id,
         snapshotVersionNumber: snapshot.versionNumber,
         verificationPassed: verification.passed,
+        verificationStatus: verification.verificationStatus,
         verificationSummary: verification.summary,
         status: 'applied',
       });
 
       setFiles(updatedFiles);
-      setFixProposal({ ...fixProposal, status: 'applied' });
+      setFixProposal({ ...fixProposal, proposedCode: codeToApply, status: 'applied' });
       setVerificationResult(verification);
       setLastAppliedSnapshot({
         versionId: snapshot.id,
@@ -625,15 +1040,20 @@ export function ProjectRescueView() {
         files: updatedFiles,
       }).catch(() => null);
       if (postScanRaw) {
-        const savedPost = await saveRescueScanReport(firebaseUser.uid, postScanRaw).catch(() => postScanRaw);
+        const savedPost = await saveRescueScanReport(firebaseUser.uid, postScanRaw).catch(
+          () => postScanRaw,
+        );
         setActiveReport(savedPost);
         setScanHistory((prev) => [savedPost, ...prev.filter((r) => r.id !== savedPost.id)]);
       }
 
       if (verification.passed) {
-        notify('success', `Fix applied and verified on ${fixProposal.filePath}.`);
+        notify('success', `Fix applied and ${verification.verificationStatus || 'VERIFIED'} on ${fixProposal.filePath}.`);
       } else {
-        notify('info', 'Fix applied, but post-fix verification detected remaining issues. Rollback is ready.');
+        notify(
+          'info',
+          `Fix applied (${verification.verificationStatus || 'PARTIALLY_VERIFIED'}). Review verification details or rollback anytime.`,
+        );
       }
       if (tab === 'rescue_mode') {
         setRescueStep(6);
@@ -701,24 +1121,26 @@ export function ProjectRescueView() {
     }
   };
 
-  const ingestImportedEntries = async (rawEntries: ImportedFileInput[]) => {
+  const handleOpenImportModal = (mode: RescueImportModalMode = 'zip', isRefresh = false) => {
+    setImportModalMode(mode);
+    setImportModalRefresh(isRefresh);
+    setImportModalOpen(true);
+  };
+
+  const finalizeNormalizedProjectImport = async (input: {
+    files: NormalizedImportedFile[];
+    summary: RescueImportSummary;
+    targetMode: 'new' | 'current';
+    isRefresh: boolean;
+  }) => {
     if (!firebaseUser || !profile) {
       notify('error', 'Please sign in before importing project files.');
       return;
     }
-    if (rawEntries.length === 0) return;
-
     setImportingFiles(true);
     try {
-      const prepared = prepareImportedProjectFiles(rawEntries);
-      if (prepared.files.length === 0) {
-        throw new Error(
-          'No supported source files (.js, .ts, .tsx, .py, .html, .css, .sql, .json, .md, etc.) were found outside ignored folders like node_modules or .git.',
-        );
-      }
-
       const mergeIntoExisting =
-        importTargetMode === 'current' && activeProject && canModifyProject;
+        input.targetMode === 'current' && activeProject && canModifyProject;
 
       if (mergeIntoExisting && activeProject) {
         const merged = await mergeImportedFilesIntoProject(
@@ -726,27 +1148,34 @@ export function ProjectRescueView() {
           profile.displayName,
           activeProject.id,
           files,
-          prepared.files,
+          input.files,
         );
+        if (input.isRefresh) {
+          setLastRefreshDiff(computeProjectRefreshDiff(files, merged.files));
+        } else {
+          setLastRefreshDiff(null);
+        }
+        setLastImportSummary(input.summary);
+        setShowWelcomeScreen(false);
+        setTab('overview');
         await refreshUserData();
         setFiles(merged.files);
-        setManualFixTargetPath(getFileDisplayPath(merged.files[0]));
+        setManualFixTargetPath(merged.files[0] ? getFileDisplayPath(merged.files[0]) : '');
         setRootCause(null);
         setFixProposal(null);
         setVerificationResult(null);
         setLastAppliedSnapshot(null);
-        const totalSkipped = prepared.skippedCount + merged.skippedForLimitCount;
         notify(
           'success',
-          `Imported into "${activeProject.title}": ${merged.addedCount} added, ${merged.updatedCount} updated${totalSkipped ? `, ${totalSkipped} skipped` : ''}. Running scan...`,
+          `${input.isRefresh ? 'Refreshed' : 'Merged into'} "${activeProject.title}": ${merged.addedCount} added, ${merged.updatedCount} updated. Starting scan...`,
         );
         await runScanForWorkspace(activeProject, merged.files, scanMode);
         return;
       }
 
-      const hasPy = prepared.files.some((f) => f.language === 'python');
-      const hasTs = prepared.files.some((f) => f.language === 'typescript');
-      const hasHtml = prepared.files.some((f) => f.language === 'html');
+      const hasPy = input.files.some((f) => f.language === 'python');
+      const hasTs = input.files.some((f) => f.language === 'typescript' || f.language === 'tsx');
+      const hasHtml = input.files.some((f) => f.language === 'html');
       const projLang: Project['language'] = hasPy
         ? 'python'
         : hasTs
@@ -756,13 +1185,17 @@ export function ProjectRescueView() {
             : 'javascript';
 
       const created = await createProjectWithFiles(firebaseUser.uid, profile.displayName, {
-        title: prepared.inferredProjectTitle.slice(0, 110),
-        description: `Imported for Project Rescue AI analysis (${prepared.files.length} files${prepared.skippedCount ? `, ${prepared.skippedCount} skipped` : ''}).`,
+        title: (input.summary.projectTitle || 'Imported Rescue Project').slice(0, 110),
+        description: `Imported via ${input.summary.sourceType.toUpperCase()} (${input.files.length} files${input.summary.skippedCount ? `, ${input.summary.skippedCount} skipped` : ''}).`,
         language: projLang,
-        files: prepared.files,
+        files: input.files,
       });
 
       skipNextResetForProjectRef.current = created.project.id;
+      setLastRefreshDiff(null);
+      setLastImportSummary(input.summary);
+      setShowWelcomeScreen(false);
+      setTab('overview');
       await refreshUserData();
       setSelectedProjectId(created.project.id);
       setActiveIdeProjectId(created.project.id);
@@ -776,7 +1209,7 @@ export function ProjectRescueView() {
       setChatMessages([]);
       notify(
         'success',
-        `Imported "${created.project.title}" (${created.files.length} files${prepared.skippedCount ? `, ${prepared.skippedCount} skipped` : ''}). Running diagnostic scan...`,
+        `Imported "${created.project.title}" (${created.files.length} files). Starting diagnostic scan...`,
       );
       await runScanForWorkspace(created.project, created.files, scanMode);
     } catch (err) {
@@ -784,6 +1217,44 @@ export function ProjectRescueView() {
     } finally {
       setImportingFiles(false);
     }
+  };
+
+  const ingestImportedEntries = async (
+    rawEntries: ImportedFileInput[],
+    opts?: { sourceType?: 'folder' | 'files'; targetMode?: 'new' | 'current'; isRefresh?: boolean },
+  ) => {
+    if (!firebaseUser || !profile) {
+      notify('error', 'Please sign in before importing project files.');
+      return;
+    }
+    if (rawEntries.length === 0) return;
+
+    const prepared = prepareImportedProjectFiles(rawEntries);
+    if (prepared.files.length === 0) {
+      throw new Error(
+        'No supported source files (.js, .ts, .tsx, .py, .html, .css, .sql, .json, .md, etc.) were found outside ignored folders like node_modules or .git.',
+      );
+    }
+
+    const langs: Record<string, number> = {};
+    for (const f of prepared.files) {
+      langs[f.language] = (langs[f.language] || 0) + 1;
+    }
+
+    await finalizeNormalizedProjectImport({
+      files: prepared.files,
+      summary: {
+        sourceType: opts?.sourceType || 'folder',
+        projectTitle: prepared.inferredProjectTitle,
+        importedCount: prepared.files.length,
+        skippedCount: prepared.skippedCount,
+        totalBytes: prepared.totalBytes,
+        languages: langs,
+        frameworks: [],
+      },
+      targetMode: opts?.targetMode || importTargetMode,
+      isRefresh: Boolean(opts?.isRefresh),
+    });
   };
 
   const handleImportProjectFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1128,36 +1599,38 @@ export function ProjectRescueView() {
               onChange={handleImportProjectFiles}
             />
 
-            {activeProject && canModifyProject && (
-              <select
-                value={importTargetMode}
-                onChange={(e) => setImportTargetMode(e.target.value as 'new' | 'current')}
-                aria-label="Import destination mode"
-                className="px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-700 dark:text-slate-200"
-              >
-                <option value="new">Import as New Project</option>
-                <option value="current">Add into Current Project</option>
-              </select>
-            )}
-
             <button
               type="button"
-              onClick={() => folderInputRef.current?.click()}
+              onClick={() => setShowWelcomeScreen((prev) => !prev)}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium cursor-pointer ${
+                showWelcomeScreen
+                  ? 'border-blue-500 bg-blue-600/10 text-blue-600 dark:text-blue-400'
+                  : 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-blue-500'
+              }`}
+            >
+              <Home className="w-3.5 h-3.5" />
+              Welcome
+            </button>
+            <button
+              type="button"
+              onClick={() => handleOpenImportModal('zip', false)}
               disabled={importingFiles}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-blue-500 cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-blue-500/40 bg-blue-600/10 text-blue-700 dark:text-blue-300 text-xs font-semibold hover:bg-blue-600/20 cursor-pointer disabled:opacity-50"
             >
               {importingFiles ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderUp className="w-3.5 h-3.5" />}
-              Import Folder
+              Import Project
             </button>
-            <button
-              type="button"
-              onClick={() => multiFileInputRef.current?.click()}
-              disabled={importingFiles}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-blue-500 cursor-pointer disabled:opacity-50"
-            >
-              <FileCode2 className="w-3.5 h-3.5" />
-              Import Files
-            </button>
+            {activeProject && canModifyProject && (
+              <button
+                type="button"
+                onClick={() => handleOpenImportModal('zip', true)}
+                disabled={importingFiles}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-blue-500 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Refresh Project
+              </button>
+            )}
             {activeProject && canModifyProject && (
               <button
                 type="button"
@@ -1168,9 +1641,21 @@ export function ProjectRescueView() {
                 Add File
               </button>
             )}
+            {activeProject && (
+              <button
+                type="button"
+                onClick={() => setCustomScanModalOpen(true)}
+                disabled={scanning || loadingFiles}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-blue-500 cursor-pointer disabled:opacity-50"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                Custom Scan
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
+                setShowWelcomeScreen(false);
                 setTab('rescue_mode');
                 setRescueStep(1);
               }}
@@ -1181,7 +1666,10 @@ export function ProjectRescueView() {
             </button>
             <button
               type="button"
-              onClick={() => handleRunScan()}
+              onClick={() => {
+                setShowWelcomeScreen(false);
+                handleRunScan();
+              }}
               disabled={scanning || loadingFiles || !activeProject}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
             >
@@ -1206,6 +1694,7 @@ export function ProjectRescueView() {
               onChange={(e) => {
                 setSelectedProjectId(e.target.value);
                 setActiveIdeProjectId(e.target.value);
+                setShowWelcomeScreen(false);
               }}
               aria-label="Select project to diagnose"
               className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-semibold text-slate-900 dark:text-white max-w-[280px]"
@@ -1230,6 +1719,7 @@ export function ProjectRescueView() {
               <option value="quick">Quick Scan (Syntax &amp; Imports)</option>
               <option value="deep">Deep Scan (Architecture &amp; API)</option>
               <option value="full">Full Project Scan (Complete Report)</option>
+              <option value="custom">Custom Scan ({customScanConfig.checks.length} Checks)</option>
             </select>
 
             {activeProject && (
@@ -1273,46 +1763,101 @@ export function ProjectRescueView() {
         </div>
       </div>
 
-      {/* No Project Empty State */}
-      {!activeProject ? (
-        <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322] p-12 text-center space-y-4">
-          <FolderGit2 className="w-10 h-10 text-blue-500 mx-auto" />
-          <div className="space-y-1">
-            <h2 className="text-base font-bold text-slate-900 dark:text-white">
-              Select, Drag &amp; Drop, or Import a Coding Project to Rescue
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-              Drag and drop a local folder or multi-file codebase anywhere here, use the import buttons above, or open any existing project in Mideo Projects.
-            </p>
+      {/* 10-Stage Live Progress Banner */}
+      {scanning && (
+        <div className="rounded-xl border border-blue-500/40 bg-blue-500/10 p-4 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 font-semibold text-blue-700 dark:text-blue-300">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>{activeScanJob?.currentStage || 'Running diagnostic scan...'}</span>
+            </div>
+            <div className="flex items-center gap-3 font-mono tabular-nums text-[11px] text-slate-600 dark:text-slate-300">
+              {activeScanJob && (
+                <span>
+                  {activeScanJob.filesProcessed}/{activeScanJob.totalFiles} files · {activeScanJob.progressPct}%
+                </span>
+              )}
+              <span>{scanElapsedSec}s</span>
+              {activeScanJob && (
+                <button
+                  type="button"
+                  onClick={handleCancelScanJob}
+                  className="px-2.5 py-1 rounded border border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10 font-sans font-semibold cursor-pointer"
+                >
+                  Cancel Scan
+                </button>
+              )}
+            </div>
           </div>
-          <div className="flex flex-wrap justify-center gap-3">
-            <button
-              type="button"
-              onClick={() => folderInputRef.current?.click()}
-              disabled={importingFiles}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
-            >
-              <FolderUp className="w-4 h-4" />
-              Import Project Folder
-            </button>
-            <button
-              type="button"
-              onClick={() => multiFileInputRef.current?.click()}
-              disabled={importingFiles}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium cursor-pointer"
-            >
-              <FileCode2 className="w-4 h-4" />
-              Import Code Files
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveView('projects')}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium cursor-pointer"
-            >
-              Browse Mideo Projects
-            </button>
+          <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+            <div
+              className="h-full bg-blue-600 transition-all duration-300"
+              style={{ width: `${activeScanJob?.progressPct ?? 12}%` }}
+            />
           </div>
         </div>
+      )}
+
+      {/* Import Summary & Project Refresh Diff Banners */}
+      {lastImportSummary && (
+        <div className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-4 flex flex-wrap items-start justify-between gap-3 text-xs">
+          <div className="space-y-1">
+            <div className="font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4" />
+              Imported &ldquo;{lastImportSummary.projectTitle}&rdquo; via {lastImportSummary.sourceType.toUpperCase()}
+              {lastImportSummary.branch ? ` (${lastImportSummary.branch})` : ''}
+            </div>
+            <p className="text-slate-700 dark:text-slate-300 font-mono text-[11px]">
+              {lastImportSummary.importedCount} files imported · {lastImportSummary.skippedCount} ignored ·{' '}
+              {formatMediaBytes(lastImportSummary.totalBytes)} · Languages:{' '}
+              {Object.entries(lastImportSummary.languages)
+                .map(([lang, count]) => `${lang} (${count})`)
+                .join(', ')}
+            </p>
+            {lastRefreshDiff && (
+              <p className="text-[11px] font-mono text-slate-600 dark:text-slate-300">
+                Refresh Diff: +{lastRefreshDiff.added.length} added · ~{lastRefreshDiff.modified.length} modified · -
+                {lastRefreshDiff.removed.length} missing in import · {lastRefreshDiff.unchanged} unchanged
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLastImportSummary(null);
+              setLastRefreshDiff(null);
+            }}
+            className="p-1 text-slate-500 hover:text-slate-800 dark:hover:text-white cursor-pointer"
+            aria-label="Dismiss import summary"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Welcome Dashboard or Main Workspace */}
+      {!activeProject || showWelcomeScreen ? (
+        <RescueWelcomeScreen
+          accessibleProjects={accessibleProjects}
+          scanHistory={scanHistory}
+          investigationHistory={investigationHistory}
+          fixHistory={fixHistory}
+          onOpenImportModal={(m) => handleOpenImportModal(m || 'zip', false)}
+          onSelectProject={(pid, targetTab) => {
+            setSelectedProjectId(pid);
+            setActiveIdeProjectId(pid);
+            setShowWelcomeScreen(false);
+            if (targetTab) setTab(targetTab);
+          }}
+          onOpenTab={(targetTab) => {
+            if (accessibleProjects[0]) {
+              setSelectedProjectId(accessibleProjects[0].id);
+              setActiveIdeProjectId(accessibleProjects[0].id);
+              setShowWelcomeScreen(false);
+            }
+            setTab(targetTab);
+          }}
+        />
       ) : (
         /* Main Workspace Grid: Internal Rescue Sidebar + Active Panel */
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -1323,11 +1868,13 @@ export function ProjectRescueView() {
                 const Icon = item.icon;
                 const active = tab === item.id;
                 const countBadge =
-                  item.id === 'scanner' && activeReport
-                    ? activeReport.issues.length
-                    : item.id === 'history'
-                      ? scanHistory.length
-                      : null;
+                  item.id === 'files'
+                    ? files.length
+                    : item.id === 'scanner' && activeReport
+                      ? activeReport.issues.length
+                      : item.id === 'history'
+                        ? scanHistory.length + investigationHistory.length
+                        : null;
                 return (
                   <button
                     key={item.id}
@@ -1400,6 +1947,47 @@ export function ProjectRescueView() {
 
           {/* Main Rescue Content Surface */}
           <div className="lg:col-span-9 space-y-6">
+            {tab === 'files' && (
+              <RescueFilesTab
+                files={files}
+                activeReport={activeReport}
+                projectIssues={projectIssues}
+                fingerprintStale={fingerprintStale}
+                onInvestigateIssue={(iss) => handleInvestigate(iss)}
+                onProposeFixForFile={(fp, desc) =>
+                  handleProposeFix({ targetFilePath: fp, problemDescription: desc })
+                }
+                onRefreshProject={() => handleOpenImportModal('zip', true)}
+                onTriggerScan={() => handleRunScan()}
+              />
+            )}
+
+            {tab === 'intelligence' && (
+              <RescueIntelligenceTab
+                projectIndex={activeReport?.projectIndex}
+                onTriggerScan={() => handleRunScan('deep')}
+              />
+            )}
+
+            {tab === 'documentation' && (
+              <RescueDocumentationTab
+                activeReport={activeReport}
+                onTriggerScan={() => handleRunScan('deep')}
+              />
+            )}
+
+            {tab === 'settings' && (
+              <RescueSettingsTab
+                customConfig={customScanConfig}
+                onChangeCustomConfig={setCustomScanConfig}
+                explanationLevel={explanationLevel}
+                onChangeExplanationLevel={setExplanationLevel}
+                onRunCustomScan={() => {
+                  setTab('overview');
+                  handleRunScan('custom', customScanConfig);
+                }}
+              />
+            )}
             {/* ------------------------------------------------------------- */}
             {/* TAB 1: PROJECT OVERVIEW                                        */}
             {/* ------------------------------------------------------------- */}
@@ -1778,6 +2366,14 @@ export function ProjectRescueView() {
                           {m} Scan
                         </button>
                       ))}
+                      <button
+                        type="button"
+                        onClick={() => setCustomScanModalOpen(true)}
+                        disabled={scanning}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-500"
+                      >
+                        Custom
+                      </button>
                     </div>
                   </div>
 
@@ -1801,6 +2397,15 @@ export function ProjectRescueView() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
+                      <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={hideDismissedIssues}
+                          onChange={(e) => setHideDismissedIssues(e.target.checked)}
+                        />
+                        <span>Hide Dismissed ({dismissedIssues.length})</span>
+                      </label>
+
                       <select
                         value={certaintyFilter}
                         onChange={(e) => setCertaintyFilter(e.target.value as 'all' | 'confirmed' | 'possible')}
@@ -1862,110 +2467,161 @@ export function ProjectRescueView() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {filteredIssues.map((issue) => (
-                      <div
-                        key={issue.id}
-                        className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] p-5 space-y-3"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="space-y-1 min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                              <span
-                                className={`px-2 py-0.5 rounded border uppercase font-semibold ${severityBadgeClass(issue.severity)}`}
-                              >
-                                {issue.severity}
-                              </span>
-                              <span
-                                className={`px-2 py-0.5 rounded border font-medium ${
-                                  issue.certainty === 'confirmed'
-                                    ? 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400'
-                                    : 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
-                                }`}
-                              >
-                                {issue.certainty === 'confirmed' ? 'Confirmed Issue' : 'Potential Risk'} · {issue.confidence}%
-                              </span>
-                              <span className="font-mono text-slate-500">
-                                {issue.filePath}
-                                {issue.line ? `:${issue.line}` : ''}
-                              </span>
-                              <span className="text-slate-400">·</span>
-                              <span className="text-slate-500">{issue.evidenceSource}</span>
+                    {filteredIssues.map((issue) => {
+                      const isReviewed = reviewedSet.has(issue.id);
+                      const dismissedInfo = dismissedMap.get(issue.id);
+                      return (
+                        <div
+                          key={issue.id}
+                          className={`rounded-xl border bg-white dark:bg-[#0D1322] p-5 space-y-3 ${
+                            dismissedInfo
+                              ? 'border-slate-200/70 dark:border-slate-800/70 opacity-65'
+                              : 'border-slate-200 dark:border-slate-800'
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="space-y-1 min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                                <span
+                                  className={`px-2 py-0.5 rounded border uppercase font-semibold ${severityBadgeClass(issue.severity)}`}
+                                >
+                                  {issue.severity}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded border font-medium ${
+                                    issue.certainty === 'confirmed'
+                                      ? 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400'
+                                      : 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
+                                  }`}
+                                >
+                                  {issue.certainty === 'confirmed' ? 'Confirmed Issue' : 'Potential Risk'} · {issue.confidence}%
+                                </span>
+                                {isReviewed && (
+                                  <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-semibold">
+                                    Reviewed
+                                  </span>
+                                )}
+                                {dismissedInfo && (
+                                  <span className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold">
+                                    Dismissed ({dismissedInfo.reason.replace('_', ' ')})
+                                  </span>
+                                )}
+                                <span className="font-mono text-slate-500">
+                                  {issue.filePath}
+                                  {issue.line ? `:${issue.line}` : ''}
+                                </span>
+                                <span className="text-slate-400">·</span>
+                                <span className="text-slate-500">{issue.evidenceSource}</span>
+                              </div>
+                              <h3 className="text-sm font-bold text-slate-900 dark:text-white">{issue.title}</h3>
                             </div>
-                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">{issue.title}</h3>
+
+                            <div className="flex flex-wrap items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleInvestigate(issue)}
+                                disabled={investigating}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:border-blue-500 text-xs font-medium cursor-pointer"
+                              >
+                                <Microscope className="w-3.5 h-3.5 text-blue-500" />
+                                Investigate
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleProposeFix({
+                                    targetFilePath: issue.filePath,
+                                    problemDescription: `${issue.title}: ${issue.summary}`,
+                                    issueId: issue.id,
+                                  })
+                                }
+                                disabled={proposingFix}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
+                              >
+                                <Wrench className="w-3.5 h-3.5" />
+                                Propose Fix
+                              </button>
+                            </div>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-2 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => handleInvestigate(issue)}
-                              disabled={investigating}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:border-blue-500 text-xs font-medium cursor-pointer"
-                            >
-                              <Microscope className="w-3.5 h-3.5 text-blue-500" />
-                              Investigate
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleProposeFix({
-                                  targetFilePath: issue.filePath,
-                                  problemDescription: `${issue.title}: ${issue.summary}`,
-                                  issueId: issue.id,
-                                })
-                              }
-                              disabled={proposingFix}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
-                            >
-                              <Wrench className="w-3.5 h-3.5" />
-                              Propose Fix
-                            </button>
+                          <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                            {explanationLevel === 'beginner' ? issue.beginnerExplanation : issue.developerExplanation}
+                          </p>
+
+                          {issue.symbolOrSnippet && (
+                            <pre className="p-2.5 rounded-lg bg-slate-950 text-slate-200 text-[11px] font-mono overflow-x-auto border border-slate-800">
+                              <code>{issue.symbolOrSnippet}</code>
+                            </pre>
+                          )}
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-800 text-xs">
+                            <span className="text-slate-500">
+                              Recommended: <span className="text-slate-700 dark:text-slate-300">{issue.recommendedAction}</span>
+                            </span>
+                            <div className="flex flex-wrap items-center gap-2.5">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleIssueReviewed(issue.id)}
+                                className="text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                              >
+                                {isReviewed ? 'Unmark Reviewed' : 'Mark Reviewed'}
+                              </button>
+                              {dismissedInfo ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleReopenIssue(issue.id)}
+                                  className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                                >
+                                  Re-open
+                                </button>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDismissIssue(issue.id, 'false_positive')}
+                                    className="text-slate-500 hover:underline cursor-pointer"
+                                  >
+                                    False Positive
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDismissIssue(issue.id, 'wont_fix')}
+                                    className="text-slate-500 hover:underline cursor-pointer"
+                                  >
+                                    Won&apos;t Fix
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => openCourse(matchedLearningResource.matchedCourse.id)}
+                                className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                              >
+                                <BookOpen className="w-3.5 h-3.5" />
+                                Learn More
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  askAi({
+                                    mode: 'debug',
+                                    prompt: `Help debug this ${issue.category} issue in ${issue.filePath}: ${issue.title}. ${issue.summary}`,
+                                    context: {
+                                      filename: issue.filePath,
+                                      errorMessage: issue.summary,
+                                    },
+                                  })
+                                }
+                                className="inline-flex items-center gap-1 text-violet-600 dark:text-violet-400 hover:underline cursor-pointer"
+                              >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                Mideo AI Debug
+                              </button>
+                            </div>
                           </div>
                         </div>
-
-                        <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                          {explanationLevel === 'beginner' ? issue.beginnerExplanation : issue.developerExplanation}
-                        </p>
-
-                        {issue.symbolOrSnippet && (
-                          <pre className="p-2.5 rounded-lg bg-slate-950 text-slate-200 text-[11px] font-mono overflow-x-auto border border-slate-800">
-                            <code>{issue.symbolOrSnippet}</code>
-                          </pre>
-                        )}
-
-                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-800 text-xs">
-                          <span className="text-slate-500">
-                            Recommended: <span className="text-slate-700 dark:text-slate-300">{issue.recommendedAction}</span>
-                          </span>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => openCourse(matchedLearningResource.matchedCourse.id)}
-                              className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-                            >
-                              <BookOpen className="w-3.5 h-3.5" />
-                              Learn More
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                askAi({
-                                  mode: 'debug',
-                                  prompt: `Help debug this ${issue.category} issue in ${issue.filePath}: ${issue.title}. ${issue.summary}`,
-                                  context: {
-                                    filename: issue.filePath,
-                                    errorMessage: issue.summary,
-                                  },
-                                })
-                              }
-                              className="inline-flex items-center gap-1 text-violet-600 dark:text-violet-400 hover:underline cursor-pointer"
-                            >
-                              <Sparkles className="w-3.5 h-3.5" />
-                              Open in Mideo AI Debug
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1996,6 +2652,55 @@ export function ProjectRescueView() {
                     placeholder="e.g., My login button triggers nothing when clicked, or TypeError: Cannot read properties of undefined reading 'map' in App.jsx..."
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#080C17] text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
                   />
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="block font-medium text-slate-600 dark:text-slate-300 mb-1">
+                        Expected Behavior (Optional)
+                      </label>
+                      <input
+                        value={expectedBehavior}
+                        onChange={(e) => setExpectedBehavior(e.target.value)}
+                        placeholder="e.g., Submitting saves data and opens the dashboard"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#080C17]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-medium text-slate-600 dark:text-slate-300 mb-1">
+                        Actual Behavior (Optional)
+                      </label>
+                      <input
+                        value={actualBehavior}
+                        onChange={(e) => setActualBehavior(e.target.value)}
+                        placeholder="e.g., Throws 404 or page reloads with empty list"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#080C17]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#080C17] cursor-pointer hover:border-blue-500">
+                      <ImagePlus className="w-3.5 h-3.5 text-blue-500" />
+                      <span>{issueScreenshot ? issueScreenshot.name : 'Attach Error Screenshot (PNG/JPG/WebP)'}</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={handleScreenshotUpload}
+                      />
+                    </label>
+                    {issueScreenshot && (
+                      <button
+                        type="button"
+                        onClick={() => setIssueScreenshot(null)}
+                        className="inline-flex items-center gap-1 text-red-500 hover:underline cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Remove Screenshot
+                      </button>
+                    )}
+                  </div>
+
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap gap-2">
                       {[
@@ -2348,7 +3053,9 @@ export function ProjectRescueView() {
                           type="button"
                           onClick={async () => {
                             try {
-                              await navigator.clipboard.writeText(fixProposal.proposedCode);
+                              await navigator.clipboard.writeText(
+                                isEditingProposedCode ? editedProposedCode : fixProposal.proposedCode,
+                              );
                               notify('success', 'Proposed corrected code copied to clipboard.');
                             } catch {
                               notify('error', 'Clipboard access denied.');
@@ -2361,6 +3068,14 @@ export function ProjectRescueView() {
                         </button>
                         {fixProposal.status === 'pending' && (
                           <>
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingProposedCode((v) => !v)}
+                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium cursor-pointer hover:border-blue-500"
+                            >
+                              <Code2 className="w-3.5 h-3.5 text-blue-500" />
+                              {isEditingProposedCode ? 'Close Editor' : 'Edit Proposed Fix'}
+                            </button>
                             <button
                               type="button"
                               onClick={() => {
@@ -2417,9 +3132,24 @@ export function ProjectRescueView() {
                     {/* Fix Impact Analysis Panel */}
                     <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17] space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-                          Pre-Apply Fix Impact Analysis
-                        </h4>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                            Pre-Apply Fix Impact Analysis
+                          </h4>
+                          {fixProposal.impact.riskLevel && (
+                            <span
+                              className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                                fixProposal.impact.riskLevel === 'High Risk'
+                                  ? 'bg-red-500/15 text-red-600 dark:text-red-400'
+                                  : fixProposal.impact.riskLevel === 'Moderate Risk'
+                                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                                    : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                              }`}
+                            >
+                              {fixProposal.impact.riskLevel}
+                            </span>
+                          )}
+                        </div>
                         <span
                           className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
                             fixProposal.impact.preFlightPassed
@@ -2430,6 +3160,9 @@ export function ProjectRescueView() {
                           {fixProposal.impact.preFlightPassed ? 'Pre-Flight Checks Passed' : 'Pre-Flight Warnings Detected'}
                         </span>
                       </div>
+                      {fixProposal.impact.riskRationale && (
+                        <p className="text-[11px] text-slate-500">{fixProposal.impact.riskRationale}</p>
+                      )}
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                         <div>
@@ -2477,35 +3210,87 @@ export function ProjectRescueView() {
                       )}
                     </div>
 
+                    {/* Optional Inline Code Editor before Apply */}
+                    {isEditingProposedCode && (
+                      <div className="p-4 rounded-xl border border-blue-500/40 bg-slate-50 dark:bg-[#080C17] space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-slate-900 dark:text-white">
+                            Edit Proposed Code Before Applying ({fixProposal.filePath})
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditedProposedCode(fixProposal.proposedCode);
+                                setIsEditingProposedCode(false);
+                              }}
+                              className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs cursor-pointer"
+                            >
+                              Cancel Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleReanalyzeEditedFix}
+                              disabled={reanalyzingImpact}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer disabled:opacity-50"
+                            >
+                              {reanalyzingImpact ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <RefreshCw className="w-3.5 h-3.5" />
+                              )}
+                              Re-run Impact Analysis
+                            </button>
+                          </div>
+                        </div>
+                        <textarea
+                          rows={12}
+                          value={editedProposedCode}
+                          onChange={(e) => setEditedProposedCode(e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-950 text-slate-100 font-mono text-xs"
+                        />
+                      </div>
+                    )}
+
                     {/* Side-by-Side / Unified Code Diff */}
                     <RescueCodeDiff
                       filePath={fixProposal.filePath}
                       originalCode={fixProposal.originalCode}
-                      proposedCode={fixProposal.proposedCode}
+                      proposedCode={isEditingProposedCode ? editedProposedCode : fixProposal.proposedCode}
                       onCopied={() => notify('success', 'Fix copied to clipboard.')}
                     />
 
                     {/* Post-Apply Verification & Rollback Result */}
-                    {verificationResult && (
+                    {verificationResult && (() => {
+                      const vMeta = verificationStatusMeta(
+                        verificationResult.verificationStatus,
+                        verificationResult.passed,
+                      );
+                      return (
                       <div
                         className={`p-4 rounded-xl border space-y-3 ${
                           verificationResult.passed
                             ? 'border-emerald-500/40 bg-emerald-500/5'
-                            : 'border-red-500/40 bg-red-500/5'
+                            : 'border-amber-500/40 bg-amber-500/5'
                         }`}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="flex items-center gap-2">
                             {verificationResult.passed ? (
-                              <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                              <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
                             ) : (
-                              <AlertCircle className="w-5 h-5 text-red-500" />
+                              <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
                             )}
                             <div>
-                              <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-                                Post-Fix Verification Result
-                              </h4>
-                              <p className="text-xs text-slate-600 dark:text-slate-300">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                                  Post-Fix Verification Result
+                                </h4>
+                                <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${vMeta.badgeClass}`}>
+                                  {vMeta.label}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
                                 {verificationResult.summary}
                               </p>
                             </div>
@@ -2545,7 +3330,8 @@ export function ProjectRescueView() {
                           ))}
                         </div>
                       </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322] p-10 text-center text-xs text-slate-500">
@@ -2593,7 +3379,7 @@ export function ProjectRescueView() {
                   <div className="space-y-4">
                     <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#080C17] border border-slate-200 dark:border-slate-800 space-y-3">
                       <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                        Step 1: What went wrong in &ldquo;{activeProject.title}&rdquo;?
+                        Step 1: Something broken? Let&apos;s rescue your project &ldquo;{activeProject.title}&rdquo;.
                       </h3>
                       <textarea
                         rows={3}
@@ -2602,6 +3388,41 @@ export function ProjectRescueView() {
                         placeholder="Describe what happened in plain English (e.g. 'My page doesn't render anything', 'Form submit reloads without saving', 'I get a syntax or import error')..."
                         className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322] text-xs"
                       />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                        <input
+                          value={expectedBehavior}
+                          onChange={(e) => setExpectedBehavior(e.target.value)}
+                          placeholder="Expected behavior (optional)"
+                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322]"
+                        />
+                        <input
+                          value={actualBehavior}
+                          onChange={(e) => setActualBehavior(e.target.value)}
+                          placeholder="Actual behavior (optional)"
+                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322]"
+                        />
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1322] cursor-pointer">
+                          <ImagePlus className="w-3.5 h-3.5 text-blue-500" />
+                          <span>{issueScreenshot ? issueScreenshot.name : 'Upload Error Screenshot (optional)'}</span>
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            className="hidden"
+                            onChange={handleScreenshotUpload}
+                          />
+                        </label>
+                        {issueScreenshot && (
+                          <button
+                            type="button"
+                            onClick={() => setIssueScreenshot(null)}
+                            className="text-red-500 hover:underline cursor-pointer"
+                          >
+                            Remove Screenshot
+                          </button>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         {[
                           'Website is blank / not loading',
@@ -2778,9 +3599,18 @@ export function ProjectRescueView() {
                           : 'border-amber-500/40 bg-amber-500/5'
                       }`}
                     >
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                        Step 6: Final Verification Summary
-                      </h3>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                          Step 6: Final Verification Summary
+                        </h3>
+                        <span
+                          className={`px-2 py-0.5 rounded border text-[10px] font-bold ${
+                            verificationStatusMeta(verificationResult.verificationStatus, verificationResult.passed).badgeClass
+                          }`}
+                        >
+                          {verificationStatusMeta(verificationResult.verificationStatus, verificationResult.passed).label}
+                        </span>
+                      </div>
                       <p className="text-xs text-slate-700 dark:text-slate-300">{verificationResult.summary}</p>
                       {verificationResult.checksExecuted.map((c, idx) => (
                         <div key={idx} className="flex items-center gap-2 text-xs">
@@ -2920,6 +3750,86 @@ export function ProjectRescueView() {
                   )}
                 </div>
 
+                {/* Saved Root Cause Investigations */}
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] p-5 space-y-4">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                      Saved Root Cause Investigations ({investigationHistory.length})
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Reopen past multi-file investigations, track status, or clear resolved entries.
+                    </p>
+                  </div>
+
+                  {investigationHistory.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-2">No saved investigations yet.</p>
+                  ) : (
+                    <div className="divide-y divide-slate-200 dark:divide-slate-800">
+                      {investigationHistory.map((inv) => (
+                        <div key={inv.id} className="py-3 flex flex-wrap items-center justify-between gap-3">
+                          <div className="space-y-0.5 min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              <span className="font-semibold text-slate-900 dark:text-white truncate">
+                                {inv.analysis.problemTitle}
+                              </span>
+                              <span className="font-mono text-[11px] text-slate-500">
+                                {inv.projectTitle} · {inv.analysis.responsibleFile}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 font-mono text-[10px]">
+                                {inv.analysis.confidence}%
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                              {formatDateLabel(inv.createdAt)} · {inv.analysis.certainty === 'confirmed' ? 'Confirmed' : 'Possible Cause'}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={inv.status}
+                              onChange={async (e) => {
+                                const nextStatus = e.target.value as 'open' | 'fix_proposed' | 'resolved';
+                                await updateRescueInvestigationStatus(inv.id, nextStatus).catch(() => {});
+                                setInvestigationHistory((prev) =>
+                                  prev.map((item) => (item.id === inv.id ? { ...item, status: nextStatus } : item)),
+                                );
+                              }}
+                              aria-label="Investigation status"
+                              className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs"
+                            >
+                              <option value="open">Open</option>
+                              <option value="fix_proposed">Fix Proposed</option>
+                              <option value="resolved">Resolved</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedProjectId(inv.projectId);
+                                setRootCause(inv.analysis);
+                                setTab('root_cause');
+                              }}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium cursor-pointer"
+                            >
+                              Open
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await deleteRescueInvestigationRecord(inv.id).catch(() => {});
+                                setInvestigationHistory((prev) => prev.filter((item) => item.id !== inv.id));
+                              }}
+                              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-400 hover:text-red-500 cursor-pointer"
+                              title="Delete investigation"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* Applied Fixes & Rollback History */}
                 <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] p-5 space-y-4">
                   <div>
@@ -2935,7 +3845,9 @@ export function ProjectRescueView() {
                     <p className="text-xs text-slate-500 py-4">No fixes have been applied yet.</p>
                   ) : (
                     <div className="divide-y divide-slate-200 dark:divide-slate-800">
-                      {fixHistory.map((fix) => (
+                      {fixHistory.map((fix) => {
+                        const fMeta = verificationStatusMeta(fix.verificationStatus, fix.verificationPassed);
+                        return (
                         <div key={fix.id} className="py-3 flex flex-wrap items-center justify-between gap-3">
                           <div className="space-y-0.5 min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -2944,19 +3856,13 @@ export function ProjectRescueView() {
                               </span>
                               <span className="text-slate-400">({fix.projectTitle})</span>
                               <span
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                                className={`px-1.5 py-0.5 rounded border text-[10px] font-semibold uppercase ${
                                   fix.status === 'rolled_back'
-                                    ? 'bg-slate-200 dark:bg-slate-800 text-slate-500'
-                                    : fix.verificationPassed
-                                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                                      : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                                    ? 'bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500'
+                                    : fMeta.badgeClass
                                 }`}
                               >
-                                {fix.status === 'rolled_back'
-                                  ? 'Rolled Back'
-                                  : fix.verificationPassed
-                                    ? 'Verified'
-                                    : 'Needs Review'}
+                                {fix.status === 'rolled_back' ? 'Rolled Back' : fMeta.label}
                               </span>
                             </div>
                             <p className="text-xs text-slate-600 dark:text-slate-300 truncate">
@@ -2984,7 +3890,8 @@ export function ProjectRescueView() {
                             </button>
                           )}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -3129,10 +4036,16 @@ export function ProjectRescueView() {
               </div>
             </div>
 
-            <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17] text-xs space-y-1">
+            <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17] text-xs space-y-1.5">
               <div>
                 <span className="font-semibold">Fix:</span> {fixProposal.problemIdentified}
               </div>
+              {fixProposal.impact.riskLevel && (
+                <div>
+                  <span className="font-semibold">Risk Assessment:</span> {fixProposal.impact.riskLevel}
+                  {fixProposal.impact.riskRationale ? ` — ${fixProposal.impact.riskRationale}` : ''}
+                </div>
+              )}
               <div>
                 <span className="font-semibold">Dependent files affected:</span>{' '}
                 {fixProposal.impact.dependentFiles.length > 0
@@ -3162,6 +4075,34 @@ export function ProjectRescueView() {
           </div>
         </div>
       )}
+
+      {/* Custom Scan Modal */}
+      <RescueCustomScanModal
+        open={customScanModalOpen}
+        customConfig={customScanConfig}
+        onChangeCustomConfig={setCustomScanConfig}
+        onClose={() => setCustomScanModalOpen(false)}
+        onStartCustomScan={() => {
+          setShowWelcomeScreen(false);
+          handleRunScan('custom', customScanConfig);
+        }}
+      />
+
+      {/* 4-Source Importer Modal (ZIP, Folder, Files, GitHub Repo) */}
+      <RescueImportModal
+        open={importModalOpen}
+        initialMode={importModalMode}
+        hasActiveProject={Boolean(activeProject)}
+        activeProjectTitle={activeProject?.title}
+        canModifyProject={canModifyProject}
+        defaultTargetMode={activeProject && canModifyProject ? importTargetMode : 'new'}
+        isRefreshMode={importModalRefresh}
+        onClose={() => setImportModalOpen(false)}
+        onCompleteRawEntries={(entries, sourceType, targetMode, isRefresh) =>
+          ingestImportedEntries(entries, { sourceType, targetMode, isRefresh })
+        }
+        onCompleteNormalizedFiles={finalizeNormalizedProjectImport}
+      />
 
       {/* Add / Paste File Modal inside Project Rescue AI */}
       {showNewFileModal && activeProject && (
