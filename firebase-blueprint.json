@@ -948,6 +948,49 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "userId", "projectId", "projectTitle", "problemTitle", "responsibleFile", "certainty", "confidence", "analysis", "status", "createdAt", "updatedAt"]
+    },
+    "PairChatMessage": {
+      "title": "PairChatMessage",
+      "description": "Real-time pair programming chat message scoped to a collaborative IDE project.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "senderPhotoURL": { "type": "string", "maxLength": 500 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "fileRef": { "type": "string", "maxLength": 180 },
+        "lineRef": { "type": "number" },
+        "collaboratorIds": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "projectId", "senderId", "senderName", "body", "createdAt"]
+    },
+    "MockInterview": {
+      "title": "MockInterview",
+      "description": "Completed timed mock coding interview session, transcript, and readiness scorecard per user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "careerPathId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "careerPathTitle": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "challengeId": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "challengeTitle": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"] },
+        "language": { "type": "string", "enum": ["javascript", "python"] },
+        "durationMinutes": { "type": "number" },
+        "elapsedSeconds": { "type": "number" },
+        "status": { "type": "string", "enum": ["completed", "time_expired"] },
+        "passedTests": { "type": "number" },
+        "totalTests": { "type": "number" },
+        "codeSubmitted": { "type": "string", "maxLength": 50000 },
+        "transcript": { "type": "array" },
+        "scorecard": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "careerPathId", "careerPathTitle", "challengeId", "challengeTitle", "difficulty", "language", "durationMinutes", "elapsedSeconds", "status", "passedTests", "totalTests", "codeSubmitted", "transcript", "scorecard", "createdAt"]
     }
   },
   "firestore": {
@@ -1138,6 +1181,14 @@
     "/rescueInvestigations/{investigationId}": {
       "schema": { "$ref": "#/entities/RescueInvestigation" },
       "description": "Per-user saved Project Rescue AI root-cause investigations."
+    },
+    "/projects/{projectId}/pairMessages/{messageId}": {
+      "schema": { "$ref": "#/entities/PairChatMessage" },
+      "description": "Live pair programming chat messages scoped to a shared project."
+    },
+    "/mockInterviews/{interviewId}": {
+      "schema": { "$ref": "#/entities/MockInterview" },
+      "description": "Per-user completed timed mock coding interview sessions and scorecards."
     }
   }
 }

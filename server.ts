@@ -5,12 +5,14 @@ import fs from 'fs';
 import path from 'path';
 import vm from 'node:vm';
 import { spawnSync } from 'node:child_process';
+import http from 'node:http';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import { initializeApp, getApps, getApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { SERVER_CHALLENGE_SPECS } from './src/data/challengesServer.ts';
+import { CHALLENGES } from './src/data/challengesData.ts';
 import {
   buildPublicEvalSummary,
   deleteCustomEvalSpec,
@@ -56,11 +58,17 @@ import {
   getRescueAdminTelemetry,
   recordRescueAdminEvent,
 } from './src/server/rescueTelemetry.ts';
+import { attachPairProgrammingWebSocket } from './src/server/pairProgrammingHub.ts';
+import {
+  evaluateInterviewSession,
+  generateInterviewFollowup,
+} from './src/server/interviewEngine.ts';
 import type {
   ArchitecturePlan,
   MissionRuntimeTestSpec,
   MissionServerEvalConfig,
   MissionTestCaseResult,
+  MockInterviewQuestionTurn,
   ProjectVersionSnapshot,
   RescueChatMessage,
   RescueCustomScanConfig,
@@ -77,14 +85,21 @@ import type {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load Firebase projectId from firebase-applet-config.json (verifyIdToken requires no IAM)
+// Load Firebase projectId & firestoreDatabaseId from firebase-applet-config.json (verifyIdToken requires no IAM)
 let firebaseProjectId = '';
+let firestoreDatabaseId = '(default)';
 try {
   const configPath = path.resolve(__dirname, 'firebase-applet-config.json');
   if (fs.existsSync(configPath)) {
-    const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as { projectId?: string };
+    const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      projectId?: string;
+      firestoreDatabaseId?: string;
+    };
     if (raw.projectId && raw.projectId !== 'remixed-project-id') {
       firebaseProjectId = raw.projectId;
+    }
+    if (raw.firestoreDatabaseId && raw.firestoreDatabaseId.trim()) {
+      firestoreDatabaseId = raw.firestoreDatabaseId.trim();
     }
   }
 } catch (err) {
@@ -1354,6 +1369,145 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
   });
 
   // -------------------------------------------------------------------------
+  // Timed Mock Coding Interviews (AI Follow-up & Rubric Evaluation)
+  // -------------------------------------------------------------------------
+  app.post('/api/interviews/followup', requireAuth, async (req: AuthedRequest, res: Response) => {
+    const uid = req.uid || req.ip || 'anon';
+    if (!checkRateLimit(`interview-followup:${uid}`, 25, 60_000)) {
+      res.status(429).json({ error: 'Interview AI rate limit reached. Wait a moment before asking again.' });
+      return;
+    }
+
+    const {
+      careerPathTitle,
+      challengeId,
+      language,
+      code,
+      passedCount,
+      totalCount,
+      elapsedSeconds,
+      transcript,
+    } = req.body as {
+      careerPathTitle?: string;
+      challengeId?: string;
+      language?: 'javascript' | 'python';
+      code?: string;
+      passedCount?: number;
+      totalCount?: number;
+      elapsedSeconds?: number;
+      transcript?: MockInterviewQuestionTurn[];
+    };
+
+    const challengeSpec = CHALLENGES.find((c) => c.id === challengeId);
+    if (!challengeSpec) {
+      res.status(404).json({ error: 'Selected coding challenge was not found.' });
+      return;
+    }
+    if (language !== 'javascript' && language !== 'python') {
+      res.status(400).json({ error: 'Mock coding interviews support javascript or python.' });
+      return;
+    }
+    if (typeof code !== 'string' || code.length > 50_000) {
+      res.status(400).json({ error: 'Invalid or oversized code payload.' });
+      return;
+    }
+
+    try {
+      const followup = await generateInterviewFollowup({
+        careerPathTitle: (careerPathTitle || 'Software Engineer').slice(0, 100),
+        challengeTitle: challengeSpec.title,
+        problemStatement: challengeSpec.problemStatement,
+        difficulty: challengeSpec.difficulty,
+        language,
+        code,
+        passedCount: typeof passedCount === 'number' && Number.isFinite(passedCount) ? Math.max(0, passedCount) : 0,
+        totalCount:
+          typeof totalCount === 'number' && Number.isFinite(totalCount)
+            ? Math.max(0, totalCount)
+            : SERVER_CHALLENGE_SPECS[challengeSpec.id]?.tests.length || 0,
+        elapsedSeconds:
+          typeof elapsedSeconds === 'number' && Number.isFinite(elapsedSeconds) ? Math.max(0, elapsedSeconds) : 0,
+        transcript: Array.isArray(transcript) ? transcript.slice(-12) : [],
+      });
+      res.json(followup);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to generate interviewer follow-up.';
+      res.status(msg.includes('GEMINI_API_KEY') ? 503 : 502).json({ error: msg });
+    }
+  });
+
+  app.post('/api/interviews/evaluate', requireAuth, async (req: AuthedRequest, res: Response) => {
+    const uid = req.uid || req.ip || 'anon';
+    if (!checkRateLimit(`interview-eval:${uid}`, 15, 60_000)) {
+      res.status(429).json({ error: 'Evaluation rate limit reached. Please wait a minute.' });
+      return;
+    }
+
+    const {
+      careerPathTitle,
+      challengeId,
+      language,
+      code,
+      passedTests,
+      totalTests,
+      durationMinutes,
+      elapsedSeconds,
+      transcript,
+    } = req.body as {
+      careerPathTitle?: string;
+      challengeId?: string;
+      language?: 'javascript' | 'python';
+      code?: string;
+      passedTests?: number;
+      totalTests?: number;
+      durationMinutes?: number;
+      elapsedSeconds?: number;
+      transcript?: MockInterviewQuestionTurn[];
+    };
+
+    const challengeSpec = CHALLENGES.find((c) => c.id === challengeId);
+    if (!challengeSpec) {
+      res.status(404).json({ error: 'Selected coding challenge was not found.' });
+      return;
+    }
+    if (language !== 'javascript' && language !== 'python') {
+      res.status(400).json({ error: 'Mock coding interviews support javascript or python.' });
+      return;
+    }
+    if (typeof code !== 'string' || code.length > 50_000) {
+      res.status(400).json({ error: 'Invalid or oversized code payload.' });
+      return;
+    }
+
+    try {
+      const scorecard = await evaluateInterviewSession({
+        careerPathTitle: (careerPathTitle || 'Software Engineer').slice(0, 100),
+        challengeTitle: challengeSpec.title,
+        problemStatement: challengeSpec.problemStatement,
+        difficulty: challengeSpec.difficulty,
+        language,
+        code,
+        passedTests: typeof passedTests === 'number' && Number.isFinite(passedTests) ? Math.max(0, passedTests) : 0,
+        totalTests:
+          typeof totalTests === 'number' && Number.isFinite(totalTests)
+            ? Math.max(1, totalTests)
+            : SERVER_CHALLENGE_SPECS[challengeSpec.id]?.tests.length || 1,
+        durationMinutes:
+          typeof durationMinutes === 'number' && Number.isFinite(durationMinutes)
+            ? Math.max(5, Math.min(120, durationMinutes))
+            : 30,
+        elapsedSeconds:
+          typeof elapsedSeconds === 'number' && Number.isFinite(elapsedSeconds) ? Math.max(0, elapsedSeconds) : 0,
+        transcript: Array.isArray(transcript) ? transcript.slice(-24) : [],
+      });
+      res.json({ scorecard });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to evaluate mock interview session.';
+      res.status(msg.includes('GEMINI_API_KEY') ? 503 : 502).json({ error: msg });
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // Mission Mode Evaluation Engine & Admin Eval Config Management
   // -------------------------------------------------------------------------
   app.get('/api/missions/eval-meta/:missionId', requireAuth, (req: AuthedRequest, res: Response) => {
@@ -2568,7 +2722,13 @@ print("__MIDEOCODE_RESULT__" + json.dumps(_out))
       : rawEnvPort && rawEnvPort !== nginxPort
         ? rawEnvPort
         : Number(process.env.DEFAULT_APP_PORT) || 3000;
-  app.listen(PORT, '0.0.0.0', () => {
+  const httpServer = http.createServer(app);
+  attachPairProgrammingWebSocket(httpServer, {
+    firebaseProjectId,
+    firestoreDatabaseId,
+  });
+
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`MideoCode server listening on http://0.0.0.0:${PORT}`);
   });
 }

@@ -13,7 +13,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { fetchWithAuthAndRetry } from './authService';
 import { sanitizeForFirestore } from './dataService';
 import type {
@@ -24,6 +24,15 @@ import type {
   ProjectComment,
   ProjectInvitation,
 } from '../types/mideocode';
+
+function toTimestampMs(val: unknown): number {
+  if (!val) return 0;
+  if (typeof val === 'object' && val !== null && 'toMillis' in val && typeof (val as { toMillis: () => number }).toMillis === 'function') {
+    return (val as { toMillis: () => number }).toMillis();
+  }
+  const parsed = new Date(String(val)).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 export async function logProjectActivity(
   projectId: string,
@@ -47,7 +56,7 @@ export async function logProjectActivity(
         targetName: options?.targetName?.slice(0, 160),
         collaboratorIds:
           options?.collaboratorIds && options.collaboratorIds.length > 0
-            ? options.collaboratorIds
+            ? options.collaboratorIds.slice(0, 20)
             : undefined,
         createdAt: serverTimestamp(),
       }),
@@ -58,17 +67,22 @@ export async function logProjectActivity(
 }
 
 export async function listProjectActivity(projectId: string): Promise<ProjectActivityEvent[]> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return [];
+  const actCol = collection(db, 'projects', projectId, 'activity');
   try {
-    const q = query(
-      collection(db, 'projects', projectId, 'activity'),
-      orderBy('createdAt', 'desc'),
-      limit(50),
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => d.data() as ProjectActivityEvent);
+    const [ownSnap, collabSnap] = await Promise.all([
+      getDocs(query(actCol, where('actorId', '==', uid), limit(50))),
+      getDocs(query(actCol, where('collaboratorIds', 'array-contains', uid), limit(50))),
+    ]);
+    const byId = new Map<string, ProjectActivityEvent>();
+    for (const d of ownSnap.docs) byId.set(d.id, d.data() as ProjectActivityEvent);
+    for (const d of collabSnap.docs) byId.set(d.id, d.data() as ProjectActivityEvent);
+    return Array.from(byId.values())
+      .sort((a, b) => toTimestampMs(b.createdAt) - toTimestampMs(a.createdAt))
+      .slice(0, 50);
   } catch {
-    const snap = await getDocs(collection(db, 'projects', projectId, 'activity'));
-    return snap.docs.map((d) => d.data() as ProjectActivityEvent);
+    return [];
   }
 }
 
@@ -259,24 +273,60 @@ export async function declineOrCancelInvitation(
 async function syncCollaboratorIdsAcrossSubcollections(
   projectId: string,
   collaboratorIds: string[],
+  ownerId?: string,
 ): Promise<void> {
-  const [filesSnap, versionsSnap, commentsSnap] = await Promise.all([
-    getDocs(collection(db, 'projects', projectId, 'files')),
-    getDocs(collection(db, 'projects', projectId, 'versions')),
-    getDocs(collection(db, 'projects', projectId, 'comments')),
-  ]);
+  const actorUid = ownerId || auth.currentUser?.uid;
+  if (!actorUid) return;
+
+  const filesCol = collection(db, 'projects', projectId, 'files');
+  const versionsCol = collection(db, 'projects', projectId, 'versions');
+  const commentsCol = collection(db, 'projects', projectId, 'comments');
+  const pairCol = collection(db, 'projects', projectId, 'pairMessages');
+
+  const [filesSnap, versionsSnap, commentsOwnSnap, commentsCollabSnap, pairOwnSnap, pairCollabSnap] =
+    await Promise.all([
+      getDocs(query(filesCol, where('ownerId', '==', actorUid))).catch(() => null),
+      getDocs(query(versionsCol, where('ownerId', '==', actorUid))).catch(() => null),
+      getDocs(query(commentsCol, where('authorId', '==', actorUid))).catch(() => null),
+      getDocs(query(commentsCol, where('collaboratorIds', 'array-contains', actorUid))).catch(() => null),
+      getDocs(query(pairCol, where('senderId', '==', actorUid))).catch(() => null),
+      getDocs(query(pairCol, where('collaboratorIds', 'array-contains', actorUid))).catch(() => null),
+    ]);
+
+  const memberIdsWithOwner = Array.from(new Set([actorUid, ...collaboratorIds].filter(Boolean)));
+  const boundedCollab = memberIdsWithOwner.slice(0, 20);
+  const boundedPair = memberIdsWithOwner.slice(0, 25);
 
   const batch = writeBatch(db);
-  for (const d of filesSnap.docs) {
-    batch.update(d.ref, { collaboratorIds });
+  let updates = 0;
+
+  for (const d of filesSnap?.docs || []) {
+    batch.update(d.ref, { collaboratorIds: boundedCollab });
+    updates++;
   }
-  for (const d of versionsSnap.docs) {
-    batch.update(d.ref, { collaboratorIds });
+  for (const d of versionsSnap?.docs || []) {
+    batch.update(d.ref, { collaboratorIds: boundedCollab });
+    updates++;
   }
-  for (const d of commentsSnap.docs) {
-    batch.update(d.ref, { collaboratorIds });
+  const commentRefs = new Map<string, (typeof commentsCollabSnap extends null ? never : NonNullable<typeof commentsCollabSnap>['docs'][number]['ref'])>();
+  for (const d of commentsOwnSnap?.docs || []) commentRefs.set(d.id, d.ref);
+  for (const d of commentsCollabSnap?.docs || []) commentRefs.set(d.id, d.ref);
+  for (const ref of commentRefs.values()) {
+    batch.update(ref, { collaboratorIds: boundedCollab });
+    updates++;
   }
-  await batch.commit();
+
+  const pairRefs = new Map<string, (typeof pairCollabSnap extends null ? never : NonNullable<typeof pairCollabSnap>['docs'][number]['ref'])>();
+  for (const d of pairOwnSnap?.docs || []) pairRefs.set(d.id, d.ref);
+  for (const d of pairCollabSnap?.docs || []) pairRefs.set(d.id, d.ref);
+  for (const ref of pairRefs.values()) {
+    batch.update(ref, { collaboratorIds: boundedPair });
+    updates++;
+  }
+
+  if (updates > 0) {
+    await batch.commit();
+  }
 }
 
 export async function updateCollaboratorRole(
@@ -295,14 +345,14 @@ export async function updateCollaboratorRole(
       collaboratorRoles: nextRoles,
       updatedAt: serverTimestamp(),
     });
-    await syncCollaboratorIdsAcrossSubcollections(project.id, nextIds);
+    await syncCollaboratorIdsAcrossSubcollections(project.id, nextIds, project.ownerId);
     await logProjectActivity(
       project.id,
       actorUid,
       actorName,
       'role_changed',
       `Updated ${project.collaboratorNames?.[targetUid] || targetUid} role to ${nextRole}`,
-      { collaboratorIds: nextIds },
+      { collaboratorIds: Array.from(new Set([project.ownerId, ...nextIds])) },
     );
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, `projects/${project.id}`);
@@ -330,14 +380,14 @@ export async function removeCollaborator(
       collaboratorNames: nextNames,
       updatedAt: serverTimestamp(),
     });
-    await syncCollaboratorIdsAcrossSubcollections(project.id, nextIds);
+    await syncCollaboratorIdsAcrossSubcollections(project.id, nextIds, project.ownerId);
     await logProjectActivity(
       project.id,
       actorUid,
       actorName,
       'member_removed',
       `Removed ${removedName} from project`,
-      { collaboratorIds: nextIds },
+      { collaboratorIds: Array.from(new Set([project.ownerId, ...nextIds])) },
     );
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, `projects/${project.id}`);
@@ -346,23 +396,29 @@ export async function removeCollaborator(
 
 export async function syncProjectFilesToCollaborators(project: Project): Promise<void> {
   if (!project.collaboratorIds || project.collaboratorIds.length === 0) return;
-  await syncCollaboratorIdsAcrossSubcollections(project.id, project.collaboratorIds);
+  await syncCollaboratorIdsAcrossSubcollections(project.id, project.collaboratorIds, project.ownerId);
 }
 
 // ---------------------------------------------------------------------------
 // Threaded Comments (@mentions, file & line refs, resolve/reopen)
 // ---------------------------------------------------------------------------
 export async function listProjectComments(projectId: string): Promise<ProjectComment[]> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return [];
+  const commentsCol = collection(db, 'projects', projectId, 'comments');
   try {
-    const q = query(
-      collection(db, 'projects', projectId, 'comments'),
-      orderBy('createdAt', 'asc'),
+    const [ownSnap, collabSnap] = await Promise.all([
+      getDocs(query(commentsCol, where('authorId', '==', uid))),
+      getDocs(query(commentsCol, where('collaboratorIds', 'array-contains', uid))),
+    ]);
+    const byId = new Map<string, ProjectComment>();
+    for (const d of ownSnap.docs) byId.set(d.id, d.data() as ProjectComment);
+    for (const d of collabSnap.docs) byId.set(d.id, d.data() as ProjectComment);
+    return Array.from(byId.values()).sort(
+      (a, b) => toTimestampMs(a.createdAt) - toTimestampMs(b.createdAt),
     );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => d.data() as ProjectComment);
   } catch {
-    const snap = await getDocs(collection(db, 'projects', projectId, 'comments'));
-    return snap.docs.map((d) => d.data() as ProjectComment);
+    return [];
   }
 }
 
@@ -407,10 +463,9 @@ export async function addProjectComment(
         mentions,
         body: input.body.trim().slice(0, 2000),
         status: 'open',
-        collaboratorIds:
-          project.collaboratorIds && project.collaboratorIds.length > 0
-            ? project.collaboratorIds
-            : undefined,
+        collaboratorIds: Array.from(
+          new Set([project.ownerId, ...(project.collaboratorIds || [])].filter(Boolean)),
+        ).slice(0, 20),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       }),
@@ -422,7 +477,12 @@ export async function addProjectComment(
       authorName,
       'comment_added',
       `Commented${input.filePath ? ` on ${input.filePath}` : ''}: "${input.body.trim().slice(0, 60)}"`,
-      { targetName: input.filePath, collaboratorIds: project.collaboratorIds },
+      {
+        targetName: input.filePath,
+        collaboratorIds: Array.from(
+          new Set([project.ownerId, ...(project.collaboratorIds || [])].filter(Boolean)),
+        ).slice(0, 20),
+      },
     );
 
     const fresh = await getDoc(ref);

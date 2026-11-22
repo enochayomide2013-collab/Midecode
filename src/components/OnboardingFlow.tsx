@@ -8,6 +8,7 @@ import {
   SUPPORTED_COUNTRIES,
   formatPhoneAsYouType,
   getCountryByCode,
+  getCountryInfoFromPhone,
   normalizePhoneToE164,
 } from '../services/authService';
 import { CAREER_PATHWAYS } from '../data/challengesData';
@@ -48,7 +49,14 @@ export function OnboardingFlow() {
     if (profile?.photoURL && !photoURL) {
       setPhotoURL(profile.photoURL);
     }
-  }, [profile?.displayName, profile?.photoURL, displayName, photoURL]);
+    if (profile?.phoneNumber && !phoneInput) {
+      setPhoneInput(profile.phoneNumber);
+      const parsed = getCountryInfoFromPhone(profile.phoneNumber);
+      if (parsed?.code) {
+        setCountryCode(parsed.code);
+      }
+    }
+  }, [profile?.displayName, profile?.photoURL, profile?.phoneNumber, displayName, photoURL, phoneInput]);
 
   const selectedCountry = useMemo(() => getCountryByCode(countryCode), [countryCode]);
 

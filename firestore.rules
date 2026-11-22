@@ -1183,6 +1183,61 @@ service cloud.firestore {
       data.updatedAt is timestamp;
     }
 
+    function isValidPairChatMessage(data, projectId, messageId) {
+      return data.keys().hasAll([
+        'id', 'projectId', 'senderId', 'senderName', 'body', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'projectId', 'senderId', 'senderName', 'senderPhotoURL',
+        'body', 'fileRef', 'lineRef', 'collaboratorIds', 'createdAt'
+      ]) &&
+      data.id == messageId &&
+      data.projectId == projectId &&
+      isValidId(data.id) &&
+      isValidId(data.projectId) &&
+      isValidId(data.senderId) &&
+      isValidString(data.senderName, 1, 80) &&
+      isValidOptionalString(data, 'senderPhotoURL', 500) &&
+      isValidString(data.body, 1, 2000) &&
+      isValidOptionalString(data, 'fileRef', 180) &&
+      (!('lineRef' in data) || (data.lineRef is number && data.lineRef >= 1 && data.lineRef <= 100000)) &&
+      (!('collaboratorIds' in data) || isValidStringArray(data.collaboratorIds, 25)) &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidMockInterview(data, interviewId) {
+      return data.keys().hasAll([
+        'id', 'userId', 'careerPathId', 'careerPathTitle', 'challengeId',
+        'challengeTitle', 'difficulty', 'language', 'durationMinutes',
+        'elapsedSeconds', 'status', 'passedTests', 'totalTests',
+        'codeSubmitted', 'transcript', 'scorecard', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'userId', 'careerPathId', 'careerPathTitle', 'challengeId',
+        'challengeTitle', 'difficulty', 'language', 'durationMinutes',
+        'elapsedSeconds', 'status', 'passedTests', 'totalTests',
+        'codeSubmitted', 'transcript', 'scorecard', 'createdAt'
+      ]) &&
+      data.id == interviewId &&
+      isValidId(data.id) &&
+      isValidId(data.userId) &&
+      isValidString(data.careerPathId, 1, 64) &&
+      isValidString(data.careerPathTitle, 1, 120) &&
+      isValidString(data.challengeId, 1, 80) &&
+      isValidString(data.challengeTitle, 1, 140) &&
+      data.difficulty in ['easy', 'medium', 'hard'] &&
+      data.language in ['javascript', 'python'] &&
+      data.durationMinutes is number && data.durationMinutes >= 5 && data.durationMinutes <= 120 &&
+      data.elapsedSeconds is number && data.elapsedSeconds >= 0 && data.elapsedSeconds <= 7200 &&
+      data.status in ['completed', 'time_expired'] &&
+      data.passedTests is number && data.passedTests >= 0 && data.passedTests <= 100 &&
+      data.totalTests is number && data.totalTests >= 0 && data.totalTests <= 100 &&
+      isValidString(data.codeSubmitted, 0, 50000) &&
+      data.transcript is list && data.transcript.size() <= 40 &&
+      data.scorecard is map && data.scorecard.size() <= 15 &&
+      data.createdAt is timestamp;
+    }
+
     // -------------------------------------------------------------------------
     // Collection Match Rules
     // -------------------------------------------------------------------------
@@ -1512,6 +1567,39 @@ service cloud.firestore {
         allow update: if false;
         allow delete: if isValidId(projectId) && isValidId(activityId) && isSignedIn() && (
           get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid || isAdmin()
+        );
+      }
+
+      // Real-Time Pair Programming Chat Messages
+      match /pairMessages/{messageId} {
+        allow get: if isValidId(projectId) && isValidId(messageId) && isSignedIn() && (
+          isProjectMember(get(/databases/$(database)/documents/projects/$(projectId)).data) || isAdmin()
+        );
+        allow list: if isValidId(projectId) && isSignedIn() && (
+          resource.data.senderId == request.auth.uid ||
+          ('collaboratorIds' in resource.data && request.auth.uid in resource.data.collaboratorIds) ||
+          isAdmin()
+        );
+        allow create: if isValidId(projectId) && isValidId(messageId) && isSignedIn() &&
+          isValidPairChatMessage(incoming(), projectId, messageId) &&
+          incoming().senderId == request.auth.uid &&
+          incoming().createdAt == request.time &&
+          isProjectMember(get(/databases/$(database)/documents/projects/$(projectId)).data);
+        allow update: if isValidId(projectId) && isValidId(messageId) && isSignedIn() &&
+          isValidPairChatMessage(incoming(), projectId, messageId) && (
+            isAdmin() ||
+            (
+              get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid &&
+              incoming().senderId == existing().senderId &&
+              incoming().projectId == existing().projectId &&
+              incoming().createdAt == existing().createdAt &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['collaboratorIds'])
+            )
+          );
+        allow delete: if isValidId(projectId) && isValidId(messageId) && isSignedIn() && (
+          existing().senderId == request.auth.uid ||
+          get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid ||
+          isAdmin()
         );
       }
     }
@@ -2487,6 +2575,26 @@ service cloud.firestore {
           )
         );
       allow delete: if isValidId(investigationId) && isSignedIn() && (
+        existing().userId == request.auth.uid || isAdmin()
+      );
+    }
+
+    // Timed Mock Coding Interview Sessions & Scorecards
+    match /mockInterviews/{interviewId} {
+      allow get: if isValidId(interviewId) && isSignedIn() && (
+        resource == null ||
+        existing().userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      allow create: if isValidId(interviewId) && isSignedIn() &&
+        isValidMockInterview(incoming(), interviewId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(interviewId) && isSignedIn() && (
         existing().userId == request.auth.uid || isAdmin()
       );
     }

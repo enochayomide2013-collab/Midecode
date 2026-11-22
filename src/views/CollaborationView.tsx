@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   Check,
   CheckCircle2,
   Code2,
+  Eye,
   History,
   Mail,
   MessageSquare,
@@ -30,7 +31,16 @@ import {
   toggleProjectCommentResolution,
   updateCollaboratorRole,
 } from '../services/collaborationService';
+import { LivePairBar } from '../components/LivePairBar';
+import {
+  PairSessionClient,
+  persistPairMessage,
+  subscribePairMessages,
+  type PairConnectionStatus,
+} from '../services/pairProgrammingService';
 import type {
+  PairChatMessage,
+  PairPresenceMember,
   Project,
   ProjectActivityEvent,
   ProjectCollaboratorRole,
@@ -61,6 +71,7 @@ export function CollaborationView() {
     setCollabProjectId,
     setActiveIdeProjectId,
     openVersionsForProject,
+    openProjectInIdeAndFollow,
     setActiveView,
     refreshUserData,
     notify,
@@ -93,6 +104,14 @@ export function CollaborationView() {
   // Confirmations
   const [confirmRemoveMember, setConfirmRemoveMember] = useState<{ uid: string; name: string } | null>(null);
   const [confirmDeleteComment, setConfirmDeleteComment] = useState<ProjectComment | null>(null);
+
+  // Real-time pair presence & chat
+  const pairClientRef = useRef<PairSessionClient | null>(null);
+  const [pairStatus, setPairStatus] = useState<PairConnectionStatus>('disconnected');
+  const [pairError, setPairError] = useState<string | null>(null);
+  const [pairMembers, setPairMembers] = useState<PairPresenceMember[]>([]);
+  const [myClientId, setMyClientId] = useState<string>('');
+  const [pairMessages, setPairMessages] = useState<PairChatMessage[]>([]);
 
   useEffect(() => {
     if (collabProjectId) {
@@ -153,6 +172,103 @@ export function CollaborationView() {
       setProjectFiles([]);
     }
   }, [activeProject?.id, setCollabProjectId, loadProjectCollabData]);
+
+  useEffect(() => {
+    if (!activeProject?.id || !firebaseUser || tab !== 'workspace') {
+      setPairMembers([]);
+      setPairMessages([]);
+      setPairStatus('disconnected');
+      setPairError(null);
+      return;
+    }
+
+    const projectId = activeProject.id;
+    const displayName =
+      profile?.displayName ||
+      firebaseUser.displayName ||
+      firebaseUser.email?.split('@')[0] ||
+      'Developer';
+    const photoURL = profile?.photoURL || firebaseUser.photoURL || undefined;
+
+    setPairMessages([]);
+    setPairError(null);
+
+    const mergeMessages = (prev: PairChatMessage[], incoming: PairChatMessage[]) => {
+      const byId = new Map<string, PairChatMessage>();
+      for (const m of prev) byId.set(m.id, m);
+      for (const m of incoming) byId.set(m.id, m);
+      return Array.from(byId.values()).slice(-120);
+    };
+
+    const unsubMessages = subscribePairMessages(projectId, firebaseUser.uid, (persisted) => {
+      setPairMessages((prev) => mergeMessages(prev, persisted));
+    });
+
+    const client = new PairSessionClient(projectId, displayName, photoURL, {
+      onStatusChange: (status, reason) => {
+        setPairStatus(status);
+        setPairError(reason || null);
+      },
+      onPresenceSync: (members) => {
+        setPairMembers(members);
+      },
+      onRealtimeChat: (message) => {
+        setPairMessages((prev) => mergeMessages(prev, [message]));
+      },
+    });
+
+    pairClientRef.current = client;
+    setMyClientId(client.clientId);
+    client.connect();
+
+    return () => {
+      unsubMessages();
+      client.disconnect();
+      if (pairClientRef.current === client) {
+        pairClientRef.current = null;
+      }
+    };
+  }, [activeProject?.id, firebaseUser?.uid, tab]);
+
+  const handleSendPairMessage = async (body: string) => {
+    if (!activeProject || !firebaseUser) return;
+    const senderName =
+      profile?.displayName ||
+      firebaseUser.displayName ||
+      firebaseUser.email?.split('@')[0] ||
+      'Collaborator';
+    const senderPhoto = profile?.photoURL || firebaseUser.photoURL || undefined;
+    const msgId = `pmsg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    pairClientRef.current?.sendRealtimeChat({ id: msgId, body });
+
+    try {
+      const saved = await persistPairMessage(
+        activeProject,
+        firebaseUser.uid,
+        senderName,
+        senderPhoto,
+        { id: msgId, body },
+      );
+      setPairMessages((prev) => {
+        const byId = new Map(prev.map((m) => [m.id, m]));
+        byId.set(saved.id, saved);
+        return Array.from(byId.values()).slice(-120);
+      });
+    } catch (err) {
+      notify('error', err instanceof Error ? err.message : 'Unable to send pair message.');
+    }
+  };
+
+  const onlinePeerByUid = useMemo(() => {
+    const map = new Map<string, PairPresenceMember>();
+    for (const m of pairMembers) {
+      if (m.clientId !== myClientId) {
+        map.set(m.uid, m);
+      }
+    }
+    return map;
+  }, [pairMembers, myClientId]);
 
   const handleSendInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -516,6 +632,19 @@ export function CollaborationView() {
                     <History className="w-3.5 h-3.5" />
                     Version History
                   </button>
+                  {onlinePeerByUid.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const firstPeer = Array.from(onlinePeerByUid.values())[0];
+                        openProjectInIdeAndFollow(activeProject.id, firstPeer?.uid);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-blue-500 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 text-xs font-semibold cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      Join &amp; Follow in IDE
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -529,6 +658,25 @@ export function CollaborationView() {
                   </button>
                 </div>
               </div>
+
+              {/* Live Pair Programming Presence & Session Chat */}
+              {firebaseUser && (
+                <LivePairBar
+                  connectionStatus={pairStatus}
+                  connectionError={pairError}
+                  members={pairMembers}
+                  myClientId={myClientId}
+                  followingClientId={null}
+                  onToggleFollow={(clientId) => {
+                    if (!clientId) return;
+                    const peer = pairMembers.find((m) => m.clientId === clientId);
+                    openProjectInIdeAndFollow(activeProject.id, peer?.uid);
+                  }}
+                  messages={pairMessages}
+                  onSendMessage={(body) => handleSendPairMessage(body)}
+                  canChat={true}
+                />
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 {/* Left: Members, Invite & Activity Timeline */}
@@ -579,14 +727,38 @@ export function CollaborationView() {
                       Active Collaborators ({(activeProject.collaboratorIds?.length || 0) + 1})
                     </h3>
                     <div className="divide-y divide-slate-200 dark:divide-slate-800 text-xs">
-                      <div className="py-2.5 flex items-center justify-between">
+                      <div className="py-2.5 flex items-center justify-between gap-2">
                         <div>
-                          <div className="font-semibold text-slate-900 dark:text-white">
-                            {activeProject.ownerName}
+                          <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                            <span>{activeProject.ownerName}</span>
+                            {onlinePeerByUid.has(activeProject.ownerId) && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                Live
+                              </span>
+                            )}
                           </div>
-                          <div className="text-[11px] text-slate-500">Project Owner</div>
+                          <div className="text-[11px] text-slate-500">
+                            Project Owner
+                            {onlinePeerByUid.get(activeProject.ownerId)?.activeFileName
+                              ? ` · ${onlinePeerByUid.get(activeProject.ownerId)?.activeFileName}`
+                              : ''}
+                          </div>
                         </div>
-                        <span className="font-mono text-[11px] text-blue-600 dark:text-blue-400">owner</span>
+                        <div className="flex items-center gap-2">
+                          {onlinePeerByUid.has(activeProject.ownerId) && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openProjectInIdeAndFollow(activeProject.id, activeProject.ownerId)
+                              }
+                              className="px-2 py-0.5 rounded border border-blue-500/40 text-blue-600 dark:text-blue-400 text-[11px] font-medium cursor-pointer"
+                            >
+                              Follow in IDE
+                            </button>
+                          )}
+                          <span className="font-mono text-[11px] text-blue-600 dark:text-blue-400">owner</span>
+                        </div>
                       </div>
 
                       {(activeProject.collaboratorIds || [])
@@ -594,46 +766,69 @@ export function CollaborationView() {
                         .map((uid) => {
                           const name = activeProject.collaboratorNames?.[uid] || uid.slice(0, 12);
                           const role = activeProject.collaboratorRoles?.[uid] || 'viewer';
+                          const livePeer = onlinePeerByUid.get(uid);
                           return (
                             <div key={uid} className="py-2.5 flex items-center justify-between gap-2">
                               <div>
-                                <div className="font-semibold text-slate-900 dark:text-white">{name}</div>
-                                <div className="text-[11px] text-slate-500">{role}</div>
+                                <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                                  <span>{name}</span>
+                                  {livePeer && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                      Live
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-slate-500">
+                                  {role}
+                                  {livePeer?.activeFileName ? ` · ${livePeer.activeFileName}` : ''}
+                                </div>
                               </div>
-                              {myRole === 'owner' ? (
-                                <div className="flex items-center gap-2">
-                                  <select
-                                    value={role}
-                                    onChange={async (e) => {
-                                      if (!firebaseUser || !profile) return;
-                                      const nextR = e.target.value as 'editor' | 'viewer';
-                                      await updateCollaboratorRole(
-                                        activeProject,
-                                        firebaseUser.uid,
-                                        profile.displayName,
-                                        uid,
-                                        nextR,
-                                      );
-                                      await refreshUserData();
-                                      await loadProjectCollabData(activeProject.id);
-                                      notify('success', `Updated ${name} to ${nextR}.`);
-                                    }}
-                                    className="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-[11px]"
-                                  >
-                                    <option value="editor">editor</option>
-                                    <option value="viewer">viewer</option>
-                                  </select>
+                              <div className="flex items-center gap-2">
+                                {livePeer && (
                                   <button
                                     type="button"
-                                    onClick={() => setConfirmRemoveMember({ uid, name })}
-                                    className="text-red-500 hover:underline text-[11px] cursor-pointer"
+                                    onClick={() => openProjectInIdeAndFollow(activeProject.id, uid)}
+                                    className="px-2 py-0.5 rounded border border-blue-500/40 text-blue-600 dark:text-blue-400 text-[11px] font-medium cursor-pointer"
                                   >
-                                    Remove
+                                    Follow in IDE
                                   </button>
-                                </div>
-                              ) : (
-                                <span className="font-mono text-[11px] text-slate-500">{role}</span>
-                              )}
+                                )}
+                                {myRole === 'owner' ? (
+                                  <>
+                                    <select
+                                      value={role}
+                                      onChange={async (e) => {
+                                        if (!firebaseUser || !profile) return;
+                                        const nextR = e.target.value as 'editor' | 'viewer';
+                                        await updateCollaboratorRole(
+                                          activeProject,
+                                          firebaseUser.uid,
+                                          profile.displayName,
+                                          uid,
+                                          nextR,
+                                        );
+                                        await refreshUserData();
+                                        await loadProjectCollabData(activeProject.id);
+                                        notify('success', `Updated ${name} to ${nextR}.`);
+                                      }}
+                                      className="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-[11px]"
+                                    >
+                                      <option value="editor">editor</option>
+                                      <option value="viewer">viewer</option>
+                                    </select>
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmRemoveMember({ uid, name })}
+                                      className="text-red-500 hover:underline text-[11px] cursor-pointer"
+                                    >
+                                      Remove
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className="font-mono text-[11px] text-slate-500">{role}</span>
+                                )}
+                              </div>
                             </div>
                           );
                         })}

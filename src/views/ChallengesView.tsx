@@ -3,8 +3,9 @@ import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { CheckCircle2, EyeOff, HelpCircle, Loader2, Play, Trophy, XCircle } from 'lucide-react';
+import { CheckCircle2, EyeOff, HelpCircle, Loader2, Play, Timer, Trophy, XCircle } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
+import { MockInterviewSimulator } from '../components/MockInterviewSimulator';
 import { CHALLENGES } from '../data/challengesData';
 import { fetchWithAuthAndRetry } from '../services/authService';
 import {
@@ -41,6 +42,7 @@ export function ChallengesView() {
   } | null>(null);
   const [attempts, setAttempts] = useState<ChallengeAttempt[]>([]);
   const [leaderboard, setLeaderboard] = useState<PublicProfile[]>([]);
+  const [showInterviewModal, setShowInterviewModal] = useState(false);
 
   const challenge = CHALLENGES.find((c) => c.id === selectedChallengeId) || CHALLENGES[0];
 
@@ -146,6 +148,14 @@ export function ChallengesView() {
             <option value="medium">Medium</option>
             <option value="hard">Hard</option>
           </select>
+          <button
+            type="button"
+            onClick={() => setShowInterviewModal(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
+          >
+            <Timer className="w-3.5 h-3.5" />
+            Timed Mock Interview
+          </button>
         </div>
       </div>
 
@@ -362,6 +372,14 @@ export function ChallengesView() {
           )}
         </div>
       </div>
+
+      {showInterviewModal && (
+        <MockInterviewSimulator
+          initialChallengeId={challenge.id}
+          initialLanguage={language}
+          onClose={() => setShowInterviewModal(false)}
+        />
+      )}
     </div>
   );
 }

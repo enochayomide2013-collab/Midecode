@@ -103,7 +103,7 @@ export function LandingPage() {
             <div>
               <p className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white">Real Firebase Auth</p>
               <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                Google OAuth and verified email/password authentication with seamless account linking.
+                Verified email and password authentication with full developer profile &amp; phone support.
               </p>
             </div>
             <div>

@@ -14,13 +14,17 @@ import {
   Play,
   ShieldCheck,
   Sparkles,
+  Timer,
 } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
+import { MockInterviewSimulator } from '../components/MockInterviewSimulator';
 import { CAREER_PATHWAYS } from '../data/challengesData';
 import { ACADEMY_COURSES } from '../data/academyData';
 import { GUIDED_PROJECTS } from '../data/projectsData';
 import { getCareerProgress, saveCareerProgress } from '../services/dataService';
 import { exportCompletedMissionToPortfolioAndPassport } from '../services/missionService';
+import { listUserMockInterviews } from '../services/interviewService';
+import type { MockInterviewSession } from '../types/mideocode';
 
 export function CareerView() {
   const {
@@ -49,6 +53,9 @@ export function CareerView() {
   const [openQuestionIdx, setOpenQuestionIdx] = useState<number | null>(0);
   const [saving, setSaving] = useState(false);
   const [exportingAttemptId, setExportingAttemptId] = useState<string | null>(null);
+  const [showInterviewModal, setShowInterviewModal] = useState(false);
+  const [mockInterviews, setMockInterviews] = useState<MockInterviewSession[]>([]);
+  const [expandedInterviewId, setExpandedInterviewId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!firebaseUser) return;
@@ -60,6 +67,9 @@ export function CareerView() {
           setCompletedProjectIds(res.completedProjectIds || []);
         }
       })
+      .catch(() => {});
+    listUserMockInterviews(firebaseUser.uid)
+      .then(setMockInterviews)
       .catch(() => {});
   }, [firebaseUser, profile?.activeCareerPathId]);
 
@@ -485,26 +495,36 @@ export function CareerView() {
         {/* Right: Mock Interviews, Portfolio & CV Guidance */}
         <div className="lg:col-span-5 space-y-6">
           <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] p-6 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Briefcase className="w-4 h-4 text-blue-500" />
                 <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                   Technical Interview Practice
                 </h2>
               </div>
-              <button
-                onClick={() =>
-                  askAi({
-                    mode: 'practice',
-                    prompt: `Conduct a realistic technical mock interview for a ${activePath.title} role. Ask one question at a time and evaluate my reasoning.`,
-                    context: { courseTitle: activePath.title },
-                  })
-                }
-                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Mock Interview with AI
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowInterviewModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
+                >
+                  <Timer className="w-3.5 h-3.5" />
+                  Timed Mock Interview
+                </button>
+                <button
+                  onClick={() =>
+                    askAi({
+                      mode: 'practice',
+                      prompt: `Conduct a realistic technical mock interview for a ${activePath.title} role. Ask one question at a time and evaluate my reasoning.`,
+                      context: { courseTitle: activePath.title },
+                    })
+                  }
+                  className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  AI Chat
+                </button>
+              </div>
             </div>
             <div className="space-y-3">
               {activePath.interviewQuestions.map((iq, idx) => {
@@ -551,6 +571,84 @@ export function CareerView() {
             </div>
           </section>
 
+          {/* Mock Interview Scorecards History */}
+          <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] p-6 space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Timer className="w-4 h-4 text-emerald-500" />
+                <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                  Mock Interview Scorecards
+                </h2>
+              </div>
+              <span className="text-xs font-mono tabular-nums text-slate-500">
+                {mockInterviews.length} completed
+              </span>
+            </div>
+
+            {mockInterviews.length === 0 ? (
+              <div className="p-5 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 text-center space-y-2">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  No timed mock interviews completed yet. Launch a 15–45 minute simulation to earn your first Readiness Scorecard.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {mockInterviews.slice(0, 6).map((iv) => {
+                  const isOpen = expandedInterviewId === iv.id;
+                  return (
+                    <div
+                      key={iv.id}
+                      className="rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setExpandedInterviewId(isOpen ? null : iv.id)}
+                        className="w-full p-3.5 text-left flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-900/50 cursor-pointer"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                            {iv.challengeTitle} ({iv.language})
+                          </div>
+                          <div className="text-[11px] text-slate-500 tabular-nums">
+                            {iv.careerPathTitle} · {iv.scorecard.readinessLabel} · Tests {iv.passedTests}/{iv.totalTests}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-sm font-bold tabular-nums text-blue-600 dark:text-blue-400">
+                            {iv.scorecard.overallScore}/100
+                          </div>
+                          <div className="text-[10px] font-mono text-slate-400">
+                            {iv.scorecard.detectedTimeComplexity}
+                          </div>
+                        </div>
+                      </button>
+                      {isOpen && (
+                        <div className="p-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17] space-y-2 text-xs">
+                          <div className="grid grid-cols-2 gap-2 font-mono text-[11px] tabular-nums text-slate-600 dark:text-slate-300">
+                            <div>Correctness: {iv.scorecard.correctnessScore}%</div>
+                            <div>Complexity: {iv.scorecard.complexityScore}%</div>
+                            <div>Code Quality: {iv.scorecard.codeQualityScore}%</div>
+                            <div>Communication: {iv.scorecard.communicationScore}%</div>
+                          </div>
+                          <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                            {iv.scorecard.summaryFeedback}
+                          </p>
+                          {iv.scorecard.improvements.length > 0 && (
+                            <ul className="space-y-1 text-[11px] text-slate-600 dark:text-slate-400">
+                              {iv.scorecard.improvements.map((imp, idx) => (
+                                <li key={idx}>• {imp}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
           <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] p-6 space-y-4">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-amber-500" />
@@ -589,6 +687,16 @@ export function CareerView() {
           </section>
         </div>
       </div>
+
+      {showInterviewModal && (
+        <MockInterviewSimulator
+          initialCareerPathId={activePath.id}
+          onClose={() => setShowInterviewModal(false)}
+          onSessionCompleted={(saved) => {
+            setMockInterviews((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]);
+          }}
+        />
+      )}
     </div>
   );
 }

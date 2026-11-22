@@ -24,7 +24,6 @@ import {
   getCountryByCode,
   getCountryInfoFromPhone,
   linkEmailAccountReal,
-  linkGoogleAccountReal,
   normalizePhoneToE164,
   resendVerificationEmailReal,
 } from '../services/authService';
@@ -61,8 +60,7 @@ export function ProfileView() {
   const [phoneInput, setPhoneInput] = useState(profile?.phoneNumber || '');
   const [savingPhone, setSavingPhone] = useState(false);
 
-  // Account linking states (Google & Email/Password)
-  const [linkingGoogle, setLinkingGoogle] = useState(false);
+  // Email/Password account linking states
   const [linkEmail, setLinkEmail] = useState('');
   const [linkPassword, setLinkPassword] = useState('');
   const [linkingEmail, setLinkingEmail] = useState(false);
@@ -89,7 +87,6 @@ export function ProfileView() {
   if (!firebaseUser || !profile) return null;
 
   const linkedProviders = new Set(firebaseUser.providerData.map((p) => p.providerId));
-  const hasGoogle = linkedProviders.has('google.com');
   const hasPassword = linkedProviders.has('password');
 
   const handleSaveDisplayName = async (e: React.FormEvent) => {
@@ -213,26 +210,6 @@ export function ProfileView() {
     }
   };
 
-  const handleLinkGoogle = async () => {
-    setLinkingGoogle(true);
-    try {
-      const updated = await linkGoogleAccountReal(firebaseUser);
-      if (updated.email) {
-        await updateDoc(doc(db, 'users', firebaseUser.uid), {
-          email: updated.email,
-          updatedAt: serverTimestamp(),
-        });
-      }
-      await refreshAuthState();
-      await refreshUserData();
-      notify('success', 'Google account linked to your MideoCode profile.');
-    } catch (err) {
-      notify('error', err instanceof Error ? err.message : 'Could not link Google account.');
-    } finally {
-      setLinkingGoogle(false);
-    }
-  };
-
   const handleLinkEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     if (linkPassword.length < 8) {
@@ -265,7 +242,7 @@ export function ProfileView() {
           Profile &amp; Security Settings
         </h1>
         <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-          Manage your profile picture, developer identity, contact details, connected Google/Email providers, and Mideo IDE preferences.
+          Manage your profile picture, developer identity, contact details, email security, and Mideo IDE preferences.
         </p>
       </div>
 
@@ -458,41 +435,19 @@ export function ProfileView() {
         </div>
       </section>
 
-      {/* Account Linking (Google & Email/Password) */}
+      {/* Email & Password Security */}
       <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] p-6 space-y-5">
         <div className="flex items-center gap-2">
           <Link2 className="w-4 h-4 text-blue-500" />
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-            Connected Sign-In Methods
+            Email &amp; Password Authentication
           </h2>
         </div>
         <p className="text-xs text-slate-600 dark:text-slate-400">
-          Link Google and Email &amp; Password to the same MideoCode account to preserve your projects, course progress, and XP across sign-in methods.
+          Your MideoCode account uses standard Email &amp; Password sign-in to keep your projects, course progress, and XP secure.
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Google */}
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-slate-900 dark:text-white">Google</span>
-              {hasGoogle && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
-            </div>
-            <p className="text-xs text-slate-500">
-              {hasGoogle
-                ? `Linked (${firebaseUser.email || 'Google OAuth'})`
-                : 'One-click Google Workspace & OAuth sign-in.'}
-            </p>
-            {!hasGoogle && (
-              <button
-                onClick={handleLinkGoogle}
-                disabled={linkingGoogle}
-                className="w-full py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:border-blue-500 text-xs font-medium cursor-pointer"
-              >
-                {linkingGoogle ? 'Linking...' : 'Link Google Account'}
-              </button>
-            )}
-          </div>
-
+        <div className="max-w-md">
           {/* Email */}
           <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
             <div className="flex items-center justify-between">
@@ -651,7 +606,7 @@ export function ProfileView() {
       <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17] flex items-start gap-3 text-xs text-slate-600 dark:text-slate-400">
         <ShieldCheck className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
         <span>
-          Google OAuth &amp; Email authentication rely on your Firebase Console Authentication provider settings and authorized preview domain. Your contact phone number is stored privately per UID.
+          Email &amp; Password authentication relies on your Firebase Console Sign-in method provider settings. Your contact phone number is stored privately per UID.
         </span>
       </div>
     </div>

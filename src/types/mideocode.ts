@@ -1646,3 +1646,88 @@ export interface RescueLaunchContext {
   initialPrompt?: string;
 }
 
+// ---------------------------------------------------------------------------
+// 7. Real-Time Pair Programming Presence & Chat Types
+// ---------------------------------------------------------------------------
+export interface PairPresenceMember {
+  clientId: string;
+  uid: string;
+  displayName: string;
+  photoURL?: string;
+  role: ProjectCollaboratorRole;
+  activeFileId?: string;
+  activeFileName?: string;
+  cursorLine?: number;
+  isTyping?: boolean;
+  joinedAt: string;
+  updatedAt: string;
+}
+
+export interface PairChatMessage {
+  id: string;
+  projectId: string;
+  senderId: string;
+  senderName: string;
+  senderPhotoURL?: string;
+  body: string;
+  fileRef?: string;
+  lineRef?: number;
+  collaboratorIds?: string[];
+  createdAt: unknown;
+}
+
+export interface PairFileSavedNotice {
+  projectId: string;
+  fileId: string;
+  fileName: string;
+  version: number;
+  updatedByUid: string;
+  updatedByName: string;
+  updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// 8. Timed Mock Coding Interview Domain Types
+// ---------------------------------------------------------------------------
+export interface MockInterviewQuestionTurn {
+  id: string;
+  role: 'interviewer' | 'candidate';
+  content: string;
+  topicTag?: string;
+  createdAt: string;
+}
+
+export interface MockInterviewScorecard {
+  overallScore: number;
+  correctnessScore: number;
+  codeQualityScore: number;
+  complexityScore: number;
+  communicationScore: number;
+  readinessLabel: 'Needs Practice' | 'Developing' | 'Interview Ready' | 'Strong Hire Signal';
+  detectedTimeComplexity: string;
+  detectedSpaceComplexity: string;
+  strengths: string[];
+  improvements: string[];
+  summaryFeedback: string;
+}
+
+export interface MockInterviewSession {
+  id: string;
+  userId: string;
+  careerPathId: string;
+  careerPathTitle: string;
+  challengeId: string;
+  challengeTitle: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  language: 'javascript' | 'python';
+  durationMinutes: number;
+  elapsedSeconds: number;
+  status: 'completed' | 'time_expired';
+  passedTests: number;
+  totalTests: number;
+  codeSubmitted: string;
+  transcript: MockInterviewQuestionTurn[];
+  scorecard: MockInterviewScorecard;
+  createdAt: unknown;
+}
+

@@ -30,9 +30,22 @@ import {
   saveProjectFileContent,
 } from '../services/dataService';
 import { logProjectActivity } from '../services/collaborationService';
+import { LivePairBar } from '../components/LivePairBar';
+import {
+  PairSessionClient,
+  persistPairMessage,
+  subscribePairMessages,
+  type PairConnectionStatus,
+} from '../services/pairProgrammingService';
 import { DOC_ARTICLES } from '../data/docsData';
 import { downloadProjectAsZip } from '../utils/zipBuilder';
-import type { Project, ProjectCollaboratorRole, ProjectFile } from '../types/mideocode';
+import type {
+  PairChatMessage,
+  PairPresenceMember,
+  Project,
+  ProjectCollaboratorRole,
+  ProjectFile,
+} from '../types/mideocode';
 
 export function IdeView() {
   const {
@@ -47,6 +60,8 @@ export function IdeView() {
     openVersionsForProject,
     openCollabForProject,
     openRescueForProject,
+    ideFollowTargetUid,
+    setIdeFollowTargetUid,
     refreshUserData,
     askAi,
     notify,
@@ -66,6 +81,17 @@ export function IdeView() {
   const [fullScreen, setFullScreen] = useState(false);
   const [showDocsDrawer, setShowDocsDrawer] = useState(false);
   const fileImportRef = useRef<HTMLInputElement | null>(null);
+
+  // Real-time pair programming state
+  const pairClientRef = useRef<PairSessionClient | null>(null);
+  const [pairStatus, setPairStatus] = useState<PairConnectionStatus>('disconnected');
+  const [pairError, setPairError] = useState<string | null>(null);
+  const [pairMembers, setPairMembers] = useState<PairPresenceMember[]>([]);
+  const [myClientId, setMyClientId] = useState<string>('');
+  const [followingClientId, setFollowingClientId] = useState<string | null>(null);
+  const [pairMessages, setPairMessages] = useState<PairChatMessage[]>([]);
+  const [localCursorLine, setLocalCursorLine] = useState<number>(1);
+  const [followScrollLine, setFollowScrollLine] = useState<number | null>(null);
 
   const activeProject: Project | undefined =
     accessibleProjects.find((p) => p.id === activeIdeProjectId) || accessibleProjects[0];
@@ -109,6 +135,182 @@ export function IdeView() {
   const activeFile = files.find((f) => f.id === activeFileId) || files[0] || null;
   const activeCode = activeFile ? (unsavedContent[activeFile.id] ?? activeFile.content) : '';
 
+  const unsavedContentRef = useRef(unsavedContent);
+  unsavedContentRef.current = unsavedContent;
+  const activeProjectIdRef = useRef(activeProject?.id);
+  activeProjectIdRef.current = activeProject?.id;
+  const refreshUserDataRef = useRef(refreshUserData);
+  refreshUserDataRef.current = refreshUserData;
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
+
+  useEffect(() => {
+    if (!activeProject?.id || !firebaseUser) {
+      setPairMembers([]);
+      setPairMessages([]);
+      setFollowingClientId(null);
+      setFollowScrollLine(null);
+      setPairStatus('disconnected');
+      setPairError(null);
+      return;
+    }
+
+    const projectId = activeProject.id;
+    const displayName =
+      profile?.displayName ||
+      firebaseUser.displayName ||
+      firebaseUser.email?.split('@')[0] ||
+      'Developer';
+    const photoURL = profile?.photoURL || firebaseUser.photoURL || undefined;
+
+    setPairMessages([]);
+    setFollowingClientId(null);
+    setFollowScrollLine(null);
+    setPairError(null);
+
+    const mergeMessages = (prev: PairChatMessage[], incoming: PairChatMessage[]) => {
+      const byId = new Map<string, PairChatMessage>();
+      for (const m of prev) byId.set(m.id, m);
+      for (const m of incoming) byId.set(m.id, m);
+      return Array.from(byId.values()).slice(-120);
+    };
+
+    const unsubMessages = subscribePairMessages(projectId, firebaseUser.uid, (persisted) => {
+      setPairMessages((prev) => mergeMessages(prev, persisted));
+    });
+
+    const client = new PairSessionClient(projectId, displayName, photoURL, {
+      onStatusChange: (status, reason) => {
+        setPairStatus(status);
+        setPairError(reason || null);
+      },
+      onPresenceSync: (members) => {
+        setPairMembers(members);
+      },
+      onRealtimeChat: (message) => {
+        setPairMessages((prev) => mergeMessages(prev, [message]));
+      },
+      onFileSavedNotice: (notice) => {
+        if (notice.projectId !== activeProjectIdRef.current) return;
+        const hasLocalUnsaved = Object.keys(unsavedContentRef.current).length > 0;
+        if (!hasLocalUnsaved) {
+          getProjectFiles(notice.projectId)
+            .then((fresh) => {
+              if (activeProjectIdRef.current !== notice.projectId) return;
+              setFiles(fresh);
+              setSyncStatus('synced');
+              refreshUserDataRef.current().catch(() => {});
+              notifyRef.current(
+                'info',
+                `${notice.updatedByName} saved ${notice.fileName} (v${notice.version}) — synced.`,
+              );
+            })
+            .catch(() => {});
+        } else {
+          notifyRef.current(
+            'info',
+            `${notice.updatedByName} saved ${notice.fileName} (v${notice.version}) in Mideo Cloud.`,
+          );
+        }
+      },
+    });
+
+    pairClientRef.current = client;
+    setMyClientId(client.clientId);
+    client.connect();
+
+    return () => {
+      unsubMessages();
+      client.disconnect();
+      if (pairClientRef.current === client) {
+        pairClientRef.current = null;
+      }
+    };
+  }, [activeProject?.id, firebaseUser?.uid]);
+
+  useEffect(() => {
+    pairClientRef.current?.updatePresence({
+      activeFileId: activeFile?.id,
+      activeFileName: activeFile?.name,
+      cursorLine: localCursorLine,
+    });
+  }, [activeFile?.id, activeFile?.name, localCursorLine]);
+
+  useEffect(() => {
+    if (!ideFollowTargetUid || !myClientId) return;
+    const match = pairMembers.find(
+      (m) => m.uid === ideFollowTargetUid && m.clientId !== myClientId,
+    );
+    if (match) {
+      setFollowingClientId(match.clientId);
+      setIdeFollowTargetUid(null);
+    }
+  }, [ideFollowTargetUid, pairMembers, myClientId, setIdeFollowTargetUid]);
+
+  useEffect(() => {
+    if (!followingClientId) {
+      setFollowScrollLine(null);
+      return;
+    }
+    const followed = pairMembers.find(
+      (m) => m.clientId === followingClientId && m.clientId !== myClientId,
+    );
+    if (!followed) {
+      setFollowingClientId(null);
+      setFollowScrollLine(null);
+      return;
+    }
+    if (
+      followed.activeFileId &&
+      followed.activeFileId !== activeFileId &&
+      files.some((f) => f.id === followed.activeFileId)
+    ) {
+      setActiveFileId(followed.activeFileId);
+    }
+    setFollowScrollLine(
+      typeof followed.cursorLine === 'number' && followed.cursorLine >= 1
+        ? followed.cursorLine
+        : null,
+    );
+  }, [followingClientId, pairMembers, myClientId, activeFileId, files]);
+
+  const handleSendPairMessage = async (body: string, includeFileRef: boolean) => {
+    if (!activeProject || !firebaseUser) return;
+    const senderName =
+      profile?.displayName ||
+      firebaseUser.displayName ||
+      firebaseUser.email?.split('@')[0] ||
+      'Collaborator';
+    const senderPhoto = profile?.photoURL || firebaseUser.photoURL || undefined;
+    const msgId = `pmsg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const fileRef = includeFileRef && activeFile ? activeFile.name : undefined;
+    const lineRef = includeFileRef && activeFile ? localCursorLine : undefined;
+
+    pairClientRef.current?.sendRealtimeChat({
+      id: msgId,
+      body,
+      fileRef,
+      lineRef,
+    });
+
+    try {
+      const saved = await persistPairMessage(
+        activeProject,
+        firebaseUser.uid,
+        senderName,
+        senderPhoto,
+        { id: msgId, body, fileRef, lineRef },
+      );
+      setPairMessages((prev) => {
+        const byId = new Map(prev.map((m) => [m.id, m]));
+        byId.set(saved.id, saved);
+        return Array.from(byId.values()).slice(-120);
+      });
+    } catch (err) {
+      notify('error', err instanceof Error ? err.message : 'Unable to send pair message.');
+    }
+  };
+
   const handleSaveActiveFile = async () => {
     if (!activeProject || !activeFile || isReadOnlyViewer) return;
     const content = unsavedContent[activeFile.id] ?? activeFile.content;
@@ -148,6 +350,11 @@ export function IdeView() {
         return copy;
       });
       setSyncStatus('synced');
+      pairClientRef.current?.notifyFileSaved({
+        fileId: activeFile.id,
+        fileName: activeFile.name,
+        version: result.newVersion,
+      });
       if (firebaseUser && profile && (activeProject.collaboratorIds?.length || 0) > 0) {
         logProjectActivity(
           activeProject.id,
@@ -459,6 +666,22 @@ export function IdeView() {
         </div>
       </div>
 
+      {firebaseUser && (
+        <LivePairBar
+          connectionStatus={pairStatus}
+          connectionError={pairError}
+          members={pairMembers}
+          myClientId={myClientId}
+          followingClientId={followingClientId}
+          onToggleFollow={setFollowingClientId}
+          messages={pairMessages}
+          activeFileName={activeFile?.name}
+          currentLine={localCursorLine}
+          onSendMessage={handleSendPairMessage}
+          canChat={true}
+        />
+      )}
+
       {isReadOnlyViewer && (
         <div className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] text-xs text-slate-600 dark:text-slate-300">
           Read-only <strong>viewer</strong> access on shared project "{activeProject.title}". You can inspect code, run previews, and post discussions in Collaboration.
@@ -517,6 +740,8 @@ export function IdeView() {
         settings={settings}
         readOnly={isReadOnlyViewer}
         onConsoleErrorChange={setLatestConsoleError}
+        onCursorLineChange={setLocalCursorLine}
+        scrollToLine={followScrollLine}
       />
 
       {/* Quick Docs Drawer */}

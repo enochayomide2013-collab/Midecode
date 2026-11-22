@@ -3,20 +3,14 @@ import {
   browserSessionPersistence,
   createUserWithEmailAndPassword,
   EmailAuthProvider,
-  getRedirectResult,
-  GoogleAuthProvider,
   linkWithCredential,
-  linkWithPopup,
   reload,
   sendEmailVerification,
   sendPasswordResetEmail,
   setPersistence,
-  signInWithCredential,
   signInWithEmailAndPassword,
-  signInWithPopup,
   signOut,
   updateProfile,
-  type AuthCredential,
   type User,
 } from 'firebase/auth';
 import {
@@ -26,7 +20,7 @@ import {
   parsePhoneNumberFromString,
   type CountryCode,
 } from 'libphonenumber-js';
-import { auth, FIREBASE_OAUTH_CLIENT_ID, googleProvider } from './firebase';
+import { auth } from './firebase';
 
 export interface CountryDialCode {
   code: CountryCode;
@@ -154,7 +148,8 @@ export class AuthServiceError extends Error {
 
 const pendingRegistrationNames = new Map<string, string>();
 const pendingRegistrationByEmail = new Map<string, string>();
-let pendingGoogleCredential: { email: string; credential: AuthCredential } | null = null;
+const pendingRegistrationPhones = new Map<string, { phoneNumber: string; country?: string }>();
+const pendingRegistrationPhoneByEmail = new Map<string, { phoneNumber: string; country?: string }>();
 
 export function setPendingRegistrationName(uid: string, fullName: string, email?: string): void {
   const cleaned = fullName.trim().slice(0, 80);
@@ -181,12 +176,40 @@ export function clearPendingRegistrationName(uid: string, email?: string | null)
   }
 }
 
-export function getPendingGoogleLink(): { email: string; credential: AuthCredential } | null {
-  return pendingGoogleCredential;
+export function setPendingRegistrationPhone(
+  uid: string,
+  phoneNumber: string,
+  country?: string,
+  email?: string,
+): void {
+  const cleanPhone = phoneNumber.trim().slice(0, 32);
+  const cleanCountry = country?.trim().slice(0, 80);
+  if (!cleanPhone) return;
+  const entry = { phoneNumber: cleanPhone, country: cleanCountry || undefined };
+  if (uid) {
+    pendingRegistrationPhones.set(uid, entry);
+  }
+  if (email) {
+    pendingRegistrationPhoneByEmail.set(email.trim().toLowerCase(), entry);
+  }
 }
 
-export function clearPendingGoogleLink(): void {
-  pendingGoogleCredential = null;
+export function getPendingRegistrationPhone(
+  uid: string,
+  email?: string | null,
+): { phoneNumber: string; country?: string } | null {
+  return (
+    pendingRegistrationPhones.get(uid) ||
+    (email ? pendingRegistrationPhoneByEmail.get(email.trim().toLowerCase()) : undefined) ||
+    null
+  );
+}
+
+export function clearPendingRegistrationPhone(uid: string, email?: string | null): void {
+  pendingRegistrationPhones.delete(uid);
+  if (email) {
+    pendingRegistrationPhoneByEmail.delete(email.trim().toLowerCase());
+  }
 }
 
 export function getCurrentAuthHostname(): string {
@@ -204,23 +227,12 @@ export function mapFirebaseAuthError(err: unknown): string {
     typeof err === 'object' && err !== null && 'code' in err
       ? String((err as { code: unknown }).code)
       : '';
-  const hostname = getCurrentAuthHostname();
 
   switch (code) {
-    case 'auth/unauthorized-domain':
-      return `Google Sign-In is not yet authorized for "${hostname || 'this domain'}". Add "${hostname || 'this domain'}" in Firebase Console > Authentication > Settings > Authorized domains, or sign up / sign in with Email & Password below.`;
-    case 'auth/popup-closed-by-user':
-      return 'Google Sign-In was cancelled. You can try again.';
-    case 'auth/cancelled-popup-request':
-      return 'Google Sign-In was cancelled. You can try again.';
-    case 'auth/popup-blocked':
-      return 'Google popup was blocked by your browser. Allow popups for MideoCode and click Continue with Google again.';
     case 'auth/network-request-failed':
       return 'Network interruption occurred. Please check your internet connection and retry.';
     case 'auth/email-already-in-use':
       return 'An account with this email address already exists. Sign in below or reset your password.';
-    case 'auth/account-exists-with-different-credential':
-      return 'This email is already registered with Email & Password. Sign in with your password below to securely link your Google account.';
     case 'auth/invalid-email':
       return 'Enter a valid email address.';
     case 'auth/weak-password':
@@ -234,194 +246,17 @@ export function mapFirebaseAuthError(err: unknown): string {
     case 'auth/too-many-requests':
       return 'Too many attempts detected. For security, please wait a moment before trying again.';
     case 'auth/internal-error':
-      return 'Google authentication is temporarily unavailable. Please verify connection/configuration and try again.';
+      return 'Authentication service is temporarily unavailable. Please try again shortly.';
     case 'auth/operation-not-allowed':
-      return 'This sign-in provider is not enabled in Firebase Console > Authentication > Sign-in method.';
+      return 'Email/Password sign-in is not enabled yet in Firebase Console > Authentication > Sign-in method.';
     case 'auth/credential-already-in-use':
-      return 'This credential is already linked to a different MideoCode account. Sign in to that account instead.';
+      return 'This email is already linked to a different MideoCode account. Sign in to that account instead.';
     case 'auth/provider-already-linked':
-      return 'This authentication method is already linked to your account.';
+      return 'Email & Password sign-in is already linked to your account.';
     case 'auth/requires-recent-login':
-      return 'For security, please sign out and sign back in before linking a new credential.';
+      return 'For security, please sign out and sign back in before updating your credentials.';
     default:
       return err instanceof Error ? err.message : 'Authentication failed. Please try again.';
-  }
-}
-
-export function isIframeEnvironment(): boolean {
-  try {
-    return typeof window !== 'undefined' && window.self !== window.top;
-  } catch {
-    return true;
-  }
-}
-
-interface GoogleAccountsIdApi {
-  initialize: (config: {
-    client_id: string;
-    callback: (response: { credential?: string }) => void;
-    auto_select?: boolean;
-    cancel_on_tap_outside?: boolean;
-    use_fedcm_for_prompt?: boolean;
-  }) => void;
-  renderButton: (
-    parent: HTMLElement,
-    options: {
-      theme?: 'outline' | 'filled_blue' | 'filled_black';
-      size?: 'large' | 'medium' | 'small';
-      text?: 'signin_with' | 'signup_with' | 'continue_with' | 'signin';
-      shape?: 'rectangular' | 'pill';
-      width?: number;
-    },
-  ) => void;
-}
-
-declare global {
-  interface Window {
-    google?: {
-      accounts?: {
-        id?: GoogleAccountsIdApi;
-      };
-    };
-  }
-}
-
-let gsiLoadPromise: Promise<boolean> | null = null;
-
-export function loadGoogleIdentityScript(): Promise<boolean> {
-  if (typeof window === 'undefined' || !FIREBASE_OAUTH_CLIENT_ID) {
-    return Promise.resolve(false);
-  }
-  if (window.google?.accounts?.id) {
-    return Promise.resolve(true);
-  }
-  if (gsiLoadPromise) return gsiLoadPromise;
-
-  gsiLoadPromise = new Promise<boolean>((resolve) => {
-    const existing = document.querySelector<HTMLScriptElement>('script[data-mideocode-gsi="true"]');
-    if (existing) {
-      existing.addEventListener('load', () => resolve(Boolean(window.google?.accounts?.id)), { once: true });
-      existing.addEventListener('error', () => resolve(false), { once: true });
-      setTimeout(() => resolve(Boolean(window.google?.accounts?.id)), 4000);
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.setAttribute('data-mideocode-gsi', 'true');
-    script.onload = () => resolve(Boolean(window.google?.accounts?.id));
-    script.onerror = () => resolve(false);
-    document.head.appendChild(script);
-    setTimeout(() => resolve(Boolean(window.google?.accounts?.id)), 5000);
-  });
-
-  return gsiLoadPromise;
-}
-
-export async function renderGoogleGsiButton(
-  container: HTMLElement,
-  onCredential: (idToken: string) => void,
-  options?: { text?: 'signin_with' | 'signup_with' | 'continue_with'; theme?: 'outline' | 'filled_blue' | 'filled_black' },
-): Promise<boolean> {
-  if (!FIREBASE_OAUTH_CLIENT_ID) return false;
-  const ready = await loadGoogleIdentityScript();
-  const gsi = window.google?.accounts?.id;
-  if (!ready || !gsi) return false;
-
-  try {
-    container.innerHTML = '';
-    gsi.initialize({
-      client_id: FIREBASE_OAUTH_CLIENT_ID,
-      callback: (response) => {
-        if (response?.credential) {
-          onCredential(response.credential);
-        }
-      },
-      auto_select: false,
-      cancel_on_tap_outside: true,
-      use_fedcm_for_prompt: false,
-    });
-    const width = Math.max(240, Math.min(380, container.clientWidth || 340));
-    gsi.renderButton(container, {
-      theme: options?.theme || 'outline',
-      size: 'large',
-      text: options?.text || 'continue_with',
-      shape: 'rectangular',
-      width,
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function signInWithGoogleIdToken(idToken: string): Promise<User> {
-  try {
-    const credential = GoogleAuthProvider.credential(idToken);
-    const result = await signInWithCredential(auth, credential);
-    void setPersistence(auth, browserLocalPersistence).catch(() => {});
-    clearPendingGoogleLink();
-    return result.user;
-  } catch (err) {
-    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
-    const customEmail =
-      typeof err === 'object' &&
-      err !== null &&
-      'customData' in err &&
-      typeof (err as { customData?: { email?: string } }).customData?.email === 'string'
-        ? (err as { customData: { email: string } }).customData.email
-        : undefined;
-
-    if (code === 'auth/account-exists-with-different-credential') {
-      const cred = GoogleAuthProvider.credentialFromError(err as Parameters<typeof GoogleAuthProvider.credentialFromError>[0]);
-      if (cred && customEmail) {
-        pendingGoogleCredential = { email: customEmail, credential: cred };
-      }
-      throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname(), customEmail);
-    }
-    throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname(), customEmail);
-  }
-}
-
-export async function signInWithGoogleReal(): Promise<User | null> {
-  try {
-    // Call signInWithPopup immediately without awaiting IndexedDB persistence first,
-    // preserving browser transient user activation so popups are not blocked.
-    const result = await signInWithPopup(auth, googleProvider);
-    void setPersistence(auth, browserLocalPersistence).catch(() => {});
-    clearPendingGoogleLink();
-    return result.user;
-  } catch (err) {
-    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
-    const customEmail =
-      typeof err === 'object' &&
-      err !== null &&
-      'customData' in err &&
-      typeof (err as { customData?: { email?: string } }).customData?.email === 'string'
-        ? (err as { customData: { email: string } }).customData.email
-        : undefined;
-
-    if (code === 'auth/account-exists-with-different-credential') {
-      const cred = GoogleAuthProvider.credentialFromError(err as Parameters<typeof GoogleAuthProvider.credentialFromError>[0]);
-      if (cred && customEmail) {
-        pendingGoogleCredential = { email: customEmail, credential: cred };
-      }
-      throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname(), customEmail);
-    }
-
-    throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname(), customEmail);
-  }
-}
-
-export async function checkGoogleRedirectResult(): Promise<User | null> {
-  try {
-    const res = await getRedirectResult(auth);
-    return res?.user ?? null;
-  } catch (err) {
-    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
-    throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname());
   }
 }
 
@@ -429,12 +264,21 @@ export async function registerWithEmailReal(
   fullName: string,
   email: string,
   password: string,
+  phoneInfo?: { phoneNumber: string; country?: string },
 ): Promise<User> {
   const cleanedName = fullName.trim().slice(0, 80);
   const cleanEmail = email.trim();
-  // Store fullName BEFORE creating the account so onAuthStateChanged reads the real name immediately
+  const cleanPhone = phoneInfo?.phoneNumber?.trim().slice(0, 32) || '';
+  const cleanCountry = phoneInfo?.country?.trim().slice(0, 80) || '';
+  // Store fullName & phoneNumber BEFORE creating the account so onAuthStateChanged reads them immediately
   if (cleanedName && cleanEmail) {
     pendingRegistrationByEmail.set(cleanEmail.toLowerCase(), cleanedName);
+  }
+  if (cleanPhone && cleanEmail) {
+    pendingRegistrationPhoneByEmail.set(cleanEmail.toLowerCase(), {
+      phoneNumber: cleanPhone,
+      country: cleanCountry || undefined,
+    });
   }
   try {
     await setPersistence(auth, browserLocalPersistence).catch(() => {});
@@ -444,12 +288,16 @@ export async function registerWithEmailReal(
       await updateProfile(cred.user, { displayName: cleanedName }).catch(() => {});
       await reload(cred.user).catch(() => {});
     }
+    if (cleanPhone) {
+      setPendingRegistrationPhone(cred.user.uid, cleanPhone, cleanCountry, cleanEmail);
+    }
     // Non-blocking verification email so user stays signed in immediately upon account creation
     void sendEmailVerification(cred.user).catch(() => {});
     return auth.currentUser || cred.user;
   } catch (err) {
     if (cleanEmail) {
       pendingRegistrationByEmail.delete(cleanEmail.toLowerCase());
+      pendingRegistrationPhoneByEmail.delete(cleanEmail.toLowerCase());
     }
     const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
     throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname());
@@ -467,12 +315,6 @@ export async function loginWithEmailReal(
       rememberMe ? browserLocalPersistence : browserSessionPersistence,
     ).catch(() => {});
     const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-    const pendingLink = getPendingGoogleLink();
-    if (pendingLink && pendingLink.email.toLowerCase() === email.trim().toLowerCase()) {
-      await linkWithCredential(cred.user, pendingLink.credential).catch(() => {});
-      clearPendingGoogleLink();
-      await reload(cred.user).catch(() => {});
-    }
     return auth.currentUser || cred.user;
   } catch (err) {
     const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
@@ -499,15 +341,6 @@ export async function resendVerificationEmailReal(user: User): Promise<void> {
 export async function refreshAuthUser(user: User): Promise<User> {
   await reload(user);
   return auth.currentUser || user;
-}
-
-export async function linkGoogleAccountReal(user: User): Promise<User> {
-  try {
-    const res = await linkWithPopup(user, googleProvider);
-    return res.user;
-  } catch (err) {
-    throw new Error(mapFirebaseAuthError(err));
-  }
 }
 
 export async function linkEmailAccountReal(

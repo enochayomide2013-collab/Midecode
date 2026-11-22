@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import CodeMirror from '@uiw/react-codemirror';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import CodeMirror, { EditorView } from '@uiw/react-codemirror';
 import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
 import { javascript } from '@codemirror/lang-javascript';
@@ -48,6 +48,9 @@ interface MideoCodeEditorSurfaceProps {
   compactLayout?: boolean;
   onConsoleErrorChange?: (latestError: string) => void;
   extraToolbarActions?: React.ReactNode;
+  onCursorLineChange?: (line: number) => void;
+  scrollToLine?: number | null;
+  editorHeaderSlot?: React.ReactNode;
 }
 
 export function inferLanguageFromFilename(name: string): string {
@@ -78,7 +81,12 @@ export function MideoCodeEditorSurface({
   compactLayout = false,
   onConsoleErrorChange,
   extraToolbarActions,
+  onCursorLineChange,
+  scrollToLine,
+  editorHeaderSlot,
 }: MideoCodeEditorSurfaceProps) {
+  const editorViewRef = useRef<EditorView | null>(null);
+  const lastReportedLineRef = useRef<number>(1);
   const [openFileIds, setOpenFileIds] = useState<string[]>(() => (activeFileId ? [activeFileId] : []));
   const [dirtyIds, setDirtyIds] = useState<Record<string, boolean>>({});
   const [fileSearch, setFileSearch] = useState('');
@@ -105,6 +113,20 @@ export function MideoCodeEditorSurface({
       setDirtyIds({});
     }
   }, [syncStatus]);
+
+  useEffect(() => {
+    const view = editorViewRef.current;
+    if (!view || !scrollToLine || scrollToLine < 1) return;
+    try {
+      const clampedLine = Math.min(scrollToLine, view.state.doc.lines);
+      const lineInfo = view.state.doc.line(clampedLine);
+      view.dispatch({
+        effects: EditorView.scrollIntoView(lineInfo.from, { y: 'center' }),
+      });
+    } catch {
+      // Ignore if doc changed mid-switch
+    }
+  }, [scrollToLine, activeFileId]);
 
   useEffect(() => {
     const handler = (e: MessageEvent) => {
@@ -417,6 +439,7 @@ export function MideoCodeEditorSurface({
               );
             })}
           </div>
+          {editorHeaderSlot}
           <div className="flex-1 min-h-[380px] overflow-auto">
             {activeFile && (
               <CodeMirror
@@ -425,6 +448,16 @@ export function MideoCodeEditorSurface({
                 theme={settings?.editorTheme === 'githubLight' ? 'light' : oneDark}
                 extensions={editorExtensions}
                 readOnly={readOnly || Boolean(activeFile.readOnly)}
+                onCreateEditor={(view) => {
+                  editorViewRef.current = view;
+                }}
+                onStatistics={(stats) => {
+                  const ln = stats.line?.number;
+                  if (ln && ln !== lastReportedLineRef.current) {
+                    lastReportedLineRef.current = ln;
+                    onCursorLineChange?.(ln);
+                  }
+                }}
                 onChange={(value) => {
                   if (readOnly || activeFile.readOnly) return;
                   setDirtyIds((prev) => ({ ...prev, [activeFile.id]: true }));

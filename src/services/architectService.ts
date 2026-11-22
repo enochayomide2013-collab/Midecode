@@ -12,7 +12,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { fetchWithAuthAndRetry } from './authService';
 import { recordDeveloperActivity, sanitizeForFirestore } from './dataService';
 import type {
@@ -32,12 +32,16 @@ export async function listUserArchitectures(uid: string): Promise<ArchitecturePl
 
 export async function listArchitectureVersions(archId: string): Promise<ArchitectureVersion[]> {
   try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return [];
     const q = query(
       collection(db, 'architectures', archId, 'versions'),
-      orderBy('versionNumber', 'desc'),
+      where('userId', '==', uid),
     );
     const snap = await getDocs(q);
-    return snap.docs.map((d) => d.data() as ArchitectureVersion);
+    return snap.docs
+      .map((d) => d.data() as ArchitectureVersion)
+      .sort((a, b) => (b.versionNumber || 0) - (a.versionNumber || 0));
   } catch (err) {
     handleFirestoreError(err, OperationType.LIST, `architectures/${archId}/versions`);
   }

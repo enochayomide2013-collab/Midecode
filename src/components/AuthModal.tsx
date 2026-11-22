@@ -1,41 +1,37 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import type { CountryCode } from 'libphonenumber-js';
 import {
   X,
   Eye,
   EyeOff,
   Mail,
+  Phone,
   User as UserIcon,
   ShieldAlert,
   ArrowLeft,
   Loader2,
   CheckCircle2,
-  Copy,
-  Check,
   ExternalLink,
-  Link2,
 } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
 import { MideoLogo } from './MideoLogo';
-import { FIREBASE_OAUTH_CLIENT_ID, FIREBASE_PROJECT_ID } from '../services/firebase';
+import { FIREBASE_PROJECT_ID } from '../services/firebase';
 import {
   AuthServiceError,
-  clearPendingGoogleLink,
-  getCurrentAuthHostname,
-  getPendingGoogleLink,
-  isIframeEnvironment,
+  SUPPORTED_COUNTRIES,
+  formatPhoneAsYouType,
+  getCountryByCode,
   isValidEmailAddress,
-  loadGoogleIdentityScript,
-  renderGoogleGsiButton,
-  signInWithGoogleIdToken,
-  signInWithGoogleReal,
-  registerWithEmailReal,
   loginWithEmailReal,
+  normalizePhoneToE164,
+  registerWithEmailReal,
   sendPasswordResetReal,
 } from '../services/authService';
 
 interface FieldErrors {
   fullName?: string;
   email?: string;
+  phoneNumber?: string;
   password?: string;
   confirmPassword?: string;
 }
@@ -46,6 +42,8 @@ export function AuthModal() {
   const [tab, setTab] = useState<'signin' | 'register' | 'reset'>(authModalTab);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [countryCode, setCountryCode] = useState<CountryCode>('NG');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
@@ -53,187 +51,48 @@ export function AuthModal() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const [unauthorizedHost, setUnauthorizedHost] = useState<string | null>(null);
-  const [copiedHost, setCopiedHost] = useState(false);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
-  const [pendingGoogleLinkEmail, setPendingGoogleLinkEmail] = useState<string | null>(null);
-  const [showDirectGsiFallback, setShowDirectGsiFallback] = useState(false);
-  const [gsiRendered, setGsiRendered] = useState(false);
-  const gsiContainerRef = useRef<HTMLDivElement | null>(null);
-
-  const handleGoogleIdTokenCredential = useCallback(
-    async (idToken: string) => {
-      setErrorMsg(null);
-      setErrorCode(null);
-      setUnauthorizedHost(null);
-      setInfoMsg(null);
-      setLoading(true);
-      setGoogleLoading(true);
-      try {
-        const user = await signInWithGoogleIdToken(idToken);
-        await refreshUserData().catch(() => {});
-        notify('success', `Signed in as ${user.displayName || user.email}`);
-        closeAuthModal();
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Google authentication failed.';
-        const code = err instanceof AuthServiceError ? err.code || null : null;
-
-        if (code === 'auth/account-exists-with-different-credential') {
-          const pendingEmail =
-            (err instanceof AuthServiceError && err.pendingEmail) ||
-            getPendingGoogleLink()?.email ||
-            '';
-          if (pendingEmail) {
-            setEmail(pendingEmail);
-            setPendingGoogleLinkEmail(pendingEmail);
-          }
-          setTab('signin');
-          setInfoMsg(
-            `Account exists for ${pendingEmail || 'this email'} with Email & Password. Enter your password below to sign in and link Google automatically.`,
-          );
-        } else {
-          setErrorMsg(msg);
-          setErrorCode(code);
-        }
-      } finally {
-        setLoading(false);
-        setGoogleLoading(false);
-      }
-    },
-    [closeAuthModal, notify, refreshUserData],
-  );
 
   useEffect(() => {
     setTab(authModalTab);
     setErrorMsg(null);
     setErrorCode(null);
     setFieldErrors({});
-    setUnauthorizedHost(null);
     setInfoMsg(null);
-    setShowDirectGsiFallback(Boolean(FIREBASE_OAUTH_CLIENT_ID && isIframeEnvironment()));
-    setGsiRendered(false);
-    setPendingGoogleLinkEmail(getPendingGoogleLink()?.email || null);
-    if (authModalOpen && FIREBASE_OAUTH_CLIENT_ID) {
-      loadGoogleIdentityScript().catch(() => {});
-    }
     if (!authModalOpen) {
       setPassword('');
       setConfirmPassword('');
-      setGoogleLoading(false);
-      clearPendingGoogleLink();
-      setPendingGoogleLinkEmail(null);
     }
   }, [authModalTab, authModalOpen]);
 
-  useEffect(() => {
-    if (!authModalOpen || tab === 'reset' || !showDirectGsiFallback || !gsiContainerRef.current) {
-      return;
-    }
-    let cancelled = false;
-    renderGoogleGsiButton(
-      gsiContainerRef.current,
-      (token) => {
-        if (!cancelled) {
-          void handleGoogleIdTokenCredential(token);
-        }
-      },
-      {
-        text: tab === 'register' ? 'signup_with' : 'continue_with',
-        theme: 'outline',
-      },
-    ).then((ok) => {
-      if (!cancelled) setGsiRendered(ok);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [authModalOpen, tab, showDirectGsiFallback, handleGoogleIdTokenCredential]);
+  const selectedCountry = useMemo(() => getCountryByCode(countryCode), [countryCode]);
+
+  const livePhoneCheck = useMemo(() => {
+    if (!phoneNumber.trim()) return null;
+    return normalizePhoneToE164(selectedCountry, phoneNumber);
+  }, [selectedCountry, phoneNumber]);
 
   if (!authModalOpen) return null;
 
-  const switchTab = (next: 'signin' | 'register' | 'reset', opts?: { keepLink?: boolean }) => {
+  const switchTab = (next: 'signin' | 'register' | 'reset') => {
     setTab(next);
     setErrorMsg(null);
     setErrorCode(null);
     setFieldErrors({});
-    setUnauthorizedHost(null);
     setInfoMsg(null);
-    if (!opts?.keepLink) {
-      clearPendingGoogleLink();
-      setPendingGoogleLinkEmail(null);
-    }
   };
 
-  const handleCopyHostname = async (host: string) => {
-    try {
-      await navigator.clipboard.writeText(host);
-      setCopiedHost(true);
-      setTimeout(() => setCopiedHost(false), 2000);
-    } catch {
-      // Ignore clipboard failure
+  const handlePhoneChange = (val: string) => {
+    const { formatted, detectedCountry } = formatPhoneAsYouType(val, countryCode);
+    setPhoneNumber(formatted);
+    if (detectedCountry && detectedCountry !== countryCode) {
+      setCountryCode(detectedCountry);
     }
-  };
-
-  const handleGoogleAuth = async () => {
-    setErrorMsg(null);
-    setErrorCode(null);
-    setFieldErrors({});
-    setUnauthorizedHost(null);
-    setInfoMsg(null);
-    setLoading(true);
-    setGoogleLoading(true);
-    try {
-      const user = await signInWithGoogleReal();
-      if (user) {
-        await refreshUserData().catch(() => {});
-        notify('success', `Signed in as ${user.displayName || user.email}`);
-        closeAuthModal();
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Google authentication failed.';
-      const code = err instanceof AuthServiceError ? err.code || null : null;
-
-      if (code === 'auth/account-exists-with-different-credential') {
-        const pendingEmail =
-          (err instanceof AuthServiceError && err.pendingEmail) ||
-          getPendingGoogleLink()?.email ||
-          '';
-        if (pendingEmail) {
-          setEmail(pendingEmail);
-          setPendingGoogleLinkEmail(pendingEmail);
-        }
-        setTab('signin');
-        setInfoMsg(
-          `Account exists for ${pendingEmail || 'this email'} with Email & Password. Enter your password below to sign in and link Google automatically.`,
-        );
-      } else {
-        setErrorMsg(msg);
-        setErrorCode(code);
-        const shouldShowDirectFallback =
-          Boolean(FIREBASE_OAUTH_CLIENT_ID) &&
-          (code === 'auth/unauthorized-domain' ||
-            code === 'auth/popup-blocked' ||
-            code === 'auth/popup-closed-by-user' ||
-            code === 'auth/cancelled-popup-request' ||
-            code === 'auth/operation-not-supported-in-this-environment' ||
-            code === 'auth/internal-error' ||
-            msg.includes('unauthorized-domain'));
-        if (shouldShowDirectFallback) {
-          setShowDirectGsiFallback(true);
-        }
-        if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
-          setUnauthorizedHost(
-            (err instanceof AuthServiceError && err.hostname) || getCurrentAuthHostname(),
-          );
-        }
-      }
-    } finally {
-      setLoading(false);
-      setGoogleLoading(false);
+    if (fieldErrors.phoneNumber) {
+      setFieldErrors((p) => ({ ...p, phoneNumber: undefined }));
     }
   };
 
@@ -241,11 +100,11 @@ export function AuthModal() {
     e.preventDefault();
     setErrorMsg(null);
     setErrorCode(null);
-    setUnauthorizedHost(null);
     setInfoMsg(null);
 
     const nextFieldErrors: FieldErrors = {};
     const cleanEmail = email.trim();
+    let validatedPhone: { phoneNumber: string; country?: string } | undefined;
 
     if (!isValidEmailAddress(cleanEmail)) {
       nextFieldErrors.email = 'Enter a valid email address (e.g. name@domain.com).';
@@ -254,6 +113,21 @@ export function AuthModal() {
     if (tab === 'register') {
       if (fullName.trim().length < 2) {
         nextFieldErrors.fullName = 'Please enter your full name (at least 2 characters).';
+      }
+      if (!phoneNumber.trim()) {
+        nextFieldErrors.phoneNumber = 'Please enter your phone number.';
+      } else {
+        const phoneCheck = normalizePhoneToE164(selectedCountry, phoneNumber);
+        if (!phoneCheck.valid) {
+          nextFieldErrors.phoneNumber =
+            phoneCheck.error || 'Enter a valid phone number with country code.';
+        } else {
+          const countryObj = getCountryByCode(phoneCheck.detectedCountry);
+          validatedPhone = {
+            phoneNumber: phoneCheck.e164,
+            country: `${countryObj.name} (${countryObj.code})`,
+          };
+        }
       }
       if (password.length < 8 || !/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
         nextFieldErrors.password =
@@ -273,6 +147,7 @@ export function AuthModal() {
       setErrorMsg(
         nextFieldErrors.fullName ||
           nextFieldErrors.email ||
+          nextFieldErrors.phoneNumber ||
           nextFieldErrors.password ||
           nextFieldErrors.confirmPassword ||
           'Please check the highlighted fields.',
@@ -284,7 +159,12 @@ export function AuthModal() {
     setLoading(true);
     try {
       if (tab === 'register') {
-        const user = await registerWithEmailReal(fullName.trim(), cleanEmail, password);
+        const user = await registerWithEmailReal(
+          fullName.trim(),
+          cleanEmail,
+          password,
+          validatedPhone,
+        );
         await refreshUserData().catch(() => {});
         notify(
           'success',
@@ -292,18 +172,9 @@ export function AuthModal() {
         );
         closeAuthModal();
       } else if (tab === 'signin') {
-        const wasLinking = Boolean(
-          pendingGoogleLinkEmail &&
-            pendingGoogleLinkEmail.toLowerCase() === cleanEmail.toLowerCase(),
-        );
         await loginWithEmailReal(cleanEmail, password, rememberMe);
         await refreshUserData().catch(() => {});
-        notify(
-          'success',
-          wasLinking
-            ? 'Signed in and linked your Google account.'
-            : 'Welcome back to MideoCode.',
-        );
+        notify('success', 'Welcome back to MideoCode.');
         closeAuthModal();
       } else if (tab === 'reset') {
         await sendPasswordResetReal(cleanEmail);
@@ -350,11 +221,11 @@ export function AuthModal() {
                 : 'Sign in to MideoCode'}
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Secured by Firebase Authentication · Email &amp; Google
+            Secured by Firebase Authentication · Email &amp; Password
           </p>
         </div>
 
-        {/* Provider Switcher: Sign In / Sign Up */}
+        {/* Mode Switcher: Sign In / Sign Up */}
         <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 mb-5">
           <button
             type="button"
@@ -379,30 +250,6 @@ export function AuthModal() {
             Sign Up
           </button>
         </div>
-
-        {pendingGoogleLinkEmail && tab === 'signin' && (
-          <div className="mb-4 p-3 rounded-lg border border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300 text-xs flex items-start gap-2">
-            <Link2 className="w-4 h-4 shrink-0 mt-0.5" />
-            <div className="flex-1 space-y-1">
-              <p>
-                Sign in with your password for{' '}
-                <strong className="font-mono">{pendingGoogleLinkEmail}</strong> to securely link
-                your Google account.
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  clearPendingGoogleLink();
-                  setPendingGoogleLinkEmail(null);
-                  setInfoMsg(null);
-                }}
-                className="text-[11px] underline cursor-pointer"
-              >
-                Cancel Google linking
-              </button>
-            </div>
-          </div>
-        )}
 
         {errorMsg && (
           <div className="mb-4 p-3 rounded-lg border border-red-300 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-xs space-y-2">
@@ -430,32 +277,6 @@ export function AuthModal() {
                 <ExternalLink className="w-3 h-3" />
               </a>
             )}
-            {unauthorizedHost && (
-              <div className="pt-2 border-t border-red-300/60 dark:border-red-900/60 space-y-2">
-                <div className="flex items-center justify-between gap-2 bg-white/70 dark:bg-slate-900/70 px-2.5 py-1.5 rounded border border-red-200 dark:border-red-900/60">
-                  <code className="text-[11px] font-mono truncate">{unauthorizedHost}</code>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyHostname(unauthorizedHost)}
-                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 shrink-0 cursor-pointer"
-                  >
-                    {copiedHost ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                    {copiedHost ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-                {FIREBASE_PROJECT_ID && (
-                  <a
-                    href={`https://console.firebase.google.com/project/${FIREBASE_PROJECT_ID}/authentication/settings`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-[11px] font-semibold underline text-red-800 dark:text-red-200"
-                  >
-                    Open Firebase Authorized Domains Settings
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
-              </div>
-            )}
           </div>
         )}
 
@@ -464,66 +285,6 @@ export function AuthModal() {
             <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{infoMsg}</span>
           </div>
-        )}
-
-        {/* Google Sign-In / Sign-Up */}
-        {tab !== 'reset' && (
-          <>
-            <button
-              type="button"
-              onClick={handleGoogleAuth}
-              disabled={loading}
-              className="w-full py-2.5 px-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-900 dark:text-white text-sm font-medium flex items-center justify-center gap-3 transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              {googleLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-              ) : (
-                <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
-                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z" />
-                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z" />
-                  <path fill="#FBBC05" d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z" />
-                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z" />
-                </svg>
-              )}
-              {googleLoading
-                ? 'Connecting to Google...'
-                : tab === 'register'
-                  ? 'Sign up with Google'
-                  : 'Continue with Google'}
-            </button>
-
-            {FIREBASE_OAUTH_CLIENT_ID && !showDirectGsiFallback && (
-              <div className="mt-2 text-center">
-                <button
-                  type="button"
-                  onClick={() => setShowDirectGsiFallback(true)}
-                  className="text-[11px] text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 underline cursor-pointer"
-                >
-                  Popup blocked or preview iframe? Use direct Google sign-in button
-                </button>
-              </div>
-            )}
-
-            {showDirectGsiFallback && (
-              <div className="mt-3 p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 space-y-2">
-                <p className="text-[11px] text-slate-600 dark:text-slate-300 text-center">
-                  Direct Google Identity Sign-In (works even when popups are restricted):
-                </p>
-                <div ref={gsiContainerRef} className="flex justify-center min-h-[42px]" />
-                {!gsiRendered && (
-                  <p className="text-[11px] text-slate-500 text-center">
-                    Loading official Google sign-in button...
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="my-4 flex items-center gap-3 text-xs text-slate-400">
-              <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
-              <span>or with email</span>
-              <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
-            </div>
-          </>
         )}
 
         {/* Email & Password / Reset Forms */}
@@ -586,6 +347,60 @@ export function AuthModal() {
             )}
           </div>
 
+          {tab === 'register' && (
+            <div>
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                Phone Number
+              </label>
+              <div className="flex gap-2">
+                <select
+                  value={countryCode}
+                  onChange={(e) => setCountryCode(e.target.value as CountryCode)}
+                  aria-label="Country calling code"
+                  className="w-28 shrink-0 px-2 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  {SUPPORTED_COUNTRIES.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.code} ({c.dial})
+                    </option>
+                  ))}
+                </select>
+                <div className="relative flex-1">
+                  <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    required
+                    autoComplete="tel"
+                    value={phoneNumber}
+                    onChange={(e) => handlePhoneChange(e.target.value)}
+                    placeholder={`${selectedCountry.dial} phone number`}
+                    className={`w-full pl-9 pr-3.5 py-2.5 rounded-lg border bg-white dark:bg-slate-900 text-sm font-mono tabular-nums text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${
+                      fieldErrors.phoneNumber
+                        ? 'border-red-500 focus:ring-red-600'
+                        : 'border-slate-300 dark:border-slate-700 focus:ring-blue-600'
+                    }`}
+                  />
+                </div>
+              </div>
+              {fieldErrors.phoneNumber ? (
+                <p className="text-[11px] text-red-500 mt-1">{fieldErrors.phoneNumber}</p>
+              ) : livePhoneCheck ? (
+                <p
+                  className={`text-[11px] font-mono mt-1 ${
+                    livePhoneCheck.valid
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-amber-600 dark:text-amber-400'
+                  }`}
+                >
+                  {livePhoneCheck.valid
+                    ? `Formatted: ${livePhoneCheck.nationalFormatted}`
+                    : `Enter a valid ${selectedCountry.name} (${selectedCountry.dial}) or +E.164 number`}
+                </p>
+              ) : null}
+            </div>
+          )}
+
           {tab !== 'reset' && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
@@ -595,7 +410,7 @@ export function AuthModal() {
                 {tab === 'signin' && (
                   <button
                     type="button"
-                    onClick={() => switchTab('reset', { keepLink: false })}
+                    onClick={() => switchTab('reset')}
                     className="text-xs text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
                   >
                     Forgot password?
@@ -612,7 +427,11 @@ export function AuthModal() {
                     setPassword(e.target.value);
                     if (fieldErrors.password) setFieldErrors((p) => ({ ...p, password: undefined }));
                   }}
-                  placeholder="At least 8 chars with letters & numbers"
+                  placeholder={
+                    tab === 'register'
+                      ? 'At least 8 chars with letters & numbers'
+                      : 'Enter your password'
+                  }
                   className={`w-full pl-3.5 pr-10 py-2.5 rounded-lg border bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${
                     fieldErrors.password
                       ? 'border-red-500 focus:ring-red-600'

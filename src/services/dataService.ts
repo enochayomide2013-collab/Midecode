@@ -16,12 +16,14 @@ import {
   deleteField,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import {
   clearPendingRegistrationName,
+  clearPendingRegistrationPhone,
   fetchWithAuthAndRetry,
   getCountryInfoFromPhone,
   getPendingRegistrationName,
+  getPendingRegistrationPhone,
 } from './authService';
 import type {
   UserProfile,
@@ -197,6 +199,7 @@ export async function loadOrCreateUserProfile(firebaseUser: User): Promise<UserP
       let resolvedProfile: UserProfile | null = snap.exists() ? (snap.data() as UserProfile) : null;
 
       const pendingName = getPendingRegistrationName(firebaseUser.uid, firebaseUser.email);
+      const pendingPhone = getPendingRegistrationPhone(firebaseUser.uid, firebaseUser.email);
       const rawPreferredName =
         pendingName ||
         firebaseUser.displayName?.trim() ||
@@ -210,9 +213,12 @@ export async function loadOrCreateUserProfile(firebaseUser: User): Promise<UserP
       const safeEmail = firebaseUser.email?.trim()
         ? truncateToUtf8Bytes(firebaseUser.email.trim(), 254)
         : '';
-      const safePhone = firebaseUser.phoneNumber?.trim()
-        ? truncateToUtf8Bytes(firebaseUser.phoneNumber.trim(), 32)
-        : '';
+      const rawPhone = pendingPhone?.phoneNumber?.trim() || firebaseUser.phoneNumber?.trim() || '';
+      const safePhone = rawPhone ? truncateToUtf8Bytes(rawPhone, 32) : '';
+      const rawCountry =
+        pendingPhone?.country?.trim() ||
+        (safePhone ? getCountryInfoFromPhone(safePhone)?.name || '' : '');
+      const safeCountry = rawCountry ? truncateToUtf8Bytes(rawCountry, 80) : '';
 
       if (!resolvedProfile) {
         const newProfile: Record<string, unknown> = {
@@ -234,6 +240,7 @@ export async function loadOrCreateUserProfile(firebaseUser: User): Promise<UserP
         if (safePhoto) newProfile.photoURL = safePhoto;
         if (safeEmail) newProfile.email = safeEmail;
         if (safePhone) newProfile.phoneNumber = safePhone;
+        if (safeCountry) newProfile.country = safeCountry;
 
         await setDoc(userRef, newProfile);
         const createdSnap = await getDoc(userRef);
@@ -252,6 +259,12 @@ export async function loadOrCreateUserProfile(firebaseUser: User): Promise<UserP
         if (!resolvedProfile.email && safeEmail) {
           patch.email = safeEmail;
         }
+        if (!resolvedProfile.phoneNumber && safePhone) {
+          patch.phoneNumber = safePhone;
+        }
+        if (!resolvedProfile.country && safeCountry) {
+          patch.country = safeCountry;
+        }
         if (Object.keys(patch).length > 0) {
           patch.updatedAt = serverTimestamp();
           await updateDoc(userRef, patch).catch(() => {});
@@ -261,6 +274,9 @@ export async function loadOrCreateUserProfile(firebaseUser: User): Promise<UserP
 
       if (pendingName) {
         clearPendingRegistrationName(firebaseUser.uid, firebaseUser.email);
+      }
+      if (pendingPhone) {
+        clearPendingRegistrationPhone(firebaseUser.uid, firebaseUser.email);
       }
 
       const displayName =
@@ -1041,7 +1057,9 @@ export async function createProjectWithFiles(
     });
 
     const projectSnap = await getDoc(doc(db, 'projects', projectId));
-    const filesSnap = await getDocs(collection(db, 'projects', projectId, 'files'));
+    const filesSnap = await getDocs(
+      query(collection(db, 'projects', projectId, 'files'), where('ownerId', '==', uid)),
+    );
     return {
       project: projectSnap.data() as Project,
       files: filesSnap.docs.map((d) => d.data() as ProjectFile),
@@ -1053,8 +1071,24 @@ export async function createProjectWithFiles(
 
 export async function getProjectFiles(projectId: string): Promise<ProjectFile[]> {
   try {
-    const snap = await getDocs(collection(db, 'projects', projectId, 'files'));
-    return snap.docs.map((d) => d.data() as ProjectFile);
+    const filesCol = collection(db, 'projects', projectId, 'files');
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      const pubSnap = await getDocs(query(filesCol, where('visibility', '==', 'public')));
+      return pubSnap.docs.map((d) => d.data() as ProjectFile);
+    }
+
+    const [ownedSnap, collabSnap, publicSnap] = await Promise.all([
+      getDocs(query(filesCol, where('ownerId', '==', uid))),
+      getDocs(query(filesCol, where('collaboratorIds', 'array-contains', uid))),
+      getDocs(query(filesCol, where('visibility', '==', 'public'))),
+    ]);
+
+    const byId = new Map<string, ProjectFile>();
+    for (const d of ownedSnap.docs) byId.set(d.id, d.data() as ProjectFile);
+    for (const d of collabSnap.docs) byId.set(d.id, d.data() as ProjectFile);
+    for (const d of publicSnap.docs) byId.set(d.id, d.data() as ProjectFile);
+    return Array.from(byId.values());
   } catch (err) {
     handleFirestoreError(err, OperationType.LIST, `projects/${projectId}/files`);
   }
@@ -1426,9 +1460,17 @@ export async function createProjectVersionSnapshot(
 
 export async function listProjectVersions(projectId: string): Promise<ProjectVersion[]> {
   try {
-    const q = query(collection(db, 'projects', projectId, 'versions'), orderBy('versionNumber', 'desc'));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => d.data() as ProjectVersion);
+    const uid = auth.currentUser?.uid;
+    if (!uid) return [];
+    const versionsCol = collection(db, 'projects', projectId, 'versions');
+    const [ownedSnap, collabSnap] = await Promise.all([
+      getDocs(query(versionsCol, where('ownerId', '==', uid))),
+      getDocs(query(versionsCol, where('collaboratorIds', 'array-contains', uid))),
+    ]);
+    const byId = new Map<string, ProjectVersion>();
+    for (const d of ownedSnap.docs) byId.set(d.id, d.data() as ProjectVersion);
+    for (const d of collabSnap.docs) byId.set(d.id, d.data() as ProjectVersion);
+    return Array.from(byId.values()).sort((a, b) => (b.versionNumber || 0) - (a.versionNumber || 0));
   } catch (err) {
     handleFirestoreError(err, OperationType.LIST, `projects/${projectId}/versions`);
   }

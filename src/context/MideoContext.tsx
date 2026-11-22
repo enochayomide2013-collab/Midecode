@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth, extractReadableError } from '../services/firebase';
-import { checkGoogleRedirectResult, logoutReal, refreshAuthUser } from '../services/authService';
+import { logoutReal, refreshAuthUser } from '../services/authService';
 import {
   loadOrCreateUserProfile,
   getUserSettings,
@@ -127,6 +127,9 @@ interface MideoContextValue {
   collabProjectId: string | null;
   setCollabProjectId: (id: string | null) => void;
   openCollabForProject: (projectId: string) => void;
+  ideFollowTargetUid: string | null;
+  setIdeFollowTargetUid: (uid: string | null) => void;
+  openProjectInIdeAndFollow: (projectId: string, targetUid?: string) => void;
   rescueLaunch: RescueLaunchContext | null;
   clearRescueLaunch: () => void;
   openRescueForProject: (
@@ -256,6 +259,7 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
   } | null>(null);
   const [versionsProjectId, setVersionsProjectId] = useState<string | null>(null);
   const [collabProjectId, setCollabProjectId] = useState<string | null>(null);
+  const [ideFollowTargetUid, setIdeFollowTargetUid] = useState<string | null>(null);
   const [rescueLaunch, setRescueLaunch] = useState<RescueLaunchContext | null>(null);
   const [aiLaunch, setAiLaunch] = useState<AiLaunchContext | null>(null);
 
@@ -449,10 +453,6 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
       }
     }, 3000);
 
-    checkGoogleRedirectResult().catch((err) => {
-      notify('error', err instanceof Error ? err.message : 'Google redirect sign-in failed.');
-    });
-
     const unsub = onAuthStateChanged(auth, async (user) => {
       settled = true;
       clearTimeout(failSafeTimer);
@@ -606,6 +606,15 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
       setActiveIdeProjectId(projectId);
       setCollabProjectId(projectId);
       setActiveView('collaboration');
+    },
+    [setActiveView],
+  );
+
+  const openProjectInIdeAndFollow = useCallback(
+    (projectId: string, targetUid?: string) => {
+      setActiveIdeProjectId(projectId);
+      setIdeFollowTargetUid(targetUid || null);
+      setActiveView('ide');
     },
     [setActiveView],
   );
@@ -807,6 +816,9 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
         collabProjectId,
         setCollabProjectId,
         openCollabForProject,
+        ideFollowTargetUid,
+        setIdeFollowTargetUid,
+        openProjectInIdeAndFollow,
         rescueLaunch,
         clearRescueLaunch,
         openRescueForProject,
