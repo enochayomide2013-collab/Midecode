@@ -182,128 +182,164 @@ export async function recordDeveloperActivity(
 // ---------------------------------------------------------------------------
 // User Profiles, Public Profiles & Settings
 // ---------------------------------------------------------------------------
+const inFlightProfileLoads = new Map<string, Promise<UserProfile>>();
+
 export async function loadOrCreateUserProfile(firebaseUser: User): Promise<UserProfile> {
-  const userRef = doc(db, 'users', firebaseUser.uid);
-  try {
-    const snap = await getDoc(userRef);
-    let resolvedProfile: UserProfile | null = snap.exists() ? (snap.data() as UserProfile) : null;
+  const existingLoad = inFlightProfileLoads.get(firebaseUser.uid);
+  if (existingLoad) {
+    return existingLoad;
+  }
 
-    const pendingName = getPendingRegistrationName(firebaseUser.uid, firebaseUser.email);
-    const preferredDisplayName =
-      pendingName ||
-      firebaseUser.displayName?.trim() ||
-      resolvedProfile?.displayName?.trim() ||
-      firebaseUser.email?.split('@')[0] ||
-      (firebaseUser.phoneNumber ? `Developer ${firebaseUser.phoneNumber.slice(-4)}` : 'MideoCode Learner');
+  const run = (async (): Promise<UserProfile> => {
+    const userRef = doc(db, 'users', firebaseUser.uid);
+    try {
+      const snap = await getDoc(userRef);
+      let resolvedProfile: UserProfile | null = snap.exists() ? (snap.data() as UserProfile) : null;
 
-    if (!resolvedProfile) {
-      const newProfile: Record<string, unknown> = {
-        uid: firebaseUser.uid,
-        displayName: preferredDisplayName.slice(0, 80),
-        experienceLevel: 'beginner',
-        preferredLanguages: ['JavaScript', 'HTML/CSS'],
-        learningGoals: ['Build real-world projects'],
-        interests: ['Web Development'],
-        onboardingComplete: false,
-        xp: 0,
-        level: 1,
-        streak: 1,
-        lastActivityDate: getTodayKey(),
-        role: 'member',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-      if (firebaseUser.photoURL) newProfile.photoURL = firebaseUser.photoURL.slice(0, 500);
-      if (firebaseUser.email) newProfile.email = firebaseUser.email.slice(0, 254);
-      if (firebaseUser.phoneNumber) newProfile.phoneNumber = firebaseUser.phoneNumber.slice(0, 32);
+      const pendingName = getPendingRegistrationName(firebaseUser.uid, firebaseUser.email);
+      const rawPreferredName =
+        pendingName ||
+        firebaseUser.displayName?.trim() ||
+        resolvedProfile?.displayName?.trim() ||
+        firebaseUser.email?.split('@')[0] ||
+        (firebaseUser.phoneNumber ? `Developer ${firebaseUser.phoneNumber.slice(-4)}` : 'MideoCode Learner');
+      const preferredDisplayName = truncateToUtf8Bytes(rawPreferredName.trim(), 80) || 'MideoCode Learner';
+      const safePhoto = firebaseUser.photoURL?.trim()
+        ? truncateToUtf8Bytes(firebaseUser.photoURL.trim(), 500)
+        : '';
+      const safeEmail = firebaseUser.email?.trim()
+        ? truncateToUtf8Bytes(firebaseUser.email.trim(), 254)
+        : '';
+      const safePhone = firebaseUser.phoneNumber?.trim()
+        ? truncateToUtf8Bytes(firebaseUser.phoneNumber.trim(), 32)
+        : '';
 
-      await setDoc(userRef, newProfile);
-      const createdSnap = await getDoc(userRef);
-      resolvedProfile = createdSnap.data() as UserProfile;
-    } else {
-      const patch: Record<string, unknown> = {};
-      if (pendingName && resolvedProfile.displayName !== pendingName) {
-        patch.displayName = pendingName.slice(0, 80);
-      }
-      if (!resolvedProfile.photoURL && firebaseUser.photoURL) {
-        patch.photoURL = firebaseUser.photoURL.slice(0, 500);
-      }
-      if (!resolvedProfile.email && firebaseUser.email) {
-        patch.email = firebaseUser.email.slice(0, 254);
-      }
-      if (Object.keys(patch).length > 0) {
-        patch.updatedAt = serverTimestamp();
-        await updateDoc(userRef, patch).catch(() => {});
-        resolvedProfile = { ...resolvedProfile, ...patch } as UserProfile;
-      }
-    }
-
-    if (pendingName) {
-      clearPendingRegistrationName(firebaseUser.uid, firebaseUser.email);
-    }
-
-    const displayName = resolvedProfile?.displayName || preferredDisplayName;
-
-    // Mirror non-PII public profile if missing
-    const publicRef = doc(db, 'publicProfiles', firebaseUser.uid);
-    const publicSnap = await getDoc(publicRef);
-    if (!publicSnap.exists()) {
-      const publicProfile: Record<string, unknown> = {
-        uid: firebaseUser.uid,
-        displayName: displayName.slice(0, 80),
-        level: resolvedProfile?.level ?? 1,
-        xp: resolvedProfile?.xp ?? 0,
-        streak: resolvedProfile?.streak ?? 1,
-        badgesCount: 0,
-        updatedAt: serverTimestamp(),
-      };
-      const photo = resolvedProfile?.photoURL || firebaseUser.photoURL;
-      if (photo) publicProfile.photoURL = photo.slice(0, 500);
-      await setDoc(publicRef, publicProfile);
-    } else if (pendingName && (publicSnap.data() as { displayName?: string })?.displayName !== pendingName) {
-      await updateDoc(publicRef, {
-        displayName: pendingName.slice(0, 80),
-        updatedAt: serverTimestamp(),
-      }).catch(() => {});
-    }
-
-    // Create default user settings if missing
-    const settingsRef = doc(db, 'userSettings', firebaseUser.uid);
-    const settingsSnap = await getDoc(settingsRef);
-    if (!settingsSnap.exists()) {
-      await setDoc(settingsRef, {
-        userId: firebaseUser.uid,
-        theme: 'dark',
-        editorTheme: 'oneDark',
-        editorFontSize: 14,
-        tabSize: 2,
-        autosave: true,
-        updatedAt: serverTimestamp(),
-      });
-    }
-
-    // Welcome notification if missing (only on brand-new user creation)
-    if (!snap.exists()) {
-      const notifId = `welcome_${firebaseUser.uid.slice(0, 20)}`;
-      const notifRef = doc(db, 'notifications', notifId);
-      const notifSnap = await getDoc(notifRef);
-      if (!notifSnap.exists()) {
-        await setDoc(notifRef, {
-          id: notifId,
-          userId: firebaseUser.uid,
-          title: 'Welcome to MideoCode',
-          body: 'Your workspace, cloud storage, and academy roadmap are ready.',
-          linkView: 'academy',
-          read: false,
+      if (!resolvedProfile) {
+        const newProfile: Record<string, unknown> = {
+          uid: firebaseUser.uid,
+          displayName: preferredDisplayName,
+          experienceLevel: 'beginner',
+          preferredLanguages: ['JavaScript', 'HTML/CSS'],
+          learningGoals: ['Build real-world projects'],
+          interests: ['Web Development'],
+          onboardingComplete: false,
+          xp: 0,
+          level: 1,
+          streak: 1,
+          lastActivityDate: getTodayKey(),
+          role: 'member',
           createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+        if (safePhoto) newProfile.photoURL = safePhoto;
+        if (safeEmail) newProfile.email = safeEmail;
+        if (safePhone) newProfile.phoneNumber = safePhone;
+
+        await setDoc(userRef, newProfile);
+        const createdSnap = await getDoc(userRef);
+        resolvedProfile = createdSnap.data() as UserProfile;
+      } else {
+        const patch: Record<string, unknown> = {};
+        if (pendingName) {
+          const safePending = truncateToUtf8Bytes(pendingName.trim(), 80);
+          if (safePending && resolvedProfile.displayName !== safePending) {
+            patch.displayName = safePending;
+          }
+        }
+        if (!resolvedProfile.photoURL && safePhoto) {
+          patch.photoURL = safePhoto;
+        }
+        if (!resolvedProfile.email && safeEmail) {
+          patch.email = safeEmail;
+        }
+        if (Object.keys(patch).length > 0) {
+          patch.updatedAt = serverTimestamp();
+          await updateDoc(userRef, patch).catch(() => {});
+          resolvedProfile = { ...resolvedProfile, ...patch } as UserProfile;
+        }
+      }
+
+      if (pendingName) {
+        clearPendingRegistrationName(firebaseUser.uid, firebaseUser.email);
+      }
+
+      const displayName =
+        truncateToUtf8Bytes((resolvedProfile?.displayName || preferredDisplayName).trim(), 80) ||
+        'MideoCode Learner';
+
+      // Mirror non-PII public profile if missing
+      const publicRef = doc(db, 'publicProfiles', firebaseUser.uid);
+      const publicSnap = await getDoc(publicRef);
+      if (!publicSnap.exists()) {
+        const publicProfile: Record<string, unknown> = {
+          uid: firebaseUser.uid,
+          displayName,
+          level: resolvedProfile?.level ?? 1,
+          xp: resolvedProfile?.xp ?? 0,
+          streak: resolvedProfile?.streak ?? 1,
+          badgesCount: 0,
+          updatedAt: serverTimestamp(),
+        };
+        const photo = resolvedProfile?.photoURL?.trim() || safePhoto;
+        if (photo) publicProfile.photoURL = truncateToUtf8Bytes(photo, 500);
+        await setDoc(publicRef, publicProfile);
+      } else if (pendingName) {
+        const safePending = truncateToUtf8Bytes(pendingName.trim(), 80);
+        if (safePending && (publicSnap.data() as { displayName?: string })?.displayName !== safePending) {
+          await updateDoc(publicRef, {
+            displayName: safePending,
+            updatedAt: serverTimestamp(),
+          }).catch(() => {});
+        }
+      }
+
+      // Create default user settings if missing
+      const settingsRef = doc(db, 'userSettings', firebaseUser.uid);
+      const settingsSnap = await getDoc(settingsRef);
+      if (!settingsSnap.exists()) {
+        await setDoc(settingsRef, {
+          userId: firebaseUser.uid,
+          theme: 'dark',
+          editorTheme: 'oneDark',
+          editorFontSize: 14,
+          tabSize: 2,
+          autosave: true,
+          updatedAt: serverTimestamp(),
         });
       }
-    }
 
-    return resolvedProfile;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `users/${firebaseUser.uid}`);
-  }
+      // Welcome notification if missing (non-blocking on brand-new user creation)
+      if (!snap.exists()) {
+        try {
+          const notifId = `welcome_${firebaseUser.uid.slice(0, 20)}`;
+          const notifRef = doc(db, 'notifications', notifId);
+          const notifSnap = await getDoc(notifRef);
+          if (!notifSnap.exists()) {
+            await setDoc(notifRef, {
+              id: notifId,
+              userId: firebaseUser.uid,
+              title: 'Welcome to MideoCode',
+              body: 'Your workspace, cloud storage, and academy roadmap are ready.',
+              linkView: 'academy',
+              read: false,
+              createdAt: serverTimestamp(),
+            });
+          }
+        } catch {
+          // Non-blocking welcome notification
+        }
+      }
+
+      return resolvedProfile;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${firebaseUser.uid}`);
+    } finally {
+      inFlightProfileLoads.delete(firebaseUser.uid);
+    }
+  })();
+
+  inFlightProfileLoads.set(firebaseUser.uid, run);
+  return run;
 }
 
 export async function saveOnboardingProfile(
@@ -322,7 +358,7 @@ export async function saveOnboardingProfile(
 ): Promise<void> {
   const path = `users/${uid}`;
   try {
-    const cleanName = payload.displayName.trim().slice(0, 80) || 'Developer';
+    const cleanName = truncateToUtf8Bytes(payload.displayName.trim(), 80) || 'Developer';
     const userPatch: Record<string, unknown> = {
       displayName: cleanName,
       experienceLevel: payload.experienceLevel,
@@ -334,21 +370,21 @@ export async function saveOnboardingProfile(
       updatedAt: serverTimestamp(),
     };
     if (payload.phoneNumber && payload.phoneNumber.trim()) {
-      const cleanPhone = payload.phoneNumber.trim().slice(0, 32);
+      const cleanPhone = truncateToUtf8Bytes(payload.phoneNumber.trim(), 32);
       userPatch.phoneNumber = cleanPhone;
       const derivedCountry = payload.country?.trim() || getCountryInfoFromPhone(cleanPhone)?.name;
       if (derivedCountry) {
-        userPatch.country = derivedCountry.slice(0, 80);
+        userPatch.country = truncateToUtf8Bytes(derivedCountry, 80);
       }
     } else if (payload.country && payload.country.trim()) {
-      userPatch.country = payload.country.trim().slice(0, 80);
+      userPatch.country = truncateToUtf8Bytes(payload.country.trim(), 80);
     }
     const publicPatch: Record<string, unknown> = {
       displayName: cleanName,
       updatedAt: serverTimestamp(),
     };
     if (payload.photoURL && payload.photoURL.trim()) {
-      const cleanPhoto = payload.photoURL.trim().slice(0, 500);
+      const cleanPhoto = truncateToUtf8Bytes(payload.photoURL.trim(), 500);
       userPatch.photoURL = cleanPhoto;
       publicPatch.photoURL = cleanPhoto;
     }

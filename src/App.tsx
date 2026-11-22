@@ -676,6 +676,7 @@ function WorkspaceShell() {
                 <img
                   src={profile.photoURL}
                   alt={profile.displayName || 'User avatar'}
+                  referrerPolicy="no-referrer"
                   className="w-5 h-5 rounded object-cover"
                 />
               ) : (

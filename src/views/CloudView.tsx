@@ -20,6 +20,7 @@ import {
   restoreProjectVersionSnapshot,
   updateProjectMeta,
 } from '../services/dataService';
+import { downloadProjectAsZip } from '../utils/zipBuilder';
 import type { Project, ProjectFile, ProjectVersion } from '../types/mideocode';
 
 const QUOTA_BYTES = 5 * 1024 * 1024; // 5 MB per workspace plan limit
@@ -144,6 +145,19 @@ export function CloudView() {
     } catch (err) {
       notify('error', err instanceof Error ? err.message : 'Unable to update visibility.');
     }
+  };
+
+  const handleExportZip = () => {
+    if (!activeProject) return;
+    downloadProjectAsZip(
+      activeProject.title,
+      files.map((f) => ({
+        name: f.name,
+        folder: f.folder,
+        content: f.content,
+      })),
+    );
+    notify('success', `Workspace "${activeProject.title}" downloaded as .zip archive.`);
   };
 
   const handleExportBackup = () => {
@@ -341,6 +355,13 @@ export function CloudView() {
                         <Lock className="w-3.5 h-3.5" /> Make Private
                       </>
                     )}
+                  </button>
+                  <button
+                    onClick={handleExportZip}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium hover:border-blue-500 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Export .zip
                   </button>
                   <button
                     onClick={handleExportBackup}

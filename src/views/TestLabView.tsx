@@ -3,6 +3,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
+  Download,
   FileCode2,
   FlaskConical,
   History,
@@ -24,7 +25,7 @@ import {
   TESTLAB_LANGUAGES,
   fileMatchesTestLabLanguage,
   getTestLabLanguageSpec,
-  normalizeTestLabLanguage,
+  normalizeSelectableTestLabLanguage,
   type TestLabLanguageId,
 } from '../data/testLabLanguages';
 import { addProjectFile, getProjectFiles } from '../services/dataService';
@@ -37,6 +38,12 @@ import {
   listTestSuitesForUser,
   saveTestSuite,
 } from '../services/testLabService';
+import {
+  downloadTextArtifact,
+  formatTestRunMarkdown,
+  redactSensitiveText,
+  slugifyArtifactName,
+} from '../utils/reportExporters';
 import type {
   Project,
   ProjectFile,
@@ -184,7 +191,7 @@ export function TestLabView() {
     getProjectFiles(activeProject.id)
       .then((files) => {
         setProjectFiles(files);
-        setSelectedLanguage(normalizeTestLabLanguage(activeProject.language, files));
+        setSelectedLanguage(normalizeSelectableTestLabLanguage(activeProject.language, files));
       })
       .catch(() => setProjectFiles([]));
   }, [activeProject?.id, activeProject?.language]);
@@ -566,7 +573,7 @@ export function TestLabView() {
                   Isolated Verification Across 9 Programming Languages
                 </h2>
                 <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Run tests across HTML, CSS, JavaScript, TypeScript, Python, SQL, C++, C#, and Java. Execution uses isolated Node VM, esbuild, Python 3, in-memory SQLite, g++ C++17 native compilation, and static structural analyzers—never risking the host application.
+                  Test projects across JavaScript, Python, SQL, C++, C#, Java, Go, Rust, and PHP (with full HTML/CSS/TypeScript web support). Execution uses isolated Node VM, esbuild, Python 3, in-memory SQLite, g++ C++17 native compilation, and structural analyzers—never risking the host application.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2.5 shrink-0">
@@ -1301,6 +1308,39 @@ export function TestLabView() {
                       Rerun
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const md = formatTestRunMarkdown(activeRun);
+                      const slug = slugifyArtifactName(activeRun.suiteTitle, 'test-run');
+                      downloadTextArtifact(`${slug}-report.md`, md, 'text/markdown');
+                      notify('success', 'Downloaded TestLab report (.md).');
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download .md
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const safeRun = {
+                        ...activeRun,
+                        results: activeRun.results.map((r) => ({
+                          ...r,
+                          actualResult: redactSensitiveText(r.actualResult),
+                          failureMessage: r.failureMessage ? redactSensitiveText(r.failureMessage) : undefined,
+                        })),
+                      };
+                      const slug = slugifyArtifactName(activeRun.suiteTitle, 'test-run');
+                      downloadTextArtifact(`${slug}-report.json`, JSON.stringify(safeRun, null, 2), 'application/json');
+                      notify('success', 'Downloaded TestLab report (.json).');
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download .json
+                  </button>
                 </div>
               </div>
 

@@ -168,7 +168,7 @@ export interface Project {
   ownerName: string;
   title: string;
   description: string;
-  language: 'web' | 'javascript' | 'typescript' | 'python' | 'sql' | 'html' | 'css';
+  language: 'web' | 'javascript' | 'typescript' | 'python' | 'sql' | 'html' | 'css' | 'cpp' | 'csharp' | 'java' | 'go' | 'rust' | 'php';
   guidedProjectId?: string;
   architectureId?: string;
   visibility: 'private' | 'public';
@@ -435,7 +435,7 @@ export interface ModerationReport {
 
 export interface IdeLaunchPayload {
   title: string;
-  language: 'web' | 'javascript' | 'python';
+  language: 'web' | 'javascript' | 'typescript' | 'python' | 'sql' | 'html' | 'css' | 'cpp' | 'csharp' | 'java' | 'go' | 'rust' | 'php';
   files: { name: string; folder: string; language: string; content: string }[];
   guidedProjectId?: string;
   architectureId?: string;

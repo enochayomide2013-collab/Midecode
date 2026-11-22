@@ -1,13 +1,16 @@
 export type TestLabLanguageId =
-  | 'html'
-  | 'css'
   | 'javascript'
-  | 'typescript'
   | 'python'
   | 'sql'
   | 'cpp'
   | 'csharp'
-  | 'java';
+  | 'java'
+  | 'go'
+  | 'rust'
+  | 'php'
+  | 'html'
+  | 'css'
+  | 'typescript';
 
 export interface TestLabLanguageSpec {
   id: TestLabLanguageId;
@@ -24,60 +27,8 @@ export interface TestLabLanguageSpec {
   starterExpected: string;
 }
 
+// The exact 9 selectable languages exposed in the TestLab dropdown & quick matrix
 export const TESTLAB_LANGUAGES: TestLabLanguageSpec[] = [
-  {
-    id: 'html',
-    label: 'HTML',
-    extension: '.html',
-    framework: 'Mideo HTML Validator',
-    runtimeMode: 'parser_validator',
-    runtimeLabel: 'HTML DOM & Tag Validator',
-    runnerNote: 'Validates balanced HTML tags, attributes, IDs, classes, and structure assertions.',
-    starterTargetFile: 'index.html',
-    starterProjectContent: `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Mideo App</title>
-  </head>
-  <body>
-    <main id="app" class="container">
-      <h1>Welcome to MideoCode</h1>
-    </main>
-  </body>
-</html>
-`,
-    starterTestName: 'HTML contains balanced tags and main container',
-    starterTestCode: `assert.balancedTags();
-assert.hasTag('h1');
-assert.hasId('app');`,
-    starterExpected: 'Balanced markup with <h1> and #app container',
-  },
-  {
-    id: 'css',
-    label: 'CSS',
-    extension: '.css',
-    framework: 'Mideo CSS Parser',
-    runtimeMode: 'parser_validator',
-    runtimeLabel: 'esbuild CSS Parser',
-    runnerNote: 'Parses CSS with esbuild to catch syntax errors and checks selectors, variables, and properties.',
-    starterTargetFile: 'styles.css',
-    starterProjectContent: `:root {
-  --brand-primary: #2563eb;
-}
-
-.container {
-  display: flex;
-  gap: 1rem;
-  color: var(--brand-primary);
-}
-`,
-    starterTestName: 'CSS parses cleanly and defines layout rules',
-    starterTestCode: `assert.validCss();
-assert.hasSelector('.container');
-assert.hasProperty('display');`,
-    starterExpected: 'Valid CSS syntax with .container display rule',
-  },
   {
     id: 'javascript',
     label: 'JavaScript',
@@ -95,24 +46,6 @@ assert.hasProperty('display');`,
     starterTestCode: `expect(1 + 2).toBe(3);
 expect([10, 20, 30]).toContain(20);`,
     starterExpected: 'Assertions evaluate cleanly inside isolated VM',
-  },
-  {
-    id: 'typescript',
-    label: 'TypeScript',
-    extension: '.ts',
-    framework: 'Mideo TS VM Runner',
-    runtimeMode: 'sandbox_exec',
-    runtimeLabel: 'esbuild TypeScript + Node VM',
-    runnerNote: 'Transpiles TypeScript with esbuild, verifies TS syntax, and executes with line coverage.',
-    starterTargetFile: 'main.ts',
-    starterProjectContent: `export function greet(name: string): string {
-  return \`Hello, \${name}\`;
-}
-`,
-    starterTestName: 'Typed helper transforms and runs cleanly',
-    starterTestCode: `const formatScore = (score: number, max: number): number => Math.round((score / max) * 100);
-expect(formatScore(18, 20)).toBe(90);`,
-    starterExpected: 'TypeScript transpiles without syntax errors and evaluates to 90',
   },
   {
     id: 'python',
@@ -224,11 +157,174 @@ assert.hasClass('Main');
 assert.hasMethod('add');`,
     starterExpected: 'Valid Java class structure and balanced braces',
   },
+  {
+    id: 'go',
+    label: 'Go',
+    extension: '.go',
+    framework: 'Mideo Go Structural Analyzer',
+    runtimeMode: 'static_structural',
+    runtimeLabel: 'Go Static Structural Check',
+    runnerNote: 'Verifies Go package declarations, func/struct definitions, and lexical delimiter integrity (Go toolchain binary is not installed in this container).',
+    starterTargetFile: 'main.go',
+    starterProjectContent: `package main
+
+func Add(a int, b int) int {
+	return a + b
+}
+
+func main() {
+	_ = Add(2, 3)
+}
+`,
+    starterTestName: 'Go package, function declarations, and delimiter integrity',
+    starterTestCode: `assert.balancedBraces();
+assert.hasPackage('main');
+assert.hasFunc('Add');
+assert.hasFunc('main');`,
+    starterExpected: 'Valid Go package main with Add() and main() and balanced delimiters',
+  },
+  {
+    id: 'rust',
+    label: 'Rust',
+    extension: '.rs',
+    framework: 'Mideo Rust Structural Analyzer',
+    runtimeMode: 'static_structural',
+    runtimeLabel: 'Rust Static Structural Check',
+    runnerNote: 'Verifies Rust fn/struct/impl definitions, balanced delimiters, and safety checks (Rust rustc compiler binary is not installed in this container).',
+    starterTargetFile: 'main.rs',
+    starterProjectContent: `pub fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+fn main() {
+    let total = add(4, 6);
+    println!("Total: {}", total);
+}
+`,
+    starterTestName: 'Rust function signatures and delimiter balance check',
+    starterTestCode: `assert.balancedBraces();
+assert.hasFn('add');
+assert.hasFn('main');`,
+    starterExpected: 'Valid Rust fn add and fn main with balanced delimiters',
+  },
+  {
+    id: 'php',
+    label: 'PHP',
+    extension: '.php',
+    framework: 'Mideo PHP Structural Analyzer',
+    runtimeMode: 'static_structural',
+    runtimeLabel: 'PHP Static Structural Check',
+    runnerNote: 'Verifies <?php opening tags, function/class definitions, and lexical delimiter balance (PHP CLI binary is not installed in this container).',
+    starterTargetFile: 'index.php',
+    starterProjectContent: `<?php
+declare(strict_types=1);
+
+function sumValues(int $a, int $b): int {
+    return $a + $b;
+}
+`,
+    starterTestName: 'PHP opening tag, function signature, and delimiter check',
+    starterTestCode: `assert.balancedBraces();
+assert.hasPhpOpenTag();
+assert.hasFunction('sumValues');`,
+    starterExpected: 'Valid <?php tag, sumValues function, and balanced delimiters',
+  },
+];
+
+// Auxiliary language specs preserved for Web (HTML/CSS/TypeScript) project auto-detection
+export const AUXILIARY_TESTLAB_LANGUAGES: TestLabLanguageSpec[] = [
+  {
+    id: 'html',
+    label: 'HTML',
+    extension: '.html',
+    framework: 'Mideo HTML Validator',
+    runtimeMode: 'parser_validator',
+    runtimeLabel: 'HTML DOM & Tag Validator',
+    runnerNote: 'Validates balanced HTML tags, attributes, IDs, classes, and structure assertions.',
+    starterTargetFile: 'index.html',
+    starterProjectContent: `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Mideo App</title>
+  </head>
+  <body>
+    <main id="app" class="container">
+      <h1>Welcome to MideoCode</h1>
+    </main>
+  </body>
+</html>
+`,
+    starterTestName: 'HTML contains balanced tags and main container',
+    starterTestCode: `assert.balancedTags();
+assert.hasTag('h1');
+assert.hasId('app');`,
+    starterExpected: 'Balanced markup with <h1> and #app container',
+  },
+  {
+    id: 'css',
+    label: 'CSS',
+    extension: '.css',
+    framework: 'Mideo CSS Parser',
+    runtimeMode: 'parser_validator',
+    runtimeLabel: 'esbuild CSS Parser',
+    runnerNote: 'Parses CSS with esbuild to catch syntax errors and checks selectors, variables, and properties.',
+    starterTargetFile: 'styles.css',
+    starterProjectContent: `:root {
+  --brand-primary: #2563eb;
+}
+
+.container {
+  display: flex;
+  gap: 1rem;
+  color: var(--brand-primary);
+}
+`,
+    starterTestName: 'CSS parses cleanly and defines layout rules',
+    starterTestCode: `assert.validCss();
+assert.hasSelector('.container');
+assert.hasProperty('display');`,
+    starterExpected: 'Valid CSS syntax with .container display rule',
+  },
+  {
+    id: 'typescript',
+    label: 'TypeScript',
+    extension: '.ts',
+    framework: 'Mideo TS VM Runner',
+    runtimeMode: 'sandbox_exec',
+    runtimeLabel: 'esbuild TypeScript + Node VM',
+    runnerNote: 'Transpiles TypeScript with esbuild, verifies TS syntax, and executes with line coverage.',
+    starterTargetFile: 'main.ts',
+    starterProjectContent: `export function greet(name: string): string {
+  return \`Hello, \${name}\`;
+}
+`,
+    starterTestName: 'Typed helper transforms and runs cleanly',
+    starterTestCode: `const formatScore = (score: number, max: number): number => Math.round((score / max) * 100);
+expect(formatScore(18, 20)).toBe(90);`,
+    starterExpected: 'TypeScript transpiles without syntax errors and evaluates to 90',
+  },
+];
+
+export const ALL_TESTLAB_LANGUAGES: TestLabLanguageSpec[] = [
+  ...TESTLAB_LANGUAGES,
+  ...AUXILIARY_TESTLAB_LANGUAGES,
 ];
 
 export function getTestLabLanguageSpec(lang?: string): TestLabLanguageSpec {
   const normalized = normalizeTestLabLanguage(lang);
-  return TESTLAB_LANGUAGES.find((l) => l.id === normalized) || TESTLAB_LANGUAGES[2];
+  return ALL_TESTLAB_LANGUAGES.find((l) => l.id === normalized) || TESTLAB_LANGUAGES[0];
+}
+
+export function normalizeSelectableTestLabLanguage(
+  lang?: string,
+  files?: { name: string; language?: string }[],
+): 'javascript' | 'python' | 'sql' | 'cpp' | 'csharp' | 'java' | 'go' | 'rust' | 'php' {
+  const detected = normalizeTestLabLanguage(lang, files);
+  if (detected === 'html' || detected === 'css' || detected === 'typescript') {
+    return 'javascript';
+  }
+  return detected;
 }
 
 export function normalizeTestLabLanguage(
@@ -245,6 +341,9 @@ export function normalizeTestLabLanguage(
   if (raw === 'html') return 'html';
   if (raw === 'css') return 'css';
   if (raw === 'java') return 'java';
+  if (raw === 'go' || raw === 'golang') return 'go';
+  if (raw === 'rs' || raw === 'rust') return 'rust';
+  if (raw === 'php') return 'php';
 
   if (raw === 'web' && files && files.length > 0) {
     if (files.some((f) => f.name.toLowerCase().endsWith('.js') || f.name.toLowerCase().endsWith('.ts'))) {
@@ -293,5 +392,11 @@ export function fileMatchesTestLabLanguage(
       return declared === 'csharp' || declared === 'c#' || lower.endsWith('.cs');
     case 'java':
       return declared === 'java' || lower.endsWith('.java');
+    case 'go':
+      return declared === 'go' || declared === 'golang' || lower.endsWith('.go');
+    case 'rust':
+      return declared === 'rust' || lower.endsWith('.rs');
+    case 'php':
+      return declared === 'php' || lower.endsWith('.php');
   }
 }

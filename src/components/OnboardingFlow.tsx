@@ -45,7 +45,10 @@ export function OnboardingFlow() {
     if (profile?.displayName && !displayName) {
       setDisplayName(profile.displayName);
     }
-  }, [profile?.displayName, displayName]);
+    if (profile?.photoURL && !photoURL) {
+      setPhotoURL(profile.photoURL);
+    }
+  }, [profile?.displayName, profile?.photoURL, displayName, photoURL]);
 
   const selectedCountry = useMemo(() => getCountryByCode(countryCode), [countryCode]);
 
@@ -157,6 +160,7 @@ export function OnboardingFlow() {
                   <img
                     src={photoURL}
                     alt={displayName || 'Profile avatar'}
+                    referrerPolicy="no-referrer"
                     className="w-16 h-16 rounded-2xl object-cover border border-slate-200 dark:border-slate-700"
                   />
                 ) : (

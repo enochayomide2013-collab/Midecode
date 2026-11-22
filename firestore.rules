@@ -210,7 +210,7 @@ service cloud.firestore {
         isValidString(data.ownerName, 1, 80) &&
         isValidString(data.title, 1, 120) &&
         isValidString(data.description, 0, 1000) &&
-        data.language in ['web', 'javascript', 'typescript', 'python', 'sql', 'html', 'css'] &&
+        data.language in ['web', 'javascript', 'typescript', 'python', 'sql', 'html', 'css', 'cpp', 'csharp', 'java', 'go', 'rust', 'php'] &&
         isValidOptionalString(data, 'guidedProjectId', 80) &&
         isValidOptionalString(data, 'architectureId', 128) &&
         data.visibility in ['private', 'public'] &&

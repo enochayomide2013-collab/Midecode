@@ -11,9 +11,9 @@ import {
   sendEmailVerification,
   sendPasswordResetEmail,
   setPersistence,
+  signInWithCredential,
   signInWithEmailAndPassword,
   signInWithPopup,
-  signInWithRedirect,
   signOut,
   updateProfile,
   type AuthCredential,
@@ -26,7 +26,7 @@ import {
   parsePhoneNumberFromString,
   type CountryCode,
 } from 'libphonenumber-js';
-import { auth, googleProvider } from './firebase';
+import { auth, FIREBASE_OAUTH_CLIENT_ID, googleProvider } from './firebase';
 
 export interface CountryDialCode {
   code: CountryCode;
@@ -248,10 +248,149 @@ export function mapFirebaseAuthError(err: unknown): string {
   }
 }
 
+export function isIframeEnvironment(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.self !== window.top;
+  } catch {
+    return true;
+  }
+}
+
+interface GoogleAccountsIdApi {
+  initialize: (config: {
+    client_id: string;
+    callback: (response: { credential?: string }) => void;
+    auto_select?: boolean;
+    cancel_on_tap_outside?: boolean;
+    use_fedcm_for_prompt?: boolean;
+  }) => void;
+  renderButton: (
+    parent: HTMLElement,
+    options: {
+      theme?: 'outline' | 'filled_blue' | 'filled_black';
+      size?: 'large' | 'medium' | 'small';
+      text?: 'signin_with' | 'signup_with' | 'continue_with' | 'signin';
+      shape?: 'rectangular' | 'pill';
+      width?: number;
+    },
+  ) => void;
+}
+
+declare global {
+  interface Window {
+    google?: {
+      accounts?: {
+        id?: GoogleAccountsIdApi;
+      };
+    };
+  }
+}
+
+let gsiLoadPromise: Promise<boolean> | null = null;
+
+export function loadGoogleIdentityScript(): Promise<boolean> {
+  if (typeof window === 'undefined' || !FIREBASE_OAUTH_CLIENT_ID) {
+    return Promise.resolve(false);
+  }
+  if (window.google?.accounts?.id) {
+    return Promise.resolve(true);
+  }
+  if (gsiLoadPromise) return gsiLoadPromise;
+
+  gsiLoadPromise = new Promise<boolean>((resolve) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[data-mideocode-gsi="true"]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(Boolean(window.google?.accounts?.id)), { once: true });
+      existing.addEventListener('error', () => resolve(false), { once: true });
+      setTimeout(() => resolve(Boolean(window.google?.accounts?.id)), 4000);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.setAttribute('data-mideocode-gsi', 'true');
+    script.onload = () => resolve(Boolean(window.google?.accounts?.id));
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+    setTimeout(() => resolve(Boolean(window.google?.accounts?.id)), 5000);
+  });
+
+  return gsiLoadPromise;
+}
+
+export async function renderGoogleGsiButton(
+  container: HTMLElement,
+  onCredential: (idToken: string) => void,
+  options?: { text?: 'signin_with' | 'signup_with' | 'continue_with'; theme?: 'outline' | 'filled_blue' | 'filled_black' },
+): Promise<boolean> {
+  if (!FIREBASE_OAUTH_CLIENT_ID) return false;
+  const ready = await loadGoogleIdentityScript();
+  const gsi = window.google?.accounts?.id;
+  if (!ready || !gsi) return false;
+
+  try {
+    container.innerHTML = '';
+    gsi.initialize({
+      client_id: FIREBASE_OAUTH_CLIENT_ID,
+      callback: (response) => {
+        if (response?.credential) {
+          onCredential(response.credential);
+        }
+      },
+      auto_select: false,
+      cancel_on_tap_outside: true,
+      use_fedcm_for_prompt: false,
+    });
+    const width = Math.max(240, Math.min(380, container.clientWidth || 340));
+    gsi.renderButton(container, {
+      theme: options?.theme || 'outline',
+      size: 'large',
+      text: options?.text || 'continue_with',
+      shape: 'rectangular',
+      width,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function signInWithGoogleIdToken(idToken: string): Promise<User> {
+  try {
+    const credential = GoogleAuthProvider.credential(idToken);
+    const result = await signInWithCredential(auth, credential);
+    void setPersistence(auth, browserLocalPersistence).catch(() => {});
+    clearPendingGoogleLink();
+    return result.user;
+  } catch (err) {
+    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
+    const customEmail =
+      typeof err === 'object' &&
+      err !== null &&
+      'customData' in err &&
+      typeof (err as { customData?: { email?: string } }).customData?.email === 'string'
+        ? (err as { customData: { email: string } }).customData.email
+        : undefined;
+
+    if (code === 'auth/account-exists-with-different-credential') {
+      const cred = GoogleAuthProvider.credentialFromError(err as Parameters<typeof GoogleAuthProvider.credentialFromError>[0]);
+      if (cred && customEmail) {
+        pendingGoogleCredential = { email: customEmail, credential: cred };
+      }
+      throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname(), customEmail);
+    }
+    throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname(), customEmail);
+  }
+}
+
 export async function signInWithGoogleReal(): Promise<User | null> {
   try {
-    await setPersistence(auth, browserLocalPersistence).catch(() => {});
+    // Call signInWithPopup immediately without awaiting IndexedDB persistence first,
+    // preserving browser transient user activation so popups are not blocked.
     const result = await signInWithPopup(auth, googleProvider);
+    void setPersistence(auth, browserLocalPersistence).catch(() => {});
     clearPendingGoogleLink();
     return result.user;
   } catch (err) {
@@ -272,20 +411,7 @@ export async function signInWithGoogleReal(): Promise<User | null> {
       throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname(), customEmail);
     }
 
-    const isInsideIframe = typeof window !== 'undefined' && window.self !== window.top;
-    if (code === 'auth/popup-blocked' && !isInsideIframe) {
-      try {
-        await signInWithRedirect(auth, googleProvider);
-        return null;
-      } catch (redirErr) {
-        const redirCode =
-          typeof redirErr === 'object' && redirErr !== null && 'code' in redirErr
-            ? String((redirErr as { code: unknown }).code)
-            : code;
-        throw new AuthServiceError(mapFirebaseAuthError(redirErr), redirCode, getCurrentAuthHostname());
-      }
-    }
-    throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname());
+    throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname(), customEmail);
   }
 }
 

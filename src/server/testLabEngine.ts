@@ -1601,7 +1601,171 @@ function executeCSharpOrJavaSuite(
 }
 
 // ---------------------------------------------------------------------------
-// Unified TestLab Suite Dispatcher (All 9 Languages)
+// 10, 11 & 12. Go, Rust & PHP Honest Lexical & Structural Verification Runner
+// ---------------------------------------------------------------------------
+function executeGoRustOrPhpSuite(
+  lang: 'go' | 'rust' | 'php',
+  files: SubmittedWorkspaceFile[],
+  cases: TestCaseItem[],
+): ExecuteTestSuiteResult {
+  const startAll = Date.now();
+  const langFiles = files.filter((f) => fileMatchesTestLabLanguage(f, lang));
+  const combinedSource = langFiles.map((f) => f.content || '').join('\n');
+  const results: TestCaseResult[] = [];
+  const label = lang === 'go' ? 'Go' : lang === 'rust' ? 'Rust' : 'PHP';
+  const missingBinaryNote =
+    lang === 'go'
+      ? 'go compiler binary is not installed in this Linux container'
+      : lang === 'rust'
+        ? 'rustc compiler binary is not installed in this Linux container'
+        : 'php CLI binary is not installed in this Linux container';
+
+  for (const tc of cases) {
+    if (!tc.enabled) {
+      results.push({
+        caseId: tc.id,
+        name: tc.name,
+        description: tc.description,
+        testType: tc.testType,
+        status: 'skipped',
+        durationMs: 0,
+        expectedResult: tc.expectedResult,
+        actualResult: 'Skipped (disabled by user)',
+        fileRef: tc.targetFile,
+        lineRef: tc.targetLine,
+      });
+      continue;
+    }
+
+    const t0 = Date.now();
+    const target =
+      langFiles.find((f) => f.name.toLowerCase() === (tc.targetFile || '').toLowerCase()) ||
+      langFiles[0];
+    const source = target ? target.content || '' : combinedSource;
+
+    const sandbox: Record<string, unknown> = Object.create(null);
+    sandbox.source = source;
+    sandbox.files = files.map((f) => ({ name: f.name, content: f.content, language: f.language }));
+    sandbox.RegExp = RegExp;
+    sandbox.String = String;
+    sandbox.Array = Array;
+    sandbox.Object = Object;
+    sandbox.JSON = JSON;
+
+    sandbox.assert = {
+      ok(cond: unknown, msg?: string) {
+        if (!cond) throw new Error(msg || `${label} structural assertion failed`);
+      },
+      includes(needle: string, msg?: string) {
+        if (!source.toLowerCase().includes(String(needle).toLowerCase())) {
+          throw new Error(msg || `Expected ${target?.name || label} source to include "${needle}"`);
+        }
+      },
+      matches(pattern: string | RegExp, msg?: string) {
+        const rx = pattern instanceof RegExp ? pattern : new RegExp(pattern, 'im');
+        if (!rx.test(source)) {
+          throw new Error(msg || `Pattern check failed on ${target?.name || label} source`);
+        }
+      },
+      balancedBraces() {
+        if (!source.trim()) throw new Error(`No ${label} source file present to check delimiters.`);
+        const res = checkBalancedDelimiters(source);
+        if (!res.balanced) throw new Error(res.error || 'Unbalanced braces or delimiters');
+      },
+      hasPackage(pkgName: string, msg?: string) {
+        const rx = new RegExp(`^\\s*package\\s+${pkgName}\\b`, 'm');
+        if (!rx.test(source)) {
+          throw new Error(msg || `Expected Go package declaration "package ${pkgName}"`);
+        }
+      },
+      hasFunc(funcName: string, msg?: string) {
+        const rx = new RegExp(`\\bfunc\\s+(?:\\([^)]*\\)\\s*)?${funcName}\\s*\\(`);
+        if (!rx.test(source)) {
+          throw new Error(msg || `Expected Go function "${funcName}(...)"`);
+        }
+      },
+      hasFn(fnName: string, msg?: string) {
+        const rx = new RegExp(`\\bfn\\s+${fnName}\\s*(?:<[^>]*>)?\\s*\\(`);
+        if (!rx.test(source)) {
+          throw new Error(msg || `Expected Rust function "fn ${fnName}(...)"`);
+        }
+      },
+      hasStruct(structName: string, msg?: string) {
+        const rx = new RegExp(
+          lang === 'go'
+            ? `\\btype\\s+${structName}\\s+struct\\b`
+            : `\\b(?:struct|enum|trait)\\s+${structName}\\b`,
+        );
+        if (!rx.test(source)) {
+          throw new Error(msg || `Expected ${label} struct "${structName}"`);
+        }
+      },
+      hasImpl(typeName: string, msg?: string) {
+        const rx = new RegExp(`\\bimpl(?:\\s*<[^>]*>)?\\s+(?:\\w+\\s+for\\s+)?${typeName}\\b`);
+        if (!rx.test(source)) {
+          throw new Error(msg || `Expected Rust impl block for "${typeName}"`);
+        }
+      },
+      hasFunction(funcName: string, msg?: string) {
+        const rx = new RegExp(`\\bfunction\\s+${funcName}\\s*\\(`);
+        if (!rx.test(source)) {
+          throw new Error(msg || `Expected PHP function "${funcName}(...)"`);
+        }
+      },
+      hasClass(className: string, msg?: string) {
+        const rx = new RegExp(`\\b(class|interface|trait|enum)\\s+${className}\\b`);
+        if (!rx.test(source)) {
+          throw new Error(msg || `Expected ${label} class declaration "${className}"`);
+        }
+      },
+      hasPhpOpenTag(msg?: string) {
+        if (!/<\?php/i.test(source)) {
+          throw new Error(msg || 'Expected PHP opening tag "<?php"');
+        }
+      },
+    };
+
+    try {
+      const script = new vm.Script(tc.code);
+      script.runInContext(vm.createContext(sandbox), { timeout: 800 });
+      results.push({
+        caseId: tc.id,
+        name: tc.name,
+        description: tc.description,
+        testType: tc.testType,
+        status: 'passed',
+        durationMs: Math.max(1, Date.now() - t0),
+        expectedResult: tc.expectedResult,
+        actualResult: `${label} static structural check passed (${missingBinaryNote})`,
+        fileRef: target?.name || tc.targetFile,
+        lineRef: tc.targetLine,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      results.push({
+        caseId: tc.id,
+        name: tc.name,
+        description: tc.description,
+        testType: tc.testType,
+        status: 'failed',
+        durationMs: Math.max(1, Date.now() - t0),
+        expectedResult: tc.expectedResult,
+        actualResult: msg,
+        failureMessage: msg,
+        fileRef: target?.name || tc.targetFile,
+        lineRef: tc.targetLine,
+      });
+    }
+  }
+
+  return summarizeCounts(results, startAll, {
+    available: false,
+    reason: `Verified statically via lexical delimiter and ${label} symbol structure checks (${missingBinaryNote}).`,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Unified TestLab Suite Dispatcher (12 Runtimes / 9 Selectable Languages)
 // ---------------------------------------------------------------------------
 export function executeTestLabSuite(input: {
   language: string;
@@ -1625,6 +1789,9 @@ export function executeTestLabSuite(input: {
   if (normalized === 'csharp' || normalized === 'java') {
     return executeCSharpOrJavaSuite(normalized, input.files, input.cases);
   }
+  if (normalized === 'go' || normalized === 'rust' || normalized === 'php') {
+    return executeGoRustOrPhpSuite(normalized, input.files, input.cases);
+  }
 
   return executeJavaScriptOrTsSuite(
     input.files,
@@ -1634,7 +1801,7 @@ export function executeTestLabSuite(input: {
 }
 
 // ---------------------------------------------------------------------------
-// AI Test Suite Generator (9-Language Runtime-Aware)
+// AI Test Suite Generator (Runtime-Aware)
 // ---------------------------------------------------------------------------
 function getAiRuntimeHint(lang: TestLabLanguageId): string {
   switch (lang) {
@@ -1656,6 +1823,12 @@ function getAiRuntimeHint(lang: TestLabLanguageId): string {
       return 'C# static structural verifier sandbox (`assert.balancedBraces()`, `assert.hasClass("ClassName")`, `assert.hasMethod("MethodName")`, `assert.hasNamespaceOrPackage("MyApp")`, `assert.includes("...")`, `assert.matches("...")` where `source` is the target .cs file text).';
     case 'java':
       return 'Java static structural verifier sandbox (`assert.balancedBraces()`, `assert.hasClass("ClassName")`, `assert.hasMethod("methodName")`, `assert.hasNamespaceOrPackage("com.example")`, `assert.includes("...")`, `assert.matches("...")` where `source` is the target .java file text).';
+    case 'go':
+      return 'Go static structural verifier sandbox (`assert.balancedBraces()`, `assert.hasPackage("main")`, `assert.hasFunc("FuncName")`, `assert.hasStruct("StructName")`, `assert.includes("...")`, `assert.matches("...")` where `source` is the target .go file text).';
+    case 'rust':
+      return 'Rust static structural verifier sandbox (`assert.balancedBraces()`, `assert.hasFn("fn_name")`, `assert.hasStruct("StructName")`, `assert.hasImpl("TypeName")`, `assert.includes("...")`, `assert.matches("...")` where `source` is the target .rs file text).';
+    case 'php':
+      return 'PHP static structural verifier sandbox (`assert.balancedBraces()`, `assert.hasPhpOpenTag()`, `assert.hasFunction("funcName")`, `assert.hasClass("ClassName")`, `assert.includes("...")`, `assert.matches("...")` where `source` is the target .php file text).';
   }
 }
 

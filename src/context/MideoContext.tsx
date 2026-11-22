@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
-import { auth } from '../services/firebase';
+import { auth, extractReadableError } from '../services/firebase';
 import { checkGoogleRedirectResult, logoutReal, refreshAuthUser } from '../services/authService';
 import {
   loadOrCreateUserProfile,
@@ -368,49 +368,63 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
     pushAppUrl('/dashboard/missions/team');
   }, []);
 
+  const inFlightWorkspaceLoadsRef = useRef<Map<string, Promise<void>>>(new Map());
+
   const loadWorkspaceData = useCallback(async (user: User) => {
-    const isAdmin = Boolean(user.email === 'enochayomide2013@gmail.com' && user.emailVerified);
-    const prof = await loadOrCreateUserProfile(user);
-    setProfile(prof);
-
-    const results = await Promise.allSettled([
-      getUserSettings(user.uid),
-      listCourseProgress(user.uid),
-      listUserProjects(user.uid),
-      listSharedProjects(user.uid),
-      listNotifications(user.uid),
-      listBookmarks(user.uid),
-      listUserAchievements(user.uid),
-      listPublishedMissions(isAdmin),
-      listUserMissionAttempts(user.uid),
-    ]);
-
-    const userSet = results[0].status === 'fulfilled' ? results[0].value : null;
-    const progress = results[1].status === 'fulfilled' ? results[1].value : {};
-    const projs = results[2].status === 'fulfilled' ? results[2].value : [];
-    const shared = results[3].status === 'fulfilled' ? results[3].value : [];
-    const notifs = results[4].status === 'fulfilled' ? results[4].value : [];
-    const bms = results[5].status === 'fulfilled' ? results[5].value : [];
-    const achs = results[6].status === 'fulfilled' ? results[6].value : [];
-    const loadedMissions = results[7].status === 'fulfilled' ? results[7].value : CURATED_MISSIONS;
-    const loadedAttempts = results[8].status === 'fulfilled' ? results[8].value : [];
-
-    if (userSet) {
-      setSettings(userSet);
-      setTheme(userSet.theme);
+    const existing = inFlightWorkspaceLoadsRef.current.get(user.uid);
+    if (existing) {
+      return existing;
     }
-    setCourseProgress(progress);
-    setProjects(projs);
-    setSharedProjects(shared);
-    const firstProjId = projs[0]?.id || shared[0]?.id || null;
-    if (firstProjId && !activeIdeProjectIdRef.current) {
-      setActiveIdeProjectId(firstProjId);
-    }
-    setNotifications(notifs);
-    setBookmarks(bms);
-    setAchievements(achs);
-    setMissions(loadedMissions);
-    setMissionAttempts(loadedAttempts);
+
+    const task = (async () => {
+      const isAdmin = Boolean(user.email === 'enochayomide2013@gmail.com' && user.emailVerified);
+      const prof = await loadOrCreateUserProfile(user);
+      setProfile(prof);
+
+      const results = await Promise.allSettled([
+        getUserSettings(user.uid),
+        listCourseProgress(user.uid),
+        listUserProjects(user.uid),
+        listSharedProjects(user.uid),
+        listNotifications(user.uid),
+        listBookmarks(user.uid),
+        listUserAchievements(user.uid),
+        listPublishedMissions(isAdmin),
+        listUserMissionAttempts(user.uid),
+      ]);
+
+      const userSet = results[0].status === 'fulfilled' ? results[0].value : null;
+      const progress = results[1].status === 'fulfilled' ? results[1].value : {};
+      const projs = results[2].status === 'fulfilled' ? results[2].value : [];
+      const shared = results[3].status === 'fulfilled' ? results[3].value : [];
+      const notifs = results[4].status === 'fulfilled' ? results[4].value : [];
+      const bms = results[5].status === 'fulfilled' ? results[5].value : [];
+      const achs = results[6].status === 'fulfilled' ? results[6].value : [];
+      const loadedMissions = results[7].status === 'fulfilled' ? results[7].value : CURATED_MISSIONS;
+      const loadedAttempts = results[8].status === 'fulfilled' ? results[8].value : [];
+
+      if (userSet) {
+        setSettings(userSet);
+        setTheme(userSet.theme);
+      }
+      setCourseProgress(progress);
+      setProjects(projs);
+      setSharedProjects(shared);
+      const firstProjId = projs[0]?.id || shared[0]?.id || null;
+      if (firstProjId && !activeIdeProjectIdRef.current) {
+        setActiveIdeProjectId(firstProjId);
+      }
+      setNotifications(notifs);
+      setBookmarks(bms);
+      setAchievements(achs);
+      setMissions(loadedMissions);
+      setMissionAttempts(loadedAttempts);
+    })().finally(() => {
+      inFlightWorkspaceLoadsRef.current.delete(user.uid);
+    });
+
+    inFlightWorkspaceLoadsRef.current.set(user.uid, task);
+    return task;
   }, []);
 
   const refreshMissions = useCallback(async () => {
@@ -448,7 +462,7 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
           await loadWorkspaceData(user);
           setAuthModalOpen(false);
         } catch (err) {
-          notify('error', err instanceof Error ? err.message : 'Failed to load user workspace.');
+          notify('error', extractReadableError(err, 'Failed to load user workspace.'));
         }
       } else {
         setProfile(null);

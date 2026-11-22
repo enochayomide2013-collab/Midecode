@@ -31,6 +31,7 @@ import {
 } from '../services/dataService';
 import { logProjectActivity } from '../services/collaborationService';
 import { DOC_ARTICLES } from '../data/docsData';
+import { downloadProjectAsZip } from '../utils/zipBuilder';
 import type { Project, ProjectCollaboratorRole, ProjectFile } from '../types/mideocode';
 
 export function IdeView() {
@@ -215,6 +216,19 @@ export function IdeView() {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportZip = () => {
+    if (!activeProject) return;
+    downloadProjectAsZip(
+      activeProject.title,
+      surfaceFiles.map((f) => ({
+        name: f.name,
+        folder: f.folder,
+        content: f.content,
+      })),
+    );
+    notify('success', `Downloaded "${activeProject.title}" as .zip archive.`);
+  };
+
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -222,10 +236,38 @@ export function IdeView() {
     try {
       const text = await file.text();
       const ext = file.name.split('.').pop()?.toLowerCase() || 'javascript';
+      const detectedLang =
+        ext === 'py'
+          ? 'python'
+          : ext === 'html' || ext === 'htm'
+            ? 'html'
+            : ext === 'css'
+              ? 'css'
+              : ext === 'sql'
+                ? 'sql'
+                : ext === 'ts' || ext === 'tsx'
+                  ? 'typescript'
+                  : ext === 'cpp' || ext === 'cc' || ext === 'cxx' || ext === 'hpp' || ext === 'h'
+                    ? 'cpp'
+                    : ext === 'cs'
+                      ? 'csharp'
+                      : ext === 'java'
+                        ? 'java'
+                        : ext === 'go'
+                          ? 'go'
+                          : ext === 'rs'
+                            ? 'rust'
+                            : ext === 'php'
+                              ? 'php'
+                              : ext === 'json'
+                                ? 'json'
+                                : ext === 'md'
+                                  ? 'markdown'
+                                  : 'javascript';
       const created = await addProjectFile(firebaseUser.uid, activeProject.id, {
         name: file.name,
         folder: '',
-        language: ext === 'py' ? 'python' : ext === 'html' ? 'html' : ext === 'css' ? 'css' : ext === 'sql' ? 'sql' : 'javascript',
+        language: detectedLang,
         content: text.slice(0, 150000),
         visibility: activeProject.visibility,
       });
@@ -378,11 +420,22 @@ export function IdeView() {
             Quick Docs
           </button>
           <button
-            onClick={handleExportProject}
-            aria-label="Export project bundle"
-            className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            onClick={handleExportZip}
+            aria-label="Download project as ZIP archive"
+            title="Download project (.zip)"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
+            .zip
+          </button>
+          <button
+            onClick={handleExportProject}
+            aria-label="Export project JSON bundle"
+            title="Export project (.json)"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            JSON
           </button>
           {!isReadOnlyViewer && (
             <>

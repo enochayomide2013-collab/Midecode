@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Code2,
   Copy,
+  Download,
   FileCode2,
   FilePlus2,
   Flag,
@@ -95,6 +96,13 @@ import {
   type ImportedFileInput,
   type NormalizedImportedFile,
 } from '../services/rescueService';
+import { downloadProjectAsZip } from '../utils/zipBuilder';
+import {
+  downloadTextArtifact,
+  formatRescueReportMarkdown,
+  sanitizeRescueReportForJson,
+  slugifyArtifactName,
+} from '../utils/reportExporters';
 import type {
   Project,
   ProjectCollaboratorRole,
@@ -1173,16 +1181,42 @@ export function ProjectRescueView() {
         return;
       }
 
-      const hasPy = input.files.some((f) => f.language === 'python');
-      const hasTs = input.files.some((f) => f.language === 'typescript' || f.language === 'tsx');
-      const hasHtml = input.files.some((f) => f.language === 'html');
+      const counts: Record<string, number> = {};
+      for (const f of input.files) {
+        const lang = (f.language || '').toLowerCase();
+        counts[lang] = (counts[lang] || 0) + 1;
+      }
+      const hasHtml = (counts.html || 0) > 0;
+      const hasPy = (counts.python || 0) > 0;
+      const hasTs = (counts.typescript || 0) + (counts.tsx || 0) > 0;
+      const hasSql = (counts.sql || 0) > 0;
+      const hasCpp = (counts.cpp || 0) + (counts.c || 0) > 0;
+      const hasCs = (counts.csharp || 0) > 0;
+      const hasJava = (counts.java || 0) > 0;
+      const hasGo = (counts.go || 0) > 0;
+      const hasRust = (counts.rust || 0) > 0;
+      const hasPhp = (counts.php || 0) > 0;
       const projLang: Project['language'] = hasPy
         ? 'python'
         : hasTs
           ? 'typescript'
           : hasHtml
             ? 'web'
-            : 'javascript';
+            : hasCpp
+              ? 'cpp'
+              : hasCs
+                ? 'csharp'
+                : hasJava
+                  ? 'java'
+                  : hasGo
+                    ? 'go'
+                    : hasRust
+                      ? 'rust'
+                      : hasPhp
+                        ? 'php'
+                        : hasSql
+                          ? 'sql'
+                          : 'javascript';
 
       const created = await createProjectWithFiles(firebaseUser.uid, profile.displayName, {
         title: (input.summary.projectTitle || 'Imported Rescue Project').slice(0, 110),
@@ -1758,6 +1792,25 @@ export function ProjectRescueView() {
                 <GitBranch className="w-3.5 h-3.5" />
                 Versions
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  downloadProjectAsZip(
+                    activeProject.title,
+                    files.map((f) => ({
+                      name: f.name,
+                      folder: f.folder,
+                      content: f.content,
+                    })),
+                  );
+                  notify('success', `Downloaded "${activeProject.title}" as .zip archive.`);
+                }}
+                disabled={files.length === 0}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 hover:border-blue-500 disabled:opacity-50 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download .zip
+              </button>
             </div>
           )}
         </div>
@@ -2094,13 +2147,43 @@ export function ProjectRescueView() {
                     {/* Executive Health Summary & Repair Order */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] p-5 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
-                            Diagnostic Health Summary
-                          </h2>
-                          <span className="text-[11px] font-mono text-slate-500">
-                            {formatDateLabel(activeReport.createdAt)}
-                          </span>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                              Diagnostic Health Summary
+                            </h2>
+                            <span className="text-[11px] font-mono text-slate-500">
+                              {formatDateLabel(activeReport.createdAt)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const md = formatRescueReportMarkdown(activeReport);
+                                const slug = slugifyArtifactName(activeReport.projectTitle, 'rescue-report');
+                                downloadTextArtifact(`${slug}-health-report.md`, md, 'text/markdown');
+                                notify('success', 'Downloaded diagnostic health report (.md).');
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800 text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:border-blue-500 cursor-pointer"
+                            >
+                              <Download className="w-3 h-3" />
+                              .md
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const safePayload = sanitizeRescueReportForJson(activeReport);
+                                const slug = slugifyArtifactName(activeReport.projectTitle, 'rescue-report');
+                                downloadTextArtifact(`${slug}-health-report.json`, safePayload, 'application/json');
+                                notify('success', 'Downloaded diagnostic health report (.json).');
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800 text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:border-blue-500 cursor-pointer"
+                            >
+                              <Download className="w-3 h-3" />
+                              .json
+                            </button>
+                          </div>
                         </div>
                         <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
                           {activeReport.summary}
@@ -3707,7 +3790,35 @@ export function ProjectRescueView() {
                               {formatDateLabel(item.createdAt)} · {item.confirmedCount} confirmed · {item.potentialCount} potential
                             </p>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const md = formatRescueReportMarkdown(item);
+                                const slug = slugifyArtifactName(item.projectTitle, 'rescue-report');
+                                downloadTextArtifact(`${slug}-health-report.md`, md, 'text/markdown');
+                                notify('success', 'Downloaded scan report (.md).');
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 hover:border-blue-500 cursor-pointer"
+                              title="Download Markdown health report"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              .md
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const safePayload = sanitizeRescueReportForJson(item);
+                                const slug = slugifyArtifactName(item.projectTitle, 'rescue-report');
+                                downloadTextArtifact(`${slug}-health-report.json`, safePayload, 'application/json');
+                                notify('success', 'Downloaded scan report (.json).');
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 hover:border-blue-500 cursor-pointer"
+                              title="Download JSON health report"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              .json
+                            </button>
                             <button
                               type="button"
                               onClick={() => {

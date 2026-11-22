@@ -14,6 +14,7 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 export const FIREBASE_PROJECT_ID = firebaseConfig.projectId;
 export const FIREBASE_AUTH_DOMAIN = firebaseConfig.authDomain;
+export const FIREBASE_OAUTH_CLIENT_ID = firebaseConfig.oAuthClientId || '';
 
 export enum OperationType {
   CREATE = 'create',

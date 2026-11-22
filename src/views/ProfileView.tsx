@@ -278,6 +278,7 @@ export function ProfileView() {
                 <img
                   src={profile.photoURL}
                   alt={profile.displayName}
+                  referrerPolicy="no-referrer"
                   className="w-16 h-16 rounded-xl object-cover border border-slate-200 dark:border-slate-700"
                 />
               ) : (

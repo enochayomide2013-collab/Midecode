@@ -626,6 +626,10 @@ except Exception as _ex:
 
 async function startServer() {
   const app = express();
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+    next();
+  });
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (
       req.path.startsWith('/api/admin/community-media/chunk/') ||

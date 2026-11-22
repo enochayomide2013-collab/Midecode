@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   X,
   Eye,
@@ -16,13 +16,17 @@ import {
 } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
 import { MideoLogo } from './MideoLogo';
-import { FIREBASE_PROJECT_ID } from '../services/firebase';
+import { FIREBASE_OAUTH_CLIENT_ID, FIREBASE_PROJECT_ID } from '../services/firebase';
 import {
   AuthServiceError,
   clearPendingGoogleLink,
   getCurrentAuthHostname,
   getPendingGoogleLink,
+  isIframeEnvironment,
   isValidEmailAddress,
+  loadGoogleIdentityScript,
+  renderGoogleGsiButton,
+  signInWithGoogleIdToken,
   signInWithGoogleReal,
   registerWithEmailReal,
   loginWithEmailReal,
@@ -49,6 +53,7 @@ export function AuthModal() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -56,6 +61,51 @@ export function AuthModal() {
   const [copiedHost, setCopiedHost] = useState(false);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [pendingGoogleLinkEmail, setPendingGoogleLinkEmail] = useState<string | null>(null);
+  const [showDirectGsiFallback, setShowDirectGsiFallback] = useState(false);
+  const [gsiRendered, setGsiRendered] = useState(false);
+  const gsiContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const handleGoogleIdTokenCredential = useCallback(
+    async (idToken: string) => {
+      setErrorMsg(null);
+      setErrorCode(null);
+      setUnauthorizedHost(null);
+      setInfoMsg(null);
+      setLoading(true);
+      setGoogleLoading(true);
+      try {
+        const user = await signInWithGoogleIdToken(idToken);
+        await refreshUserData().catch(() => {});
+        notify('success', `Signed in as ${user.displayName || user.email}`);
+        closeAuthModal();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Google authentication failed.';
+        const code = err instanceof AuthServiceError ? err.code || null : null;
+
+        if (code === 'auth/account-exists-with-different-credential') {
+          const pendingEmail =
+            (err instanceof AuthServiceError && err.pendingEmail) ||
+            getPendingGoogleLink()?.email ||
+            '';
+          if (pendingEmail) {
+            setEmail(pendingEmail);
+            setPendingGoogleLinkEmail(pendingEmail);
+          }
+          setTab('signin');
+          setInfoMsg(
+            `Account exists for ${pendingEmail || 'this email'} with Email & Password. Enter your password below to sign in and link Google automatically.`,
+          );
+        } else {
+          setErrorMsg(msg);
+          setErrorCode(code);
+        }
+      } finally {
+        setLoading(false);
+        setGoogleLoading(false);
+      }
+    },
+    [closeAuthModal, notify, refreshUserData],
+  );
 
   useEffect(() => {
     setTab(authModalTab);
@@ -64,14 +114,44 @@ export function AuthModal() {
     setFieldErrors({});
     setUnauthorizedHost(null);
     setInfoMsg(null);
+    setShowDirectGsiFallback(Boolean(FIREBASE_OAUTH_CLIENT_ID && isIframeEnvironment()));
+    setGsiRendered(false);
     setPendingGoogleLinkEmail(getPendingGoogleLink()?.email || null);
+    if (authModalOpen && FIREBASE_OAUTH_CLIENT_ID) {
+      loadGoogleIdentityScript().catch(() => {});
+    }
     if (!authModalOpen) {
       setPassword('');
       setConfirmPassword('');
+      setGoogleLoading(false);
       clearPendingGoogleLink();
       setPendingGoogleLinkEmail(null);
     }
   }, [authModalTab, authModalOpen]);
+
+  useEffect(() => {
+    if (!authModalOpen || tab === 'reset' || !showDirectGsiFallback || !gsiContainerRef.current) {
+      return;
+    }
+    let cancelled = false;
+    renderGoogleGsiButton(
+      gsiContainerRef.current,
+      (token) => {
+        if (!cancelled) {
+          void handleGoogleIdTokenCredential(token);
+        }
+      },
+      {
+        text: tab === 'register' ? 'signup_with' : 'continue_with',
+        theme: 'outline',
+      },
+    ).then((ok) => {
+      if (!cancelled) setGsiRendered(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authModalOpen, tab, showDirectGsiFallback, handleGoogleIdTokenCredential]);
 
   if (!authModalOpen) return null;
 
@@ -105,9 +185,11 @@ export function AuthModal() {
     setUnauthorizedHost(null);
     setInfoMsg(null);
     setLoading(true);
+    setGoogleLoading(true);
     try {
       const user = await signInWithGoogleReal();
       if (user) {
+        await refreshUserData().catch(() => {});
         notify('success', `Signed in as ${user.displayName || user.email}`);
         closeAuthModal();
       }
@@ -131,6 +213,18 @@ export function AuthModal() {
       } else {
         setErrorMsg(msg);
         setErrorCode(code);
+        const shouldShowDirectFallback =
+          Boolean(FIREBASE_OAUTH_CLIENT_ID) &&
+          (code === 'auth/unauthorized-domain' ||
+            code === 'auth/popup-blocked' ||
+            code === 'auth/popup-closed-by-user' ||
+            code === 'auth/cancelled-popup-request' ||
+            code === 'auth/operation-not-supported-in-this-environment' ||
+            code === 'auth/internal-error' ||
+            msg.includes('unauthorized-domain'));
+        if (shouldShowDirectFallback) {
+          setShowDirectGsiFallback(true);
+        }
         if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
           setUnauthorizedHost(
             (err instanceof AuthServiceError && err.hostname) || getCurrentAuthHostname(),
@@ -139,6 +233,7 @@ export function AuthModal() {
       }
     } finally {
       setLoading(false);
+      setGoogleLoading(false);
     }
   };
 
@@ -380,14 +475,48 @@ export function AuthModal() {
               disabled={loading}
               className="w-full py-2.5 px-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-900 dark:text-white text-sm font-medium flex items-center justify-center gap-3 transition-colors disabled:opacity-50 cursor-pointer"
             >
-              <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
-                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z" />
-                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z" />
-                <path fill="#FBBC05" d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z" />
-                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z" />
-              </svg>
-              {tab === 'register' ? 'Sign up with Google' : 'Continue with Google'}
+              {googleLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+              ) : (
+                <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z" />
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z" />
+                  <path fill="#FBBC05" d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z" />
+                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z" />
+                </svg>
+              )}
+              {googleLoading
+                ? 'Connecting to Google...'
+                : tab === 'register'
+                  ? 'Sign up with Google'
+                  : 'Continue with Google'}
             </button>
+
+            {FIREBASE_OAUTH_CLIENT_ID && !showDirectGsiFallback && (
+              <div className="mt-2 text-center">
+                <button
+                  type="button"
+                  onClick={() => setShowDirectGsiFallback(true)}
+                  className="text-[11px] text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 underline cursor-pointer"
+                >
+                  Popup blocked or preview iframe? Use direct Google sign-in button
+                </button>
+              </div>
+            )}
+
+            {showDirectGsiFallback && (
+              <div className="mt-3 p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 space-y-2">
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 text-center">
+                  Direct Google Identity Sign-In (works even when popups are restricted):
+                </p>
+                <div ref={gsiContainerRef} className="flex justify-center min-h-[42px]" />
+                {!gsiRendered && (
+                  <p className="text-[11px] text-slate-500 text-center">
+                    Loading official Google sign-in button...
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="my-4 flex items-center gap-3 text-xs text-slate-400">
               <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />

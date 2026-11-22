@@ -30,7 +30,7 @@ export function ProjectsView() {
   const [customModal, setCustomModal] = useState(false);
   const [customTitle, setCustomTitle] = useState('');
   const [customDesc, setCustomDesc] = useState('');
-  const [customLang, setCustomLang] = useState<'web' | 'javascript' | 'python'>('web');
+  const [customLang, setCustomLang] = useState<Project['language']>('web');
 
   const filteredTemplates = GUIDED_PROJECTS.filter((tpl) => {
     const matchLang = langFilter === 'all' || tpl.language === langFilter;
@@ -81,16 +81,24 @@ export function ProjectsView() {
   const handleCreateCustom = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!customTitle.trim()) return;
-    const starterFiles =
-      customLang === 'python'
-        ? [{ name: 'main.py', folder: '', language: 'python', content: '# ' + customTitle + '\nprint("Ready")\n' }]
-        : customLang === 'javascript'
-          ? [{ name: 'index.js', folder: '', language: 'javascript', content: '// ' + customTitle + '\nconsole.log("Ready");\n' }]
-          : [
-              { name: 'index.html', folder: '', language: 'html', content: `<h1>${customTitle}</h1>\n<p>${customDesc}</p>` },
-              { name: 'styles.css', folder: '', language: 'css', content: 'body { font-family: system-ui, sans-serif; padding: 24px; }' },
-              { name: 'script.js', folder: '', language: 'javascript', content: 'console.log("App started");' },
-            ];
+    const starterFilesByLang: Record<string, { name: string; folder: string; language: string; content: string }[]> = {
+      python: [{ name: 'main.py', folder: '', language: 'python', content: `# ${customTitle}\nprint("Ready")\n` }],
+      javascript: [{ name: 'index.js', folder: '', language: 'javascript', content: `// ${customTitle}\nconsole.log("Ready");\n` }],
+      typescript: [{ name: 'main.ts', folder: '', language: 'typescript', content: `// ${customTitle}\nconst greeting: string = "Ready";\nconsole.log(greeting);\n` }],
+      sql: [{ name: 'schema.sql', folder: '', language: 'sql', content: `-- ${customTitle}\nCREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\n` }],
+      cpp: [{ name: 'main.cpp', folder: '', language: 'cpp', content: `// ${customTitle}\n#include <iostream>\nint main() {\n    std::cout << "Ready" << std::endl;\n    return 0;\n}\n` }],
+      csharp: [{ name: 'Program.cs', folder: '', language: 'csharp', content: `// ${customTitle}\nusing System;\npublic class Program {\n    public static void Main() {\n        Console.WriteLine("Ready");\n    }\n}\n` }],
+      java: [{ name: 'Main.java', folder: '', language: 'java', content: `// ${customTitle}\npublic class Main {\n    public static void main(String[] args) {\n        System.out.println("Ready");\n    }\n}\n` }],
+      go: [{ name: 'main.go', folder: '', language: 'go', content: `// ${customTitle}\npackage main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("Ready")\n}\n` }],
+      rust: [{ name: 'main.rs', folder: '', language: 'rust', content: `// ${customTitle}\nfn main() {\n    println!("Ready");\n}\n` }],
+      php: [{ name: 'index.php', folder: '', language: 'php', content: `<?php\n// ${customTitle}\necho "Ready\\n";\n` }],
+      web: [
+        { name: 'index.html', folder: '', language: 'html', content: `<h1>${customTitle}</h1>\n<p>${customDesc}</p>` },
+        { name: 'styles.css', folder: '', language: 'css', content: 'body { font-family: system-ui, sans-serif; padding: 24px; }' },
+        { name: 'script.js', folder: '', language: 'javascript', content: 'console.log("App started");' },
+      ],
+    };
+    const starterFiles = starterFilesByLang[customLang] || starterFilesByLang.web;
     try {
       setCustomModal(false);
       await openInIde({
@@ -400,12 +408,20 @@ export function ProjectsView() {
               <label className="block text-xs font-medium mb-1">Runtime Template</label>
               <select
                 value={customLang}
-                onChange={(e) => setCustomLang(e.target.value as 'web' | 'javascript' | 'python')}
+                onChange={(e) => setCustomLang(e.target.value as Project['language'])}
                 className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-sm"
               >
                 <option value="web">Web (HTML / CSS / JS)</option>
                 <option value="javascript">JavaScript (Isolated Node VM)</option>
+                <option value="typescript">TypeScript (esbuild + Node VM)</option>
                 <option value="python">Python 3 (Isolated Sandbox)</option>
+                <option value="sql">SQL (In-Memory SQLite)</option>
+                <option value="cpp">C++ (g++ C++17)</option>
+                <option value="csharp">C# (.cs)</option>
+                <option value="java">Java (.java)</option>
+                <option value="go">Go (.go)</option>
+                <option value="rust">Rust (.rs)</option>
+                <option value="php">PHP (.php)</option>
               </select>
             </div>
             <div className="flex justify-end gap-2 pt-2">
