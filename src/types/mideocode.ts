@@ -40,6 +40,9 @@ export interface UserProfile {
   preferredLanguages: string[];
   learningGoals: string[];
   interests: string[];
+  hearAboutUs?: string;
+  primaryFocus?: string;
+  codingCommitment?: string;
   onboardingComplete: boolean;
   activeCareerPathId?: string;
   xp: number;

@@ -31,6 +31,7 @@ import {
 } from '../services/dataService';
 import { logProjectActivity } from '../services/collaborationService';
 import { LivePairBar } from '../components/LivePairBar';
+import { FocusSoundWidget } from '../components/FocusSoundWidget';
 import {
   PairSessionClient,
   persistPairMessage,
@@ -635,6 +636,7 @@ export function IdeView() {
             <Download className="w-3.5 h-3.5" />
             .zip
           </button>
+          <FocusSoundWidget />
           <button
             onClick={handleExportProject}
             aria-label="Export project JSON bundle"

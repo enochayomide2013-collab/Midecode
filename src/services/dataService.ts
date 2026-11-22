@@ -369,6 +369,9 @@ export async function saveOnboardingProfile(
     preferredLanguages: string[];
     learningGoals: string[];
     interests: string[];
+    hearAboutUs?: string;
+    primaryFocus?: string;
+    codingCommitment?: string;
     activeCareerPathId?: string;
   },
 ): Promise<void> {
@@ -381,6 +384,9 @@ export async function saveOnboardingProfile(
       preferredLanguages: payload.preferredLanguages.slice(0, 12),
       learningGoals: payload.learningGoals.slice(0, 12),
       interests: payload.interests.slice(0, 16),
+      hearAboutUs: payload.hearAboutUs ? truncateToUtf8Bytes(payload.hearAboutUs.trim(), 100) : '',
+      primaryFocus: payload.primaryFocus ? truncateToUtf8Bytes(payload.primaryFocus.trim(), 120) : '',
+      codingCommitment: payload.codingCommitment ? truncateToUtf8Bytes(payload.codingCommitment.trim(), 80) : '',
       activeCareerPathId: payload.activeCareerPathId || 'frontend-developer',
       onboardingComplete: true,
       updatedAt: serverTimestamp(),

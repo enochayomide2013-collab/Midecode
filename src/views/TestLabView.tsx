@@ -21,6 +21,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
+import { FocusSoundWidget } from '../components/FocusSoundWidget';
 import {
   TESTLAB_LANGUAGES,
   fileMatchesTestLabLanguage,
@@ -521,6 +522,7 @@ export function TestLabView() {
             <Sparkles className="w-3.5 h-3.5" />
             Generate Tests
           </button>
+          <FocusSoundWidget />
         </div>
       </div>
 

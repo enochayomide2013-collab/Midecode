@@ -23,12 +23,13 @@ import {
 import { downloadProjectAsZip } from '../utils/zipBuilder';
 import type { Project, ProjectFile, ProjectVersion } from '../types/mideocode';
 
-const QUOTA_BYTES = 5 * 1024 * 1024; // 5 MB per workspace plan limit
+const QUOTA_BYTES = 380 * 1024 * 1024 * 1024; // 380 GB Cloud Storage quota
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 export function CloudView() {

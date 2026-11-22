@@ -161,8 +161,9 @@ function WorkspaceShell() {
 
   const isAdminUser = Boolean(
     firebaseUser &&
-      ((firebaseUser.email === 'enochayomide2013@gmail.com' && firebaseUser.emailVerified) ||
-        profile?.role === 'admin'),
+      (firebaseUser.email?.toLowerCase() === 'enochayomide2013@gmail.com' ||
+        profile?.role === 'admin' ||
+        sessionStorage.getItem('mideocode_admin_password_unlocked') === 'true'),
   );
 
   const searchResults = useMemo(() => {
@@ -432,20 +433,18 @@ function WorkspaceShell() {
         </nav>
 
         <div className="p-2 border-t border-slate-200 dark:border-slate-800/80 space-y-0.5">
-          {isAdminUser && (
-            <button
-              onClick={() => setAdminAccessModalOpen(true)}
-              title="Admin Console"
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                activeView === 'admin'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-amber-600 dark:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800/70'
-              }`}
-            >
-              <Shield className="w-4 h-4 shrink-0" />
-              {!sidebarCollapsed && <span className="truncate">Admin Console</span>}
-            </button>
-          )}
+          <button
+            onClick={() => setAdminAccessModalOpen(true)}
+            title="Admin Console"
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+              activeView === 'admin'
+                ? 'bg-blue-600 text-white'
+                : 'text-amber-600 dark:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800/70'
+            }`}
+          >
+            <Shield className="w-4 h-4 shrink-0" />
+            {!sidebarCollapsed && <span className="truncate">Admin Console</span>}
+          </button>
           <button
             onClick={() => setActiveView('profile')}
             title="Profile & Settings"
@@ -514,18 +513,16 @@ function WorkspaceShell() {
                   </button>
                 );
               })}
-              {isAdminUser && (
-                <button
-                  onClick={() => {
-                    setMobileNavOpen(false);
-                    setAdminAccessModalOpen(true);
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-amber-500 cursor-pointer"
-                >
-                  <Shield className="w-4 h-4" />
-                  <span>Admin Console</span>
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  setMobileNavOpen(false);
+                  setAdminAccessModalOpen(true);
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-amber-500 cursor-pointer"
+              >
+                <Shield className="w-4 h-4" />
+                <span>Admin Console</span>
+              </button>
               <button
                 onClick={() => {
                   setActiveView('profile');

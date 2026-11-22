@@ -23,6 +23,9 @@ const GOAL_OPTIONS = [
   'Learn database design',
 ];
 const INTEREST_OPTIONS = ['Frontend UI', 'Backend APIs', 'Algorithms', 'Databases', 'AI Tooling', 'Cloud Workspaces'];
+const HEAR_ABOUT_US_OPTIONS = ['Google Search', 'Twitter / X', 'YouTube', 'Friend / Colleague', 'AI Studio / Google Cloud', 'GitHub', 'Other'];
+const PRIMARY_FOCUS_OPTIONS = ['Full-Stack Web Development', 'AI Tooling & Automation', 'Cloud Architecture & DevOps', 'Algorithms & Competitive Coding', 'Mobile & Cross-Platform'];
+const CODING_COMMITMENT_OPTIONS = ['Less than 5 hours / week', '5 - 15 hours / week', '15 - 35 hours / week', '35+ hours / week'];
 
 export function OnboardingFlow() {
   const { firebaseUser, profile, refreshUserData, notify } = useMideo();
@@ -39,6 +42,9 @@ export function OnboardingFlow() {
   const [languages, setLanguages] = useState<string[]>(profile?.preferredLanguages || ['JavaScript', 'HTML/CSS']);
   const [goals, setGoals] = useState<string[]>(profile?.learningGoals || ['Build full-stack web apps']);
   const [interests, setInterests] = useState<string[]>(profile?.interests || ['Frontend UI']);
+  const [hearAboutUs, setHearAboutUs] = useState(profile?.hearAboutUs || 'Google Search');
+  const [primaryFocus, setPrimaryFocus] = useState(profile?.primaryFocus || 'Full-Stack Web Development');
+  const [codingCommitment, setCodingCommitment] = useState(profile?.codingCommitment || '15 - 35 hours / week');
   const [careerPathId, setCareerPathId] = useState(profile?.activeCareerPathId || 'frontend-developer');
   const [saving, setSaving] = useState(false);
 
@@ -127,6 +133,9 @@ export function OnboardingFlow() {
         preferredLanguages: skipOptional ? ['JavaScript'] : languages.length ? languages : ['JavaScript'],
         learningGoals: skipOptional ? ['Learn programming fundamentals'] : goals,
         interests: skipOptional ? ['Web Development'] : interests,
+        hearAboutUs,
+        primaryFocus,
+        codingCommitment,
         activeCareerPathId: careerPathId,
       });
       await refreshUserData();
@@ -382,6 +391,64 @@ export function OnboardingFlow() {
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Where did you hear about us? */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Where did you hear about us?</label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {HEAR_ABOUT_US_OPTIONS.map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setHearAboutUs(opt)}
+                  className={`px-3 py-2 rounded-lg border text-xs font-medium text-left transition-colors cursor-pointer ${
+                    hearAboutUs === opt
+                      ? 'border-blue-600 bg-blue-600/15 text-blue-600 dark:text-blue-300'
+                      : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-400'
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Primary Development Focus */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Primary Development Focus</label>
+            <select
+              value={primaryFocus}
+              onChange={(e) => setPrimaryFocus(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-sm"
+            >
+              {PRIMARY_FOCUS_OPTIONS.map((focus) => (
+                <option key={focus} value={focus}>
+                  {focus}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Weekly Coding Commitment */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Weekly Coding Commitment</label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {CODING_COMMITMENT_OPTIONS.map((comm) => (
+                <button
+                  key={comm}
+                  type="button"
+                  onClick={() => setCodingCommitment(comm)}
+                  className={`px-3 py-2 rounded-lg border text-xs font-medium text-left transition-colors cursor-pointer ${
+                    codingCommitment === comm
+                      ? 'border-emerald-600 bg-emerald-600/15 text-emerald-600 dark:text-emerald-300'
+                      : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-400'
+                  }`}
+                >
+                  {comm}
+                </button>
+              ))}
             </div>
           </div>
 

@@ -386,7 +386,11 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
     }
 
     const task = (async () => {
-      const isAdmin = Boolean(user.email === 'enochayomide2013@gmail.com' && user.emailVerified);
+      const isAdmin = Boolean(
+        user.email?.toLowerCase() === 'enochayomide2013@gmail.com' ||
+          user.role === 'admin' ||
+          sessionStorage.getItem('mideocode_admin_password_unlocked') === 'true',
+      );
       const prof = await loadOrCreateUserProfile(user);
       setProfile(prof);
 
@@ -439,8 +443,9 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
   const refreshMissions = useCallback(async () => {
     if (!firebaseUser) return;
     const isAdmin = Boolean(
-      (firebaseUser.email === 'enochayomide2013@gmail.com' && firebaseUser.emailVerified) ||
-        profile?.role === 'admin',
+      firebaseUser.email?.toLowerCase() === 'enochayomide2013@gmail.com' ||
+        profile?.role === 'admin' ||
+        sessionStorage.getItem('mideocode_admin_password_unlocked') === 'true',
     );
     const [loadedMissions, loadedAttempts] = await Promise.all([
       listPublishedMissions(isAdmin),
