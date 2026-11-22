@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Award, Clock, Gauge, Trophy } from 'lucide-react';
-import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, limit, onSnapshot, query, where } from '../../services/appDb';
 import { db } from '../../services/firebase';
 import { useMideo } from '../../context/MideoContext';
 import { syncCompletedAttemptToLeaderboard } from '../../services/missionService';

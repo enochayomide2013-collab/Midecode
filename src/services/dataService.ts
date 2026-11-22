@@ -14,9 +14,9 @@ import {
   writeBatch,
   increment,
   deleteField,
-} from 'firebase/firestore';
-import type { User } from 'firebase/auth';
-import { auth, db, handleFirestoreError, OperationType } from './firebase';
+} from './appDb';
+import type { AppUser as User } from './authService';
+import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import {
   clearPendingRegistrationName,
   clearPendingRegistrationPhone,

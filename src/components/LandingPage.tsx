@@ -101,9 +101,9 @@ export function LandingPage() {
               </p>
             </div>
             <div>
-              <p className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white">Real Firebase Auth</p>
+              <p className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white">Account Security</p>
               <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                Verified email and password authentication with full developer profile &amp; phone support.
+                Standard email, phone number, and password authentication with persistent workspace sync.
               </p>
             </div>
             <div>

@@ -7,7 +7,7 @@ import {
   query,
   where,
   writeBatch,
-} from 'firebase/firestore';
+} from './appDb';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { listAiConversations, listChallengeAttempts, listProjectVersions } from './dataService';
 import { listTestRunsForUser } from './testLabService';

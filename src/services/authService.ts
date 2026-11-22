@@ -1,26 +1,10 @@
 import {
-  browserLocalPersistence,
-  browserSessionPersistence,
-  createUserWithEmailAndPassword,
-  EmailAuthProvider,
-  linkWithCredential,
-  reload,
-  sendEmailVerification,
-  sendPasswordResetEmail,
-  setPersistence,
-  signInWithEmailAndPassword,
-  signOut,
-  updateProfile,
-  type User,
-} from 'firebase/auth';
-import {
   AsYouType,
   getCountries,
   getCountryCallingCode,
   parsePhoneNumberFromString,
   type CountryCode,
 } from 'libphonenumber-js';
-import { auth } from './firebase';
 
 export interface CountryDialCode {
   code: CountryCode;
@@ -123,7 +107,9 @@ export function getCountryInfoFromPhone(phoneNumber?: string | null): {
   const parsed = parsePhoneNumberFromString(phoneNumber.trim());
   if (!parsed) return null;
   const code = parsed.country || null;
-  const name = (code ? regionFormatter?.of(code) || code : '') || (parsed.countryCallingCode ? `+${parsed.countryCallingCode}` : '');
+  const name =
+    (code ? regionFormatter?.of(code) || code : '') ||
+    (parsed.countryCallingCode ? `+${parsed.countryCallingCode}` : '');
   return {
     code,
     name: code ? `${name} (${code})` : name,
@@ -144,6 +130,120 @@ export class AuthServiceError extends Error {
     this.hostname = hostname;
     this.pendingEmail = pendingEmail;
   }
+}
+
+export interface ServerAuthUserPayload {
+  uid: string;
+  email: string;
+  displayName: string;
+  phoneNumber: string;
+  country?: string;
+  photoURL?: string;
+  role: 'member' | 'moderator' | 'admin';
+  emailVerified: boolean;
+}
+
+export interface AppUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  phoneNumber: string | null;
+  photoURL: string | null;
+  role: 'member' | 'moderator' | 'admin';
+  emailVerified: boolean;
+  providerData: Array<{ providerId: string; email?: string | null }>;
+  getIdToken: (forceRefresh?: boolean) => Promise<string>;
+}
+
+// Keep active session Bearer token strictly in memory (never in localStorage/sessionStorage)
+let memorySessionToken: string | null = null;
+let currentAuthUser: AppUser | null = null;
+let bootstrapPromise: Promise<AppUser | null> | null = null;
+const authListeners = new Set<(user: AppUser | null) => void>();
+
+function toAppUser(raw: ServerAuthUserPayload): AppUser {
+  return {
+    uid: raw.uid,
+    email: raw.email || null,
+    displayName: raw.displayName || null,
+    phoneNumber: raw.phoneNumber || null,
+    photoURL: raw.photoURL || null,
+    role: raw.role || 'member',
+    emailVerified: Boolean(raw.emailVerified),
+    providerData: [{ providerId: 'password', email: raw.email || null }],
+    getIdToken: async () => memorySessionToken || '',
+  };
+}
+
+function setSessionState(user: ServerAuthUserPayload | null, token: string | null): AppUser | null {
+  memorySessionToken = token;
+  currentAuthUser = user ? toAppUser(user) : null;
+  for (const listener of authListeners) {
+    try {
+      listener(currentAuthUser);
+    } catch {
+      // Ignore subscriber error
+    }
+  }
+  return currentAuthUser;
+}
+
+export const auth = {
+  get currentUser(): AppUser | null {
+    return currentAuthUser;
+  },
+};
+
+export function getCurrentSessionToken(): string | null {
+  return memorySessionToken;
+}
+
+export async function bootstrapAuthSession(): Promise<AppUser | null> {
+  if (bootstrapPromise) return bootstrapPromise;
+  bootstrapPromise = (async () => {
+    try {
+      const res = await fetch('/api/auth/me', {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+          'X-Requested-With': 'MideoCode',
+          ...(memorySessionToken ? { Authorization: `Bearer ${memorySessionToken}` } : {}),
+        },
+      });
+      if (!res.ok) {
+        return setSessionState(null, null);
+      }
+      const data = (await res.json()) as {
+        user: ServerAuthUserPayload | null;
+        token: string | null;
+      };
+      if (data.user && data.token) {
+        return setSessionState(data.user, data.token);
+      }
+      return setSessionState(null, null);
+    } catch {
+      return currentAuthUser;
+    } finally {
+      bootstrapPromise = null;
+    }
+  })();
+  return bootstrapPromise;
+}
+
+export function onAppAuthStateChanged(callback: (user: AppUser | null) => void): () => void {
+  authListeners.add(callback);
+  if (currentAuthUser) {
+    queueMicrotask(() => callback(currentAuthUser));
+  } else {
+    void bootstrapAuthSession().then((user) => {
+      if (authListeners.has(callback) && !currentAuthUser && user === null) {
+        callback(null);
+      }
+    });
+  }
+  return () => {
+    authListeners.delete(callback);
+  };
 }
 
 const pendingRegistrationNames = new Map<string, string>();
@@ -222,55 +322,17 @@ export function isValidEmailAddress(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
 }
 
-export function mapFirebaseAuthError(err: unknown): string {
-  const code =
-    typeof err === 'object' && err !== null && 'code' in err
-      ? String((err as { code: unknown }).code)
-      : '';
-
-  switch (code) {
-    case 'auth/network-request-failed':
-      return 'Network interruption occurred. Please check your internet connection and retry.';
-    case 'auth/email-already-in-use':
-      return 'An account with this email address already exists. Sign in below or reset your password.';
-    case 'auth/invalid-email':
-      return 'Enter a valid email address.';
-    case 'auth/weak-password':
-      return 'Password must be at least 8 characters and include both letters and numbers.';
-    case 'auth/user-disabled':
-      return 'This account has been disabled. Contact an administrator if you need assistance.';
-    case 'auth/invalid-credential':
-    case 'auth/wrong-password':
-    case 'auth/user-not-found':
-      return 'Incorrect email or password. Double-check your credentials or use Forgot Password.';
-    case 'auth/too-many-requests':
-      return 'Too many attempts detected. For security, please wait a moment before trying again.';
-    case 'auth/internal-error':
-      return 'Authentication service is temporarily unavailable. Please try again shortly.';
-    case 'auth/operation-not-allowed':
-      return 'Email/Password sign-in is not enabled yet in Firebase Console > Authentication > Sign-in method.';
-    case 'auth/credential-already-in-use':
-      return 'This email is already linked to a different MideoCode account. Sign in to that account instead.';
-    case 'auth/provider-already-linked':
-      return 'Email & Password sign-in is already linked to your account.';
-    case 'auth/requires-recent-login':
-      return 'For security, please sign out and sign back in before updating your credentials.';
-    default:
-      return err instanceof Error ? err.message : 'Authentication failed. Please try again.';
-  }
-}
-
 export async function registerWithEmailReal(
   fullName: string,
   email: string,
   password: string,
   phoneInfo?: { phoneNumber: string; country?: string },
-): Promise<User> {
+): Promise<AppUser> {
   const cleanedName = fullName.trim().slice(0, 80);
   const cleanEmail = email.trim();
   const cleanPhone = phoneInfo?.phoneNumber?.trim().slice(0, 32) || '';
   const cleanCountry = phoneInfo?.country?.trim().slice(0, 80) || '';
-  // Store fullName & phoneNumber BEFORE creating the account so onAuthStateChanged reads them immediately
+
   if (cleanedName && cleanEmail) {
     pendingRegistrationByEmail.set(cleanEmail.toLowerCase(), cleanedName);
   }
@@ -280,27 +342,58 @@ export async function registerWithEmailReal(
       country: cleanCountry || undefined,
     });
   }
+
   try {
-    await setPersistence(auth, browserLocalPersistence).catch(() => {});
-    const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-    if (cleanedName) {
-      setPendingRegistrationName(cred.user.uid, cleanedName, cleanEmail);
-      await updateProfile(cred.user, { displayName: cleanedName }).catch(() => {});
-      await reload(cred.user).catch(() => {});
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'MideoCode',
+      },
+      body: JSON.stringify({
+        fullName: cleanedName,
+        email: cleanEmail,
+        phoneNumber: cleanPhone,
+        country: cleanCountry,
+        password,
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      user?: ServerAuthUserPayload;
+      token?: string;
+      error?: string;
+      code?: string;
+    };
+    if (!res.ok || !data.user || !data.token) {
+      throw new AuthServiceError(
+        data.error || 'Could not create account.',
+        data.code,
+        getCurrentAuthHostname(),
+      );
     }
+
+    setPendingRegistrationName(data.user.uid, cleanedName, cleanEmail);
     if (cleanPhone) {
-      setPendingRegistrationPhone(cred.user.uid, cleanPhone, cleanCountry, cleanEmail);
+      setPendingRegistrationPhone(data.user.uid, cleanPhone, cleanCountry, cleanEmail);
     }
-    // Non-blocking verification email so user stays signed in immediately upon account creation
-    void sendEmailVerification(cred.user).catch(() => {});
-    return auth.currentUser || cred.user;
+
+    const signedInUser = setSessionState(data.user, data.token);
+    if (!signedInUser) {
+      throw new AuthServiceError('Session creation failed.');
+    }
+    return signedInUser;
   } catch (err) {
     if (cleanEmail) {
       pendingRegistrationByEmail.delete(cleanEmail.toLowerCase());
       pendingRegistrationPhoneByEmail.delete(cleanEmail.toLowerCase());
     }
-    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
-    throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname());
+    if (err instanceof AuthServiceError) throw err;
+    throw new AuthServiceError(
+      err instanceof Error ? err.message : 'Account registration failed.',
+      undefined,
+      getCurrentAuthHostname(),
+    );
   }
 }
 
@@ -308,65 +401,100 @@ export async function loginWithEmailReal(
   email: string,
   password: string,
   rememberMe = true,
-): Promise<User> {
-  try {
-    await setPersistence(
-      auth,
-      rememberMe ? browserLocalPersistence : browserSessionPersistence,
-    ).catch(() => {});
-    const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-    return auth.currentUser || cred.user;
-  } catch (err) {
-    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
-    throw new AuthServiceError(mapFirebaseAuthError(err), code, getCurrentAuthHostname());
+): Promise<AppUser> {
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'MideoCode',
+    },
+    body: JSON.stringify({
+      email: email.trim(),
+      password,
+      rememberMe,
+    }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    user?: ServerAuthUserPayload;
+    token?: string;
+    error?: string;
+    code?: string;
+  };
+  if (!res.ok || !data.user || !data.token) {
+    throw new AuthServiceError(
+      data.error || 'Incorrect email or password.',
+      data.code,
+      getCurrentAuthHostname(),
+    );
   }
-}
-
-export async function sendPasswordResetReal(email: string): Promise<void> {
-  try {
-    await sendPasswordResetEmail(auth, email.trim());
-  } catch (err) {
-    throw new Error(mapFirebaseAuthError(err));
+  const signedInUser = setSessionState(data.user, data.token);
+  if (!signedInUser) {
+    throw new AuthServiceError('Session initialization failed.');
   }
+  return signedInUser;
 }
 
-export async function resendVerificationEmailReal(user: User): Promise<void> {
-  try {
-    await sendEmailVerification(user);
-  } catch (err) {
-    throw new Error(mapFirebaseAuthError(err));
-  }
-}
-
-export async function refreshAuthUser(user: User): Promise<User> {
-  await reload(user);
-  return auth.currentUser || user;
-}
-
-export async function linkEmailAccountReal(
-  user: User,
+export async function resetPasswordWithPhoneReal(
   email: string,
-  password: string,
-): Promise<User> {
-  try {
-    const credential = EmailAuthProvider.credential(email.trim(), password);
-    const res = await linkWithCredential(user, credential);
-    await sendEmailVerification(res.user);
-    return res.user;
-  } catch (err) {
-    throw new Error(mapFirebaseAuthError(err));
+  phoneNumber: string,
+  newPassword: string,
+): Promise<void> {
+  const res = await fetch('/api/auth/reset-password', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'MideoCode',
+    },
+    body: JSON.stringify({
+      email: email.trim(),
+      phoneNumber: phoneNumber.trim(),
+      newPassword,
+    }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+  if (!res.ok || !data.ok) {
+    throw new AuthServiceError(data.error || 'Could not reset password.');
   }
+}
+
+export async function refreshAuthUser(_user?: AppUser): Promise<AppUser> {
+  const refreshed = await bootstrapAuthSession();
+  if (!refreshed) {
+    throw new Error('Not signed in.');
+  }
+  return refreshed;
 }
 
 export async function logoutReal(): Promise<void> {
-  await signOut(auth);
+  const token = memorySessionToken;
+  setSessionState(null, null);
+  try {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'X-Requested-With': 'MideoCode',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  } catch {
+    // Session cleared locally even if network fails
+  }
 }
 
-export async function getIdTokenHeader(forceRefresh = false): Promise<Record<string, string>> {
-  const user = auth.currentUser;
-  if (!user) return {};
-  const token = await user.getIdToken(forceRefresh);
-  return { Authorization: `Bearer ${token}` };
+export async function getIdTokenHeader(_forceRefresh = false): Promise<Record<string, string>> {
+  if (!memorySessionToken) {
+    await bootstrapAuthSession();
+  }
+  const headers: Record<string, string> = {
+    'X-Requested-With': 'MideoCode',
+  };
+  if (memorySessionToken) {
+    headers.Authorization = `Bearer ${memorySessionToken}`;
+  }
+  return headers;
 }
 
 export async function fetchWithAuthAndRetry(
@@ -385,19 +513,11 @@ export async function fetchWithAuthAndRetry(
         ...(init.headers as Record<string, string> | undefined),
         ...authHeaders,
       };
-      const res = await fetch(input, { ...init, headers: mergedHeaders });
-
-      // Refresh token once on 401 if a Firebase user is signed in
-      if (res.status === 401 && attempt === 0 && auth.currentUser) {
-        const freshHeaders = await getIdTokenHeader(true);
-        return await fetch(input, {
-          ...init,
-          headers: {
-            ...(init.headers as Record<string, string> | undefined),
-            ...freshHeaders,
-          },
-        });
-      }
+      const res = await fetch(input, {
+        ...init,
+        credentials: 'same-origin',
+        headers: mergedHeaders,
+      });
 
       if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < maxRetries) {
         await new Promise((r) => setTimeout(r, baseDelayMs * (attempt + 1)));
@@ -415,4 +535,8 @@ export async function fetchWithAuthAndRetry(
   }
 
   throw lastError instanceof Error ? lastError : new Error('Network request failed.');
+}
+
+export async function resendVerificationEmailReal(_user: AppUser): Promise<void> {
+  // Local server accounts are fully verified upon creation
 }

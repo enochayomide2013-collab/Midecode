@@ -12,7 +12,7 @@ import {
   updateDoc,
   where,
   writeBatch,
-} from 'firebase/firestore';
+} from './appDb';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { fetchWithAuthAndRetry } from './authService';
 import { sanitizeForFirestore } from './dataService';
@@ -301,27 +301,35 @@ async function syncCollaboratorIdsAcrossSubcollections(
   let updates = 0;
 
   for (const d of filesSnap?.docs || []) {
-    batch.update(d.ref, { collaboratorIds: boundedCollab });
-    updates++;
+    if (d.ref) {
+      batch.update(d.ref, { collaboratorIds: boundedCollab });
+      updates++;
+    }
   }
   for (const d of versionsSnap?.docs || []) {
-    batch.update(d.ref, { collaboratorIds: boundedCollab });
-    updates++;
+    if (d.ref) {
+      batch.update(d.ref, { collaboratorIds: boundedCollab });
+      updates++;
+    }
   }
-  const commentRefs = new Map<string, (typeof commentsCollabSnap extends null ? never : NonNullable<typeof commentsCollabSnap>['docs'][number]['ref'])>();
-  for (const d of commentsOwnSnap?.docs || []) commentRefs.set(d.id, d.ref);
-  for (const d of commentsCollabSnap?.docs || []) commentRefs.set(d.id, d.ref);
+  const commentRefs = new Map<string, any>();
+  for (const d of commentsOwnSnap?.docs || []) if (d.ref) commentRefs.set(d.id, d.ref);
+  for (const d of commentsCollabSnap?.docs || []) if (d.ref) commentRefs.set(d.id, d.ref);
   for (const ref of commentRefs.values()) {
-    batch.update(ref, { collaboratorIds: boundedCollab });
-    updates++;
+    if (ref) {
+      batch.update(ref, { collaboratorIds: boundedCollab });
+      updates++;
+    }
   }
 
-  const pairRefs = new Map<string, (typeof pairCollabSnap extends null ? never : NonNullable<typeof pairCollabSnap>['docs'][number]['ref'])>();
-  for (const d of pairOwnSnap?.docs || []) pairRefs.set(d.id, d.ref);
-  for (const d of pairCollabSnap?.docs || []) pairRefs.set(d.id, d.ref);
+  const pairRefs = new Map<string, any>();
+  for (const d of pairOwnSnap?.docs || []) if (d.ref) pairRefs.set(d.id, d.ref);
+  for (const d of pairCollabSnap?.docs || []) if (d.ref) pairRefs.set(d.id, d.ref);
   for (const ref of pairRefs.values()) {
-    batch.update(ref, { collaboratorIds: boundedPair });
-    updates++;
+    if (ref) {
+      batch.update(ref, { collaboratorIds: boundedPair });
+      updates++;
+    }
   }
 
   if (updates > 0) {

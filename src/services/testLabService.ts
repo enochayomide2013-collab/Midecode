@@ -11,7 +11,7 @@ import {
   setDoc,
   updateDoc,
   where,
-} from 'firebase/firestore';
+} from './appDb';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { fetchWithAuthAndRetry } from './authService';
 import { recordDeveloperActivity, sanitizeForFirestore } from './dataService';

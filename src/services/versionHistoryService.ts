@@ -1,4 +1,4 @@
-import { deleteDoc, doc } from 'firebase/firestore';
+import { deleteDoc, doc } from './appDb';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { fetchWithAuthAndRetry } from './authService';
 import type {

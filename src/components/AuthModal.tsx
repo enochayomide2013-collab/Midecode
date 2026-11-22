@@ -11,11 +11,9 @@ import {
   ArrowLeft,
   Loader2,
   CheckCircle2,
-  ExternalLink,
 } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
 import { MideoLogo } from './MideoLogo';
-import { FIREBASE_PROJECT_ID } from '../services/firebase';
 import {
   AuthServiceError,
   SUPPORTED_COUNTRIES,
@@ -25,7 +23,7 @@ import {
   loginWithEmailReal,
   normalizePhoneToE164,
   registerWithEmailReal,
-  sendPasswordResetReal,
+  resetPasswordWithPhoneReal,
 } from '../services/authService';
 
 interface FieldErrors {
@@ -83,6 +81,8 @@ export function AuthModal() {
     setErrorCode(null);
     setFieldErrors({});
     setInfoMsg(null);
+    setPassword('');
+    setConfirmPassword('');
   };
 
   const handlePhoneChange = (val: string) => {
@@ -110,8 +110,8 @@ export function AuthModal() {
       nextFieldErrors.email = 'Enter a valid email address (e.g. name@domain.com).';
     }
 
-    if (tab === 'register') {
-      if (fullName.trim().length < 2) {
+    if (tab === 'register' || tab === 'reset') {
+      if (tab === 'register' && fullName.trim().length < 2) {
         nextFieldErrors.fullName = 'Please enter your full name (at least 2 characters).';
       }
       if (!phoneNumber.trim()) {
@@ -177,8 +177,15 @@ export function AuthModal() {
         notify('success', 'Welcome back to MideoCode.');
         closeAuthModal();
       } else if (tab === 'reset') {
-        await sendPasswordResetReal(cleanEmail);
-        setInfoMsg('Password reset instructions sent to your email address.');
+        await resetPasswordWithPhoneReal(
+          cleanEmail,
+          validatedPhone?.phoneNumber || phoneNumber.trim(),
+          password,
+        );
+        setPassword('');
+        setConfirmPassword('');
+        setTab('signin');
+        setInfoMsg('Password updated successfully. You can now sign in with your new password.');
       }
     } catch (err) {
       const code = err instanceof AuthServiceError ? err.code || null : null;
@@ -221,7 +228,7 @@ export function AuthModal() {
                 : 'Sign in to MideoCode'}
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Secured by Firebase Authentication · Email &amp; Password
+            Secured MideoCode Account · Email, Phone &amp; Password
           </p>
         </div>
 
@@ -265,17 +272,6 @@ export function AuthModal() {
               >
                 Sign in with this email instead →
               </button>
-            )}
-            {errorCode === 'auth/operation-not-allowed' && FIREBASE_PROJECT_ID && (
-              <a
-                href={`https://console.firebase.google.com/project/${FIREBASE_PROJECT_ID}/authentication/providers`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] font-semibold underline text-red-800 dark:text-red-200"
-              >
-                Enable Email/Password in Firebase Sign-in Method
-                <ExternalLink className="w-3 h-3" />
-              </a>
             )}
           </div>
         )}
@@ -347,10 +343,10 @@ export function AuthModal() {
             )}
           </div>
 
-          {tab === 'register' && (
+          {(tab === 'register' || tab === 'reset') && (
             <div>
               <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                Phone Number
+                {tab === 'reset' ? 'Registered Phone Number' : 'Phone Number'}
               </label>
               <div className="flex gap-2">
                 <select
@@ -401,68 +397,66 @@ export function AuthModal() {
             </div>
           )}
 
-          {tab !== 'reset' && (
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                  Password
-                </label>
-                {tab === 'signin' && (
-                  <button
-                    type="button"
-                    onClick={() => switchTab('reset')}
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-                  >
-                    Forgot password?
-                  </button>
-                )}
-              </div>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  autoComplete={tab === 'register' ? 'new-password' : 'current-password'}
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (fieldErrors.password) setFieldErrors((p) => ({ ...p, password: undefined }));
-                  }}
-                  placeholder={
-                    tab === 'register'
-                      ? 'At least 8 chars with letters & numbers'
-                      : 'Enter your password'
-                  }
-                  className={`w-full pl-3.5 pr-10 py-2.5 rounded-lg border bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${
-                    fieldErrors.password
-                      ? 'border-red-500 focus:ring-red-600'
-                      : 'border-slate-300 dark:border-slate-700 focus:ring-blue-600'
-                  }`}
-                />
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                {tab === 'reset' ? 'New Password' : 'Password'}
+              </label>
+              {tab === 'signin' && (
                 <button
                   type="button"
-                  onClick={() => setShowPassword((p) => !p)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                  onClick={() => switchTab('reset')}
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  Forgot password?
                 </button>
-              </div>
-              {fieldErrors.password ? (
-                <p className="text-[11px] text-red-500 mt-1">{fieldErrors.password}</p>
-              ) : (
-                tab === 'register' && (
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
-                    Minimum 8 characters, at least 1 letter and 1 number.
-                  </p>
-                )
               )}
             </div>
-          )}
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                autoComplete={tab === 'signin' ? 'current-password' : 'new-password'}
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (fieldErrors.password) setFieldErrors((p) => ({ ...p, password: undefined }));
+                }}
+                placeholder={
+                  tab === 'signin'
+                    ? 'Enter your password'
+                    : 'At least 8 chars with letters & numbers'
+                }
+                className={`w-full pl-3.5 pr-10 py-2.5 rounded-lg border bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${
+                  fieldErrors.password
+                    ? 'border-red-500 focus:ring-red-600'
+                    : 'border-slate-300 dark:border-slate-700 focus:ring-blue-600'
+                }`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((p) => !p)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            {fieldErrors.password ? (
+              <p className="text-[11px] text-red-500 mt-1">{fieldErrors.password}</p>
+            ) : (
+              (tab === 'register' || tab === 'reset') && (
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                  Minimum 8 characters, at least 1 letter and 1 number.
+                </p>
+              )
+            )}
+          </div>
 
-          {tab === 'register' && (
+          {(tab === 'register' || tab === 'reset') && (
             <div>
               <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                Confirm Password
+                {tab === 'reset' ? 'Confirm New Password' : 'Confirm Password'}
               </label>
               <div className="relative">
                 <input
@@ -527,7 +521,7 @@ export function AuthModal() {
             {tab === 'register'
               ? 'Create Account & Sign In'
               : tab === 'reset'
-                ? 'Send Reset Link'
+                ? 'Update Password'
                 : 'Sign In'}
           </button>
 

@@ -9,8 +9,23 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
-import { initializeApp, getApps, getApp } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
+import {
+  ADMIN_PRIMARY_EMAIL,
+  dbCommitBatch,
+  dbDeleteDocument,
+  dbGetDocument,
+  dbQueryCollection,
+  dbSetDocument,
+  dbUpdateDocument,
+  loginLocalAccount,
+  registerLocalAccount,
+  resetPasswordWithPhoneVerification,
+  revokeSessionToken,
+  verifySessionToken,
+  type BatchOp,
+  type DbFilter,
+  type DbOrderBy,
+} from './src/server/localAuthAndStore.ts';
 import { SERVER_CHALLENGE_SPECS } from './src/data/challengesServer.ts';
 import { CHALLENGES } from './src/data/challengesData.ts';
 import {
@@ -106,12 +121,8 @@ try {
   console.error('Failed to read firebase-applet-config.json:', err);
 }
 
-if (firebaseProjectId) {
-  if (!getApps().length) {
-    initializeApp({ projectId: firebaseProjectId });
-  } else {
-    getApp();
-  }
+if (firebaseProjectId && firestoreDatabaseId) {
+  // Config kept for health/capabilities reporting; authentication and DB operate locally without requiring Firebase Auth
 }
 
 // Check runtime capabilities truthfully
@@ -123,6 +134,7 @@ interface AuthedRequest extends Request {
   uid?: string;
   userEmail?: string;
   emailVerified?: boolean;
+  userRole?: 'member' | 'moderator' | 'admin';
 }
 
 // Simple per-UID / IP rate limiter
@@ -142,33 +154,105 @@ function checkRateLimit(key: string, maxRequests: number, windowMs: number): boo
   return true;
 }
 
-async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction): Promise<void> {
-  if (!firebaseProjectId) {
-    res.status(503).json({ error: 'Firebase project is not configured on this server.' });
-    return;
+const SESSION_COOKIE_NAME = 'mideocode_session';
+
+function parseSessionCookie(req: Request): string {
+  const raw = req.headers.cookie;
+  if (!raw || typeof raw !== 'string') return '';
+  for (const part of raw.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    const k = part.slice(0, idx).trim();
+    if (k === SESSION_COOKIE_NAME) {
+      return decodeURIComponent(part.slice(idx + 1).trim());
+    }
   }
+  return '';
+}
+
+function isSameOriginOrCustomHeader(req: Request): boolean {
+  if (req.headers['x-requested-with'] === 'MideoCode') return true;
+  const origin = req.headers.origin;
+  const expectedHost = (req.headers['x-forwarded-host'] || req.headers.host || '').toString().split(',')[0].trim();
+  if (origin && expectedHost) {
+    try {
+      return new URL(origin).host === expectedHost;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+function isHttpsRequest(req: Request): boolean {
+  const proto = (req.headers['x-forwarded-proto'] || '').toString().split(',')[0].trim();
+  return req.secure || proto === 'https';
+}
+
+function setSessionCookie(req: Request, res: Response, token: string, rememberMe: boolean): void {
+  const attrs = [
+    `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`,
+    'Path=/',
+    'HttpOnly',
+  ];
+  if (isHttpsRequest(req)) {
+    attrs.push('Secure', 'SameSite=None', 'Partitioned');
+  } else {
+    attrs.push('SameSite=Lax');
+  }
+  if (rememberMe) {
+    attrs.push(`Max-Age=${30 * 24 * 60 * 60}`);
+  }
+  res.setHeader('Set-Cookie', attrs.join('; '));
+}
+
+function clearSessionCookie(req: Request, res: Response): void {
+  const attrs = [
+    `${SESSION_COOKIE_NAME}=`,
+    'Path=/',
+    'HttpOnly',
+    'Max-Age=0',
+  ];
+  if (isHttpsRequest(req)) {
+    attrs.push('Secure', 'SameSite=None', 'Partitioned');
+  } else {
+    attrs.push('SameSite=Lax');
+  }
+  res.setHeader('Set-Cookie', attrs.join('; '));
+}
+
+function extractRequestToken(req: Request): { token: string; source: 'bearer' | 'cookie' | 'none' } {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const bearer = authHeader.slice(7).trim();
+    if (bearer) return { token: bearer, source: 'bearer' };
+  }
+  const cookieToken = parseSessionCookie(req);
+  if (cookieToken) return { token: cookieToken, source: 'cookie' };
+  return { token: '', source: 'none' };
+}
+
+async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction): Promise<void> {
+  const { token, source } = extractRequestToken(req);
+  if (!token) {
     res.status(401).json({ error: 'Authentication required. Please sign in to continue.' });
     return;
   }
-  const token = authHeader.slice(7).trim();
-  if (!token) {
-    res.status(401).json({ error: 'Missing authentication token.' });
+  const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method.toUpperCase());
+  if (source === 'cookie' && isMutation && !isSameOriginOrCustomHeader(req)) {
+    res.status(403).json({ error: 'Cross-origin state-changing request rejected.' });
     return;
   }
-  try {
-    const decoded = await getAuth().verifyIdToken(token);
-    req.uid = decoded.uid;
-    req.userEmail = decoded.email;
-    req.emailVerified = decoded.email_verified;
-    next();
-  } catch (err) {
-    res.status(401).json({
-      error: 'Invalid or expired authentication session. Please sign in again.',
-      details: err instanceof Error ? err.message : 'Token verification failed',
-    });
+  const user = verifySessionToken(token);
+  if (!user) {
+    res.status(401).json({ error: 'Invalid or expired authentication session. Please sign in again.' });
+    return;
   }
+  req.uid = user.uid;
+  req.userEmail = user.email;
+  req.emailVerified = user.emailVerified;
+  req.userRole = user.role;
+  next();
 }
 
 function getGeminiClient(): GoogleGenAI | null {
@@ -304,10 +388,8 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
-const ADMIN_PRIMARY_EMAIL = 'enochayomide2013@gmail.com';
-
 function isVerifiedAdminRequest(req: AuthedRequest): boolean {
-  return Boolean(req.userEmail === ADMIN_PRIMARY_EMAIL && req.emailVerified === true);
+  return Boolean(req.userRole === 'admin' || req.userEmail === ADMIN_PRIMARY_EMAIL);
 }
 
 interface SubmittedFileInput {
@@ -653,7 +735,11 @@ async function startServer() {
       next();
       return;
     }
-    const limit = req.path.startsWith('/api/rescue/') ? '10mb' : '512kb';
+    const limit = req.path.startsWith('/api/rescue/')
+      ? '10mb'
+      : req.path.startsWith('/api/db/')
+        ? '2mb'
+        : '512kb';
     express.json({ limit })(req, res, next);
   });
 
@@ -661,6 +747,7 @@ async function startServer() {
     res.json({
       ok: true,
       firebaseConfigured: Boolean(firebaseProjectId),
+      customAuthEnabled: true,
       aiConfigured: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY'),
       pythonAvailable,
       pythonVersion,
@@ -676,6 +763,219 @@ async function startServer() {
       geminiAi: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY'),
       firebaseProjectId: firebaseProjectId || null,
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // Server-Side Authentication Routes (Email, Phone & Password - No Firebase Auth)
+  // -------------------------------------------------------------------------
+  app.post('/api/auth/register', (req: Request, res: Response) => {
+    const ip = req.ip || 'unknown';
+    if (!checkRateLimit(`auth_reg:${ip}`, 12, 15 * 60_000)) {
+      res.status(429).json({ error: 'Too many registration attempts. Please wait a moment.' });
+      return;
+    }
+    try {
+      const { fullName, email, phoneNumber, country, password } = (req.body || {}) as {
+        fullName?: string;
+        email?: string;
+        phoneNumber?: string;
+        country?: string;
+        password?: string;
+      };
+      const result = registerLocalAccount({
+        fullName: fullName || '',
+        email: email || '',
+        phoneNumber: phoneNumber || '',
+        country,
+        password: password || '',
+      });
+      setSessionCookie(req, res, result.token, true);
+      res.status(201).json(result);
+    } catch (err) {
+      const status = (err as { status?: number }).status || 400;
+      const code = (err as { code?: string }).code;
+      res.status(status).json({
+        error: err instanceof Error ? err.message : 'Registration failed.',
+        code,
+      });
+    }
+  });
+
+  app.post('/api/auth/login', (req: Request, res: Response) => {
+    const ip = req.ip || 'unknown';
+    const rawEmail = String((req.body as { email?: string })?.email || '').trim().toLowerCase();
+    if (!checkRateLimit(`auth_login:${ip}:${rawEmail}`, 15, 10 * 60_000)) {
+      res.status(429).json({ error: 'Too many sign-in attempts. Please wait a moment.' });
+      return;
+    }
+    try {
+      const { email, password, rememberMe } = (req.body || {}) as {
+        email?: string;
+        password?: string;
+        rememberMe?: boolean;
+      };
+      const result = loginLocalAccount({
+        email: email || '',
+        password: password || '',
+        rememberMe: rememberMe !== false,
+      });
+      setSessionCookie(req, res, result.token, rememberMe !== false);
+      res.json(result);
+    } catch (err) {
+      const status = (err as { status?: number }).status || 401;
+      const code = (err as { code?: string }).code;
+      res.status(status).json({
+        error: err instanceof Error ? err.message : 'Sign-in failed.',
+        code,
+      });
+    }
+  });
+
+  app.post('/api/auth/logout', (req: Request, res: Response) => {
+    const { token, source } = extractRequestToken(req);
+    if (source === 'cookie' && !isSameOriginOrCustomHeader(req)) {
+      res.status(403).json({ error: 'Cross-origin logout rejected.' });
+      return;
+    }
+    if (token) {
+      revokeSessionToken(token);
+    }
+    clearSessionCookie(req, res);
+    res.json({ ok: true });
+  });
+
+  app.get('/api/auth/me', (req: Request, res: Response) => {
+    const { token } = extractRequestToken(req);
+    if (!token) {
+      res.json({ user: null, token: null });
+      return;
+    }
+    const user = verifySessionToken(token);
+    if (!user) {
+      clearSessionCookie(req, res);
+      res.json({ user: null, token: null });
+      return;
+    }
+    res.json({ user, token });
+  });
+
+  app.post('/api/auth/reset-password', (req: Request, res: Response) => {
+    const ip = req.ip || 'unknown';
+    const rawEmail = String((req.body as { email?: string })?.email || '').trim().toLowerCase();
+    if (!checkRateLimit(`auth_reset:${ip}:${rawEmail}`, 6, 15 * 60_000)) {
+      res.status(429).json({ error: 'Too many password reset attempts. Please try again later.' });
+      return;
+    }
+    try {
+      const { email, phoneNumber, newPassword } = (req.body || {}) as {
+        email?: string;
+        phoneNumber?: string;
+        newPassword?: string;
+      };
+      resetPasswordWithPhoneVerification({
+        email: email || '',
+        phoneNumber: phoneNumber || '',
+        newPassword: newPassword || '',
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      const status = (err as { status?: number }).status || 400;
+      res.status(status).json({
+        error: err instanceof Error ? err.message : 'Password reset failed.',
+      });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Server-Side Document Store Routes (Authenticated & Ownership-Enforced)
+  // -------------------------------------------------------------------------
+  const getDbCtx = (req: AuthedRequest) => ({
+    uid: req.uid || '',
+    email: (req.userEmail || '').toLowerCase(),
+    role: req.userRole || ('member' as const),
+  });
+
+  app.post('/api/db/get', requireAuth, (req: AuthedRequest, res: Response) => {
+    try {
+      const { path: docPath } = (req.body || {}) as { path?: string };
+      res.json(dbGetDocument(getDbCtx(req), docPath || ''));
+    } catch (err) {
+      const status = (err as { status?: number }).status || 400;
+      res.status(status).json({ error: err instanceof Error ? err.message : 'Document read failed.' });
+    }
+  });
+
+  app.post('/api/db/query', requireAuth, (req: AuthedRequest, res: Response) => {
+    try {
+      const { path: colPath, filters, orderBys, limit } = (req.body || {}) as {
+        path?: string;
+        filters?: DbFilter[];
+        orderBys?: DbOrderBy[];
+        limit?: number;
+      };
+      const docs = dbQueryCollection(
+        getDbCtx(req),
+        colPath || '',
+        Array.isArray(filters) ? filters : [],
+        Array.isArray(orderBys) ? orderBys : [],
+        typeof limit === 'number' ? limit : undefined,
+      );
+      res.json({ docs });
+    } catch (err) {
+      const status = (err as { status?: number }).status || 400;
+      res.status(status).json({ error: err instanceof Error ? err.message : 'Collection query failed.' });
+    }
+  });
+
+  app.post('/api/db/set', requireAuth, (req: AuthedRequest, res: Response) => {
+    try {
+      const { path: docPath, data, merge } = (req.body || {}) as {
+        path?: string;
+        data?: Record<string, unknown>;
+        merge?: boolean;
+      };
+      dbSetDocument(getDbCtx(req), docPath || '', data || {}, Boolean(merge));
+      res.json({ ok: true });
+    } catch (err) {
+      const status = (err as { status?: number }).status || 400;
+      res.status(status).json({ error: err instanceof Error ? err.message : 'Document write failed.' });
+    }
+  });
+
+  app.post('/api/db/update', requireAuth, (req: AuthedRequest, res: Response) => {
+    try {
+      const { path: docPath, patch } = (req.body || {}) as {
+        path?: string;
+        patch?: Record<string, unknown>;
+      };
+      dbUpdateDocument(getDbCtx(req), docPath || '', patch || {});
+      res.json({ ok: true });
+    } catch (err) {
+      const status = (err as { status?: number }).status || 400;
+      res.status(status).json({ error: err instanceof Error ? err.message : 'Document update failed.' });
+    }
+  });
+
+  app.post('/api/db/delete', requireAuth, (req: AuthedRequest, res: Response) => {
+    try {
+      const { path: docPath } = (req.body || {}) as { path?: string };
+      dbDeleteDocument(getDbCtx(req), docPath || '');
+      res.json({ ok: true });
+    } catch (err) {
+      const status = (err as { status?: number }).status || 400;
+      res.status(status).json({ error: err instanceof Error ? err.message : 'Document delete failed.' });
+    }
+  });
+
+  app.post('/api/db/batch', requireAuth, (req: AuthedRequest, res: Response) => {
+    try {
+      const { ops } = (req.body || {}) as { ops?: BatchOp[] };
+      dbCommitBatch(getDbCtx(req), Array.isArray(ops) ? ops : []);
+      res.json({ ok: true });
+    } catch (err) {
+      const status = (err as { status?: number }).status || 400;
+      res.status(status).json({ error: err instanceof Error ? err.message : 'Batch commit failed.' });
+    }
   });
 
   // Profile Avatar Storage & Serving

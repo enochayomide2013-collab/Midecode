@@ -9,7 +9,7 @@ import {
   serverTimestamp,
   setDoc,
   where,
-} from 'firebase/firestore';
+} from './appDb';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { fetchWithAuthAndRetry } from './authService';
 import { sanitizeForFirestore } from './dataService';

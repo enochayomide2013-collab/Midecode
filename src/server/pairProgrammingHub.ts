@@ -1,6 +1,9 @@
 import type { IncomingMessage, Server as HttpServer } from 'node:http';
-import { getAuth } from 'firebase-admin/auth';
 import { WebSocket, WebSocketServer } from 'ws';
+import {
+  getProjectMembershipForPairHub,
+  verifySessionToken,
+} from './localAuthAndStore.ts';
 import type {
   PairChatMessage,
   PairFileSavedNotice,
@@ -9,8 +12,8 @@ import type {
 } from '../types/mideocode.ts';
 
 interface PairHubConfig {
-  firebaseProjectId: string;
-  firestoreDatabaseId: string;
+  firebaseProjectId?: string;
+  firestoreDatabaseId?: string;
 }
 
 interface RoomClient {
@@ -29,23 +32,11 @@ interface RoomClient {
   lastHeartbeatAt: number;
 }
 
-interface FirestoreRestDoc {
-  fields?: {
-    ownerId?: { stringValue?: string };
-    collaboratorIds?: { arrayValue?: { values?: Array<{ stringValue?: string }> } };
-    collaboratorRoles?: {
-      mapValue?: {
-        fields?: Record<string, { stringValue?: string }>;
-      };
-    };
-  };
-}
-
 const VALID_PROJECT_ID = /^[a-zA-Z0-9_-]{1,128}$/;
 
 export function attachPairProgrammingWebSocket(
   httpServer: HttpServer,
-  config: PairHubConfig,
+  _config?: PairHubConfig,
 ): { wss: WebSocketServer; getRoomMembers: (projectId: string) => PairPresenceMember[] } {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
   const rooms = new Map<string, Map<string, RoomClient>>();
@@ -85,53 +76,8 @@ export function attachPairProgrammingWebSocket(
   async function verifyProjectMembership(
     projectId: string,
     uid: string,
-    idToken: string,
   ): Promise<{ authorized: boolean; role: ProjectCollaboratorRole; collaboratorIds: string[] }> {
-    if (!config.firebaseProjectId || !config.firestoreDatabaseId) {
-      return { authorized: false, role: 'viewer', collaboratorIds: [] };
-    }
-    const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
-      config.firebaseProjectId,
-    )}/databases/${encodeURIComponent(
-      config.firestoreDatabaseId,
-    )}/documents/projects/${encodeURIComponent(projectId)}`;
-
-    try {
-      const res = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-      if (!res.ok) {
-        return { authorized: false, role: 'viewer', collaboratorIds: [] };
-      }
-      const doc = (await res.json()) as FirestoreRestDoc;
-      const ownerId = doc.fields?.ownerId?.stringValue || '';
-      const collabIds = (doc.fields?.collaboratorIds?.arrayValue?.values || [])
-        .map((v) => v.stringValue || '')
-        .filter(Boolean);
-
-      if (ownerId === uid) {
-        return {
-          authorized: true,
-          role: 'owner',
-          collaboratorIds: Array.from(new Set([ownerId, ...collabIds])),
-        };
-      }
-      if (collabIds.includes(uid)) {
-        const rawRole = doc.fields?.collaboratorRoles?.mapValue?.fields?.[uid]?.stringValue;
-        const role: ProjectCollaboratorRole =
-          rawRole === 'editor' || rawRole === 'owner' ? rawRole : 'viewer';
-        return {
-          authorized: true,
-          role,
-          collaboratorIds: Array.from(new Set([ownerId, ...collabIds].filter(Boolean))),
-        };
-      }
-      return { authorized: false, role: 'viewer', collaboratorIds: [] };
-    } catch {
-      return { authorized: false, role: 'viewer', collaboratorIds: [] };
-    }
+    return getProjectMembershipForPairHub(projectId, uid);
   }
 
   // Sweep stale sockets every 25s in case a client drops without TCP FIN
@@ -243,14 +189,18 @@ export function attachPairProgrammingWebSocket(
         const requestedName = typeof msg.displayName === 'string' ? msg.displayName.trim() : '';
         const requestedPhoto = typeof msg.photoURL === 'string' ? msg.photoURL.trim() : '';
 
-        if (!token || !config.firebaseProjectId) {
+        if (!token) {
           ws.close(4401, 'Missing authentication token');
           return;
         }
 
         try {
-          const decoded = await getAuth().verifyIdToken(token);
-          const membership = await verifyProjectMembership(projectId, decoded.uid, token);
+          const decoded = verifySessionToken(token);
+          if (!decoded) {
+            ws.close(4401, 'Invalid or expired authentication session');
+            return;
+          }
+          const membership = await verifyProjectMembership(projectId, decoded.uid);
           if (!membership.authorized) {
             ws.close(4403, 'Not authorized for this project workspace');
             return;
@@ -266,8 +216,8 @@ export function attachPairProgrammingWebSocket(
             clientId,
             ws,
             uid: decoded.uid,
-            displayName: (requestedName || decoded.name || decoded.email || 'Collaborator').slice(0, 80),
-            photoURL: (requestedPhoto || decoded.picture || undefined)?.slice(0, 500),
+            displayName: (requestedName || decoded.displayName || decoded.email || 'Collaborator').slice(0, 80),
+            photoURL: (requestedPhoto || decoded.photoURL || undefined)?.slice(0, 500),
             role: membership.role,
             activeFileId: typeof msg.activeFileId === 'string' ? msg.activeFileId.slice(0, 128) : undefined,
             activeFileName: typeof msg.activeFileName === 'string' ? msg.activeFileName.slice(0, 120) : undefined,

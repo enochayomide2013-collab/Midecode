@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CountryCode } from 'libphonenumber-js';
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { doc, serverTimestamp, updateDoc } from '../services/appDb';
 import {
   Camera,
   CheckCircle2,
@@ -23,9 +23,7 @@ import {
   formatPhoneAsYouType,
   getCountryByCode,
   getCountryInfoFromPhone,
-  linkEmailAccountReal,
   normalizePhoneToE164,
-  resendVerificationEmailReal,
 } from '../services/authService';
 import {
   processAndUploadAvatar,
@@ -55,15 +53,10 @@ export function ProfileView() {
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [avatarUrlInput, setAvatarUrlInput] = useState('');
 
-  // Contact phone number state (stored privately in Firestore profile, no SMS OTP)
+  // Contact phone number state
   const [countryCode, setCountryCode] = useState<CountryCode>('NG');
   const [phoneInput, setPhoneInput] = useState(profile?.phoneNumber || '');
   const [savingPhone, setSavingPhone] = useState(false);
-
-  // Email/Password account linking states
-  const [linkEmail, setLinkEmail] = useState('');
-  const [linkPassword, setLinkPassword] = useState('');
-  const [linkingEmail, setLinkingEmail] = useState(false);
 
   useEffect(() => {
     setDisplayName(profile?.displayName || '');
@@ -85,9 +78,6 @@ export function ProfileView() {
   }, [selectedCountry, phoneInput]);
 
   if (!firebaseUser || !profile) return null;
-
-  const linkedProviders = new Set(firebaseUser.providerData.map((p) => p.providerId));
-  const hasPassword = linkedProviders.has('password');
 
   const handleSaveDisplayName = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -207,31 +197,6 @@ export function ProfileView() {
       notify('error', err instanceof Error ? err.message : 'Failed to save phone number.');
     } finally {
       setSavingPhone(false);
-    }
-  };
-
-  const handleLinkEmail = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (linkPassword.length < 8) {
-      notify('error', 'Password must be at least 8 characters.');
-      return;
-    }
-    setLinkingEmail(true);
-    try {
-      const updated = await linkEmailAccountReal(firebaseUser, linkEmail, linkPassword);
-      await updateDoc(doc(db, 'users', firebaseUser.uid), {
-        email: updated.email || linkEmail.trim(),
-        updatedAt: serverTimestamp(),
-      });
-      setLinkEmail('');
-      setLinkPassword('');
-      await refreshAuthState();
-      await refreshUserData();
-      notify('success', 'Email & password linked. Check your inbox for email verification.');
-    } catch (err) {
-      notify('error', err instanceof Error ? err.message : 'Could not link email account.');
-    } finally {
-      setLinkingEmail(false);
     }
   };
 
@@ -448,82 +413,18 @@ export function ProfileView() {
         </p>
 
         <div className="max-w-md">
-          {/* Email */}
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
                 <Mail className="w-4 h-4 text-blue-500" />
                 Email &amp; Password
               </span>
-              {hasPassword && firebaseUser.emailVerified && (
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-              )}
+              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
             </div>
-            {hasPassword ? (
-              <div className="space-y-2">
-                <p className="text-xs text-slate-500 break-all">{firebaseUser.email}</p>
-                {!firebaseUser.emailVerified && (
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        resendVerificationEmailReal(firebaseUser)
-                          .then(() => notify('success', 'Verification email sent.'))
-                          .catch((err) => notify('error', err.message))
-                      }
-                      className="flex-1 py-1.5 px-2.5 rounded-lg bg-amber-600 text-white text-xs font-medium cursor-pointer"
-                    >
-                      Resend Verification Email
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await refreshAuthState();
-                          await refreshUserData();
-                          notify('info', 'Checked latest email verification status.');
-                        } catch (err) {
-                          notify(
-                            'error',
-                            err instanceof Error ? err.message : 'Unable to refresh auth state.',
-                          );
-                        }
-                      }}
-                      className="py-1.5 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium cursor-pointer"
-                    >
-                      I&apos;ve Verified — Refresh
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <form onSubmit={handleLinkEmail} className="space-y-2">
-                <input
-                  type="email"
-                  required
-                  value={linkEmail}
-                  onChange={(e) => setLinkEmail(e.target.value)}
-                  placeholder="Email address"
-                  className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#080C17] text-xs"
-                />
-                <input
-                  type="password"
-                  required
-                  minLength={8}
-                  value={linkPassword}
-                  onChange={(e) => setLinkPassword(e.target.value)}
-                  placeholder="Password (8+ chars)"
-                  className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#080C17] text-xs"
-                />
-                <button
-                  type="submit"
-                  disabled={linkingEmail}
-                  className="w-full py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium cursor-pointer"
-                >
-                  {linkingEmail ? 'Linking...' : 'Link Email & Password'}
-                </button>
-              </form>
-            )}
+            <p className="text-xs text-slate-500 break-all">{firebaseUser.email}</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              To reset a forgotten password, sign out and use &ldquo;Forgot password?&rdquo; with your registered email and phone number.
+            </p>
           </div>
         </div>
       </section>
@@ -606,7 +507,7 @@ export function ProfileView() {
       <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080C17] flex items-start gap-3 text-xs text-slate-600 dark:text-slate-400">
         <ShieldCheck className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
         <span>
-          Email &amp; Password authentication relies on your Firebase Console Sign-in method provider settings. Your contact phone number is stored privately per UID.
+          Your account credentials are hashed with scrypt on the server and your contact phone number is stored privately per user ID.
         </span>
       </div>
     </div>

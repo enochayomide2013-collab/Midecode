@@ -14,7 +14,7 @@ import {
   UploadCloud,
   X,
 } from 'lucide-react';
-import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs, limit, orderBy, query } from '../../services/appDb';
 import { useMideo } from '../../context/MideoContext';
 import { db } from '../../services/firebase';
 import { getIdTokenHeader } from '../../services/authService';

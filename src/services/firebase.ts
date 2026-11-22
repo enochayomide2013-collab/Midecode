@@ -1,17 +1,11 @@
-import { initializeApp } from 'firebase/app';
-import { browserLocalPersistence, getAuth, setPersistence } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { auth } from './authService';
+import { db } from './appDb';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
+export { auth, db };
 
-// CRITICAL: Pass firestoreDatabaseId so Firestore connects to the provisioned database
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
-setPersistence(auth, browserLocalPersistence).catch(() => {});
-
-export const FIREBASE_PROJECT_ID = firebaseConfig.projectId;
-export const FIREBASE_AUTH_DOMAIN = firebaseConfig.authDomain;
+export const FIREBASE_PROJECT_ID = firebaseConfig?.projectId || '';
+export const FIREBASE_AUTH_DOMAIN = firebaseConfig?.authDomain || '';
 
 export enum OperationType {
   CREATE = 'create',
@@ -50,18 +44,14 @@ export function handleFirestoreError(
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
       emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo:
-        auth.currentUser?.providerData?.map((provider) => ({
-          providerId: provider.providerId,
-          email: provider.email,
-        })) || [],
+      isAnonymous: false,
+      tenantId: null,
+      providerInfo: auth.currentUser?.providerData || [],
     },
     operationType,
     path,
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  console.error('Database Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
 
@@ -74,24 +64,7 @@ export function extractReadableError(error: unknown, fallback = 'Operation faile
       return parsed.error;
     }
   } catch {
-    // Not a JSON-serialized FirestoreErrorInfo payload
+    // Not a JSON-serialized error payload
   }
   return raw || fallback;
 }
-
-export async function testConnection(): Promise<boolean> {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-    return true;
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    if (msg.includes('offline') || msg.includes('backend') || msg.includes('timeout') || msg.includes('unavailable')) {
-      // Gracefully operate in offline/queued mode without blocking or noisy errors
-      return false;
-    }
-    return true;
-  }
-}
-
-// Non-blocking connection check
-testConnection().catch(() => {});

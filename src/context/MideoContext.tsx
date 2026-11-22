@@ -1,7 +1,12 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import { onAuthStateChanged, type User } from 'firebase/auth';
-import { auth, extractReadableError } from '../services/firebase';
-import { logoutReal, refreshAuthUser } from '../services/authService';
+import { extractReadableError } from '../services/firebase';
+import {
+  auth,
+  logoutReal,
+  onAppAuthStateChanged,
+  refreshAuthUser,
+  type AppUser as User,
+} from '../services/authService';
 import {
   loadOrCreateUserProfile,
   getUserSettings,
@@ -453,7 +458,7 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
       }
     }, 3000);
 
-    const unsub = onAuthStateChanged(auth, async (user) => {
+    const unsub = onAppAuthStateChanged(async (user) => {
       settled = true;
       clearTimeout(failSafeTimer);
       setFirebaseUser(user);
