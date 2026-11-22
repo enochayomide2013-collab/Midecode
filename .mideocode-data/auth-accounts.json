@@ -1,0 +1,38 @@
+{
+  "usr_8ac6fdbbfe257b2710ff5ab1": {
+    "uid": "usr_8ac6fdbbfe257b2710ff5ab1",
+    "email": "isiayo2013@gmail.com",
+    "displayName": "Ayomide adebayo",
+    "phoneNumber": "+23480328138855",
+    "country": "Nigeria (NG)",
+    "passwordHash": "scrypt:ad752db658dc2277691e90a76d35f788:d22cdcf9a80a3dd40185e7493a2f167648bdf07df0cd2144ce713893d9168812da9737ea0c4786efa2df1d38dc6084b44fcc7c60303c0e0d7025c3cad5747427",
+    "role": "member",
+    "emailVerified": true,
+    "createdAt": 1795369479790,
+    "updatedAt": 1795369501803
+  },
+  "usr_f0926adf2d9969473baa66f1": {
+    "uid": "usr_f0926adf2d9969473baa66f1",
+    "email": "testuser@example.com",
+    "displayName": "Test User",
+    "phoneNumber": "+2348012345678",
+    "country": "Nigeria",
+    "passwordHash": "scrypt:79f507ccbaefba90c644cf22da136f9b:3f9e848bb022b18cc5de1cc05e3caf78edaacf93f26b345c5108e3c29b1de72e23f9251b643bd291783235f3df456bcc26bb7c8329e1eaddfa19881c4b251dc6",
+    "role": "member",
+    "emailVerified": true,
+    "createdAt": 1795369663735,
+    "updatedAt": 1795369663735
+  },
+  "usr_ed520330fc86d5f5e8aaec62": {
+    "uid": "usr_ed520330fc86d5f5e8aaec62",
+    "email": "enochayomide2013@gmail.com",
+    "displayName": "Enoch Ayomide",
+    "phoneNumber": "+2348032813885",
+    "country": "Nigeria",
+    "passwordHash": "scrypt:61bd0e33fa771bf37ae6b7f7e6d650a6:6319cdfe6e44f1db829eb5e5e10e2f5b1359fc235ff096f5a0dcdf762c51f95060f17f8f64c287b7f3b82c0d901e1f573eaf297fd29cfb8633ef3f65e3057d37",
+    "role": "admin",
+    "emailVerified": true,
+    "createdAt": 1795369719247,
+    "updatedAt": 1795369719247
+  }
+}
