@@ -62,9 +62,12 @@ export function AdminView() {
   const [adminTab, setAdminTab] = useState<'moderation' | 'missions' | 'rescue_ops'>('moderation');
   const [rescueTelemetry, setRescueTelemetry] = useState<RescueAdminTelemetry | null>(null);
   const [loadingRescueTelemetry, setLoadingRescueTelemetry] = useState(false);
+  const [adminEmailInput, setAdminEmailInput] = useState('');
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [passwordUnlocked, setPasswordUnlocked] = useState(
-    () => sessionStorage.getItem('mideocode_admin_password_unlocked') === 'true',
+    () =>
+      sessionStorage.getItem('mideocode_admin_password_unlocked') === 'true' ||
+      sessionStorage.getItem('mideocode_unrestricted_admin') === 'true',
   );
 
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -95,9 +98,11 @@ export function AdminView() {
   const [sendingAnnouncement, setSendingAnnouncement] = useState(false);
 
   const isAuthorizedAdmin = Boolean(
-    firebaseUser &&
-      ((firebaseUser.email === 'enochayomide2013@gmail.com' && firebaseUser.emailVerified) ||
-        profile?.role === 'admin'),
+    (firebaseUser &&
+      (firebaseUser.email?.toLowerCase() === 'enochayomide2013@gmail.com' ||
+        profile?.role === 'admin')) ||
+      sessionStorage.getItem('mideocode_unrestricted_admin') === 'true' ||
+      sessionStorage.getItem('mideocode_admin_password_unlocked') === 'true',
   );
 
   const loadAdminData = async () => {
@@ -211,42 +216,73 @@ export function AdminView() {
     );
   }
 
-  const handleVerifyPassword = (e: React.FormEvent) => {
+  const handleVerifyPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPasswordInput.trim() === '2013') {
+    const cleanEmail = adminEmailInput.trim().toLowerCase();
+    const cleanPass = adminPasswordInput.trim();
+
+    if (cleanEmail === 'enochayomide2013@gmail.com' && cleanPass === '2013') {
       sessionStorage.setItem('mideocode_admin_password_unlocked', 'true');
+      sessionStorage.setItem('mideocode_admin_email_unlocked', 'enochayomide2013@gmail.com');
+      sessionStorage.setItem('mideocode_unrestricted_admin', 'true');
+
+      // Call server elevation endpoint
+      fetch('/api/admin/verify-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'MideoCode' },
+        body: JSON.stringify({ email: cleanEmail, password: cleanPass }),
+      }).catch(() => {});
+
       setPasswordUnlocked(true);
-      notify('success', 'Admin console unlocked successfully.');
+      notify('success', 'Owner identity verified. Unrestricted administrator access unlocked.');
     } else {
-      notify('error', 'Incorrect password. Required password is 2013.');
+      notify('error', 'Incorrect credentials. Required Owner Email is Enochayomide2013@gmail.com and Password is 2013.');
     }
   };
 
   if (!passwordUnlocked) {
     return (
       <div className="max-w-md mx-auto mt-16 p-8 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322] text-center space-y-4 shadow-xl">
-        <ShieldCheck className="w-10 h-10 text-blue-500 mx-auto" />
+        <ShieldCheck className="w-10 h-10 text-amber-500 mx-auto" />
         <h1 className="text-lg font-bold text-slate-900 dark:text-white">
-          Admin Console Password Required
+          Owner Admin Verification Required
         </h1>
         <p className="text-xs text-slate-600 dark:text-slate-400">
-          Please enter the secure administrator password (2013) to access the management console.
+          Enter the Owner Email (Enochayomide2013@gmail.com) and Owner Password (2013) to unlock unrestricted administrator access.
         </p>
-        <form onSubmit={handleVerifyPassword} className="space-y-3 pt-2">
-          <input
-            type="password"
-            required
-            autoFocus
-            value={adminPasswordInput}
-            onChange={(e) => setAdminPasswordInput(e.target.value)}
-            placeholder="Enter admin password (2013)..."
-            className="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-sm text-center tracking-widest font-mono text-slate-900 dark:text-white"
-          />
+        <form onSubmit={handleVerifyPassword} className="space-y-3 pt-2 text-left">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Owner Email
+            </label>
+            <input
+              type="email"
+              required
+              autoFocus
+              value={adminEmailInput}
+              onChange={(e) => setAdminEmailInput(e.target.value)}
+              placeholder="Enochayomide2013@gmail.com"
+              className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-900 dark:text-white"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Owner Password
+            </label>
+            <input
+              type="password"
+              required
+              value={adminPasswordInput}
+              onChange={(e) => setAdminPasswordInput(e.target.value)}
+              placeholder="Enter owner password (2013)..."
+              className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-mono tracking-wider text-slate-900 dark:text-white"
+            />
+          </div>
           <button
             type="submit"
-            className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
+            className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer shadow transition-colors"
           >
-            Unlock Console
+            Unlock Unrestricted Admin Console
           </button>
         </form>
       </div>

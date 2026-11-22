@@ -17,6 +17,8 @@ import {
   dbQueryCollection,
   dbSetDocument,
   dbUpdateDocument,
+  elevateUserToAdmin,
+  isOwnerAdminCredentials,
   loginLocalAccount,
   registerLocalAccount,
   resetPasswordWithPhoneVerification,
@@ -886,6 +888,38 @@ async function startServer() {
     }
   });
 
+  // Owner Admin Verification & Elevation Endpoint
+  app.post('/api/admin/verify-credentials', (req: Request, res: Response) => {
+    try {
+      const { email, password } = (req.body || {}) as { email?: string; password?: string };
+      if (!isOwnerAdminCredentials(email, password)) {
+        res.status(401).json({
+          ok: false,
+          error: 'Incorrect credentials. Required Owner Email is Enochayomide2013@gmail.com and Owner Password is 2013.',
+        });
+        return;
+      }
+
+      // Elevate the currently authenticated user session if present
+      const { token } = extractRequestToken(req);
+      let elevatedUser = null;
+      if (token) {
+        const user = verifySessionToken(token);
+        if (user) {
+          elevatedUser = elevateUserToAdmin(user.uid);
+        }
+      }
+
+      res.json({
+        ok: true,
+        message: 'Owner credentials verified. Unrestricted administrator access granted.',
+        user: elevatedUser,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Admin verification failed.' });
+    }
+  });
+
   // -------------------------------------------------------------------------
   // Server-Side Document Store Routes (Authenticated & Ownership-Enforced)
   // -------------------------------------------------------------------------
@@ -1080,15 +1114,12 @@ async function startServer() {
     };
   };
 
-  function resolveThinkingLevel(mode: string, depth?: string): ThinkingLevel {
+  function resolveThinkingLevel(_mode: string, depth?: string): ThinkingLevel {
     if (depth === 'fast') return ThinkingLevel.LOW;
-    if (depth === 'deep') return ThinkingLevel.HIGH;
-    if (depth === 'balanced') return ThinkingLevel.MEDIUM;
-    // Smart adaptive default by task mode
-    if (mode === 'debug' || mode === 'build' || mode === 'review') {
-      return ThinkingLevel.HIGH;
-    }
-    return ThinkingLevel.MEDIUM;
+    if (depth === 'deep') return ThinkingLevel.MEDIUM;
+    if (depth === 'extreme') return ThinkingLevel.HIGH;
+    // ThinkingLevel.LOW delivers near-instant sub-second first-token streaming with Gemini 4 Hydrogen's native reasoning
+    return ThinkingLevel.LOW;
   }
 
   function buildMideoAiPayload(body: AiAssistBody) {
@@ -1099,17 +1130,17 @@ async function startServer() {
 
     const modeDirectives: Record<string, string> = {
       learn:
-        'Teach the concept clearly: lead with the core intuition in 2-3 sentences, give a clean minimal runnable example, and list common pitfalls.',
+        'Teach the concept with senior clarity: lead with the core mental model in 1-2 sentences, provide a clean minimal runnable example, and list high-stakes pitfalls.',
       debug:
-        'Identify the exact root cause first, explain why it breaks, distinguish verified facts from hypotheses, and provide a minimal, copy-ready fix.',
+        'Pinpoint the exact mechanical root cause first, explain why the runtime or compiler breaks, distinguish verified facts from hypotheses, and give a minimal, copy-ready fix.',
       explain:
-        'Break down the supplied code or concept step by step in plain language, highlighting control flow, edge cases, and complexity.',
+        'Deconstruct the supplied code or architecture step by step, highlighting execution control flow, state mutations, edge cases, and complexity.',
       practice:
-        'Offer a targeted exercise or Socratic nudge that helps the learner reason through the next step without immediately giving away the whole solution unless asked.',
+        'Offer a targeted exercise or Socratic nudge that helps the learner reason through the next step without giving away the whole solution unless asked.',
       build:
-        'Design modular, production-ready code with clear architecture, input validation, and concrete edge-case handling.',
+        'Design modular, production-ready code with clean architecture, strict input validation, resilient error boundaries, and concrete edge-case handling.',
       review:
-        'Audit the code concisely for correctness, security, edge cases, performance/complexity, and readability with actionable improvements.',
+        'Audit the code with surgical precision for correctness, security vulnerabilities, edge cases, algorithmic performance/complexity, and maintainability.',
     };
 
     const learnerLines: string[] = [];
@@ -1191,9 +1222,14 @@ async function startServer() {
       : '';
 
     const systemInstruction =
-      `You are Mideo AI, the expert senior software engineering tutor inside MideoCode. Mode: ${mode.toUpperCase()}. ${modeDirectives[mode]} ` +
+      `You are Mideo AI, the elite principal software engineering architect and coding tutor inside MideoCode. Mode: ${mode.toUpperCase()}. ${modeDirectives[mode]} ` +
       (learnerLines.length > 0 ? `${learnerLines.join('. ')}. ` : '') +
-      'Response quality standards: Answer directly first with no filler preamble; use clear Markdown headings, bullet points, and fenced language-tagged code blocks; state time/space complexity or edge cases when relevant; never claim you executed code or verified test results when you did not run them.' +
+      'CORE SPEED & INTELLIGENCE MANDATE: ' +
+      '1. ZERO-LATENCY VALUE: Answer immediately in the first sentence with the direct answer, root cause, or concrete code solution. Never use conversational filler, pleasantries, or polite restatements ("Sure! I can help you with that"). ' +
+      '2. ELITE ACCURACY: Pinpoint exact root causes, off-by-one errors, closure staleness, async race conditions, type mismatches, and boundary edge cases with surgical precision. ' +
+      '3. PRODUCTION CODE: Code blocks must be complete, copy-paste runnable, syntactically verified, and cleanly formatted with explicit language tags. Avoid placeholders like "// ...rest of code" unless the file is massive. ' +
+      '4. ARCHITECTURAL RIGOR: Note algorithmic time/space complexity (Big-O) concisely in a bullet point. Suggest modern, idiomatic patterns (immutability, early returns, clean separation of concerns). ' +
+      '5. CONCISE MARKDOWN: Use tight bullet points, concise bold headers, and short paragraphs so the user can scan and implement rapidly.' +
       missionMentorDirective;
 
     return { prompt, mode, thinkingLevel, contents, systemInstruction, isMissionAssist };
@@ -1249,6 +1285,7 @@ async function startServer() {
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
 
     let clientClosed = false;

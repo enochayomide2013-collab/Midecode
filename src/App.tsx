@@ -160,10 +160,11 @@ function WorkspaceShell() {
   const [adminAccessModalOpen, setAdminAccessModalOpen] = useState(false);
 
   const isAdminUser = Boolean(
-    firebaseUser &&
+    (firebaseUser &&
       (firebaseUser.email?.toLowerCase() === 'enochayomide2013@gmail.com' ||
-        profile?.role === 'admin' ||
-        sessionStorage.getItem('mideocode_admin_password_unlocked') === 'true'),
+        profile?.role === 'admin')) ||
+      sessionStorage.getItem('mideocode_unrestricted_admin') === 'true' ||
+      sessionStorage.getItem('mideocode_admin_password_unlocked') === 'true',
   );
 
   const searchResults = useMemo(() => {
