@@ -773,8 +773,11 @@ async function startServer() {
   // -------------------------------------------------------------------------
   app.post('/api/auth/register', (req: Request, res: Response) => {
     const ip = req.ip || 'unknown';
-    if (!checkRateLimit(`auth_reg:${ip}`, 12, 15 * 60_000)) {
-      res.status(429).json({ error: 'Too many registration attempts. Please wait a moment.' });
+    if (!checkRateLimit(`auth_reg:${ip}`, 120, 15 * 60_000)) {
+      res.status(429).json({
+        error: 'Too many registration attempts. Please wait a moment.',
+        code: 'auth/too-many-requests',
+      });
       return;
     }
     try {
@@ -815,8 +818,11 @@ async function startServer() {
   app.post('/api/auth/login', (req: Request, res: Response) => {
     const ip = req.ip || 'unknown';
     const rawEmail = String((req.body as { email?: string })?.email || '').trim().toLowerCase();
-    if (!checkRateLimit(`auth_login:${ip}:${rawEmail}`, 15, 10 * 60_000)) {
-      res.status(429).json({ error: 'Too many sign-in attempts. Please wait a moment.' });
+    if (!checkRateLimit(`auth_login:${ip}:${rawEmail}`, 120, 10 * 60_000)) {
+      res.status(429).json({
+        error: 'Too many sign-in attempts. Please wait a moment.',
+        code: 'auth/too-many-requests',
+      });
       return;
     }
     try {
@@ -834,9 +840,11 @@ async function startServer() {
       res.json(result);
     } catch (err) {
       const status = (err as { status?: number }).status || 401;
-      const code = (err as { code?: string }).code;
+      const code = (err as { code?: string }).code || 'auth/invalid-credential';
+      const message = err instanceof Error ? err.message : 'Sign-in failed.';
+      console.error('[Auth] /api/auth/login error:', { status, code, message, ip });
       res.status(status).json({
-        error: err instanceof Error ? err.message : 'Sign-in failed.',
+        error: message,
         code,
       });
     }
@@ -873,8 +881,11 @@ async function startServer() {
   app.post('/api/auth/reset-password', (req: Request, res: Response) => {
     const ip = req.ip || 'unknown';
     const rawEmail = String((req.body as { email?: string })?.email || '').trim().toLowerCase();
-    if (!checkRateLimit(`auth_reset:${ip}:${rawEmail}`, 6, 15 * 60_000)) {
-      res.status(429).json({ error: 'Too many password reset attempts. Please try again later.' });
+    if (!checkRateLimit(`auth_reset:${ip}:${rawEmail}`, 40, 15 * 60_000)) {
+      res.status(429).json({
+        error: 'Too many password reset attempts. Please try again later.',
+        code: 'auth/too-many-requests',
+      });
       return;
     }
     try {
@@ -891,8 +902,10 @@ async function startServer() {
       res.json({ ok: true });
     } catch (err) {
       const status = (err as { status?: number }).status || 400;
+      const code = (err as { code?: string }).code || 'auth/reset-failed';
       res.status(status).json({
         error: err instanceof Error ? err.message : 'Password reset failed.',
+        code,
       });
     }
   });

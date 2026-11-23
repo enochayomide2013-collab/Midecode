@@ -5,6 +5,15 @@ import {
   parsePhoneNumberFromString,
   type CountryCode,
 } from 'libphonenumber-js';
+import {
+  browserGetSessionUser,
+  browserLoginAccount,
+  browserLogoutSession,
+  browserRegisterAccount,
+  browserResetPassword,
+  isLocalFallbackToken,
+  shouldFallbackForHttpStatus,
+} from './localBrowserStore';
 
 export interface CountryDialCode {
   code: CountryCode;
@@ -201,6 +210,11 @@ export function getCurrentSessionToken(): string | null {
 export async function bootstrapAuthSession(): Promise<AppUser | null> {
   if (bootstrapPromise) return bootstrapPromise;
   bootstrapPromise = (async () => {
+    const localSession = browserGetSessionUser();
+    if (localSession && isLocalFallbackToken(localSession.token)) {
+      return setSessionState(localSession.user, localSession.token);
+    }
+
     try {
       const res = await fetch('/api/auth/me', {
         method: 'GET',
@@ -210,7 +224,17 @@ export async function bootstrapAuthSession(): Promise<AppUser | null> {
           ...(memorySessionToken ? { Authorization: `Bearer ${memorySessionToken}` } : {}),
         },
       });
+      const contentType = res.headers.get('content-type');
+      if (shouldFallbackForHttpStatus(res.status, contentType)) {
+        if (localSession) {
+          return setSessionState(localSession.user, localSession.token);
+        }
+        return setSessionState(null, null);
+      }
       if (!res.ok) {
+        if (localSession) {
+          return setSessionState(localSession.user, localSession.token);
+        }
         return setSessionState(null, null);
       }
       const data = (await res.json()) as {
@@ -220,8 +244,14 @@ export async function bootstrapAuthSession(): Promise<AppUser | null> {
       if (data.user && data.token) {
         return setSessionState(data.user, data.token);
       }
+      if (localSession) {
+        return setSessionState(localSession.user, localSession.token);
+      }
       return setSessionState(null, null);
     } catch {
+      if (localSession) {
+        return setSessionState(localSession.user, localSession.token);
+      }
       return currentAuthUser;
     } finally {
       bootstrapPromise = null;
@@ -329,117 +359,125 @@ export async function registerWithEmailReal(
   phoneInfo?: { phoneNumber: string; country?: string },
 ): Promise<AppUser> {
   const cleanedName = fullName.trim().slice(0, 80);
-  const cleanEmail = email.trim();
+  const cleanEmail = email.trim().toLowerCase();
   const cleanPhone = phoneInfo?.phoneNumber?.trim().slice(0, 32) || '';
   const cleanCountry = phoneInfo?.country?.trim().slice(0, 80) || '';
+  const effectiveName =
+    cleanedName || (cleanEmail.split('@')[0]?.replace(/[._-]+/g, ' ').trim() || 'MideoCode Learner').slice(0, 80);
 
-  if (cleanedName && cleanEmail) {
-    pendingRegistrationByEmail.set(cleanEmail.toLowerCase(), cleanedName);
+  if (effectiveName && cleanEmail) {
+    pendingRegistrationByEmail.set(cleanEmail, effectiveName);
   }
   if (cleanPhone && cleanEmail) {
-    pendingRegistrationPhoneByEmail.set(cleanEmail.toLowerCase(), {
+    pendingRegistrationPhoneByEmail.set(cleanEmail, {
       phoneNumber: cleanPhone,
       country: cleanCountry || undefined,
     });
   }
 
-  try {
-    const res = await fetch('/api/auth/register', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Requested-With': 'MideoCode',
-      },
-      body: JSON.stringify({
-        fullName: cleanedName,
-        email: cleanEmail,
-        phoneNumber: cleanPhone,
-        country: cleanCountry,
-        password,
-      }),
-    });
+  const finalizeRegistration = (userPayload: ServerAuthUserPayload, token: string): AppUser => {
+    setPendingRegistrationName(userPayload.uid, effectiveName, cleanEmail);
+    if (cleanPhone) {
+      setPendingRegistrationPhone(userPayload.uid, cleanPhone, cleanCountry, cleanEmail);
+    }
+    const signedInUser = setSessionState(userPayload, token);
+    if (!signedInUser) {
+      throw new AuthServiceError('Session creation failed.', 'auth/session-init-failed', getCurrentAuthHostname());
+    }
+    return signedInUser;
+  };
 
-    const rawBody = await res.text();
+  try {
+    let useFallback = false;
+    let res: Response | null = null;
+    let rawBody = '';
     let data: {
       user?: ServerAuthUserPayload;
       token?: string;
       error?: string;
       code?: string;
     } = {};
-    if (rawBody) {
-      try {
-        data = JSON.parse(rawBody) as typeof data;
-      } catch (parseErr) {
-        console.error('[Auth] registerWithEmailReal non-JSON response:', {
-          status: res.status,
-          statusText: res.statusText,
-          contentType: res.headers.get('content-type'),
-          rawBodyPreview: rawBody.slice(0, 300),
-          hostname: getCurrentAuthHostname(),
-          parseErr,
-        });
+
+    try {
+      res = await fetch('/api/auth/register', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'MideoCode',
+        },
+        body: JSON.stringify({
+          fullName: effectiveName,
+          email: cleanEmail,
+          phoneNumber: cleanPhone,
+          country: cleanCountry,
+          password,
+        }),
+      });
+      rawBody = await res.text();
+      if (rawBody) {
+        try {
+          data = JSON.parse(rawBody) as typeof data;
+        } catch {
+          // Non-JSON response (e.g. HTML 404/fallback from static server)
+        }
       }
+      if (shouldFallbackForHttpStatus(res.status, res.headers.get('content-type'), Boolean(data.error))) {
+        useFallback = true;
+      }
+    } catch (networkErr) {
+      console.warn('[Auth] /api/auth/register unreachable, using browser account store fallback:', networkErr);
+      useFallback = true;
     }
 
-    if (!res.ok || !data.user || !data.token) {
-      const resolvedCode = data.code || `http/${res.status || 'unknown'}`;
+    if (useFallback) {
+      const localResult = await browserRegisterAccount({
+        fullName: effectiveName,
+        email: cleanEmail,
+        phoneNumber: cleanPhone,
+        country: cleanCountry,
+        password,
+      });
+      return finalizeRegistration(localResult.user, localResult.token);
+    }
+
+    if (!res || !res.ok || !data.user || !data.token) {
+      const resolvedCode = data.code || `http/${res?.status || 'unknown'}`;
       const resolvedMessage =
         data.error ||
-        (res.status
+        (res?.status
           ? `Account registration failed (HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}).`
           : 'Account registration failed due to an unexpected server response.');
       console.error('[Auth] registerWithEmailReal failed:', {
-        status: res.status,
-        statusText: res.statusText,
+        status: res?.status,
+        statusText: res?.statusText,
         code: resolvedCode,
         message: resolvedMessage,
-        hasUser: Boolean(data.user),
-        hasToken: Boolean(data.token),
         rawBodyPreview: !data.error ? rawBody.slice(0, 300) : undefined,
         hostname: getCurrentAuthHostname(),
       });
-      throw new AuthServiceError(
-        resolvedMessage,
-        resolvedCode,
-        getCurrentAuthHostname(),
-      );
+      throw new AuthServiceError(resolvedMessage, resolvedCode, getCurrentAuthHostname());
     }
 
-    setPendingRegistrationName(data.user.uid, cleanedName, cleanEmail);
-    if (cleanPhone) {
-      setPendingRegistrationPhone(data.user.uid, cleanPhone, cleanCountry, cleanEmail);
-    }
-
-    const signedInUser = setSessionState(data.user, data.token);
-    if (!signedInUser) {
-      const err = new AuthServiceError('Session creation failed.', 'auth/session-init-failed', getCurrentAuthHostname());
-      console.error('[Auth] registerWithEmailReal session error:', err);
-      throw err;
-    }
-    return signedInUser;
+    return finalizeRegistration(data.user, data.token);
   } catch (err) {
     if (cleanEmail) {
-      pendingRegistrationByEmail.delete(cleanEmail.toLowerCase());
-      pendingRegistrationPhoneByEmail.delete(cleanEmail.toLowerCase());
+      pendingRegistrationByEmail.delete(cleanEmail);
+      pendingRegistrationPhoneByEmail.delete(cleanEmail);
     }
     if (err instanceof AuthServiceError) throw err;
     const message = err instanceof Error ? err.message : 'Account registration failed.';
     const code =
       err && typeof err === 'object' && 'code' in err && typeof (err as { code?: unknown }).code === 'string'
         ? (err as { code: string }).code
-        : 'auth/network-or-unexpected-error';
+        : 'auth/registration-failed';
     console.error('[Auth] registerWithEmailReal exception:', {
       code,
       message,
       hostname: getCurrentAuthHostname(),
       error: err,
     });
-    throw new AuthServiceError(
-      message,
-      code,
-      getCurrentAuthHostname(),
-    );
+    throw new AuthServiceError(message, code, getCurrentAuthHostname());
   }
 }
 
@@ -448,54 +486,83 @@ export async function loginWithEmailReal(
   password: string,
   rememberMe = true,
 ): Promise<AppUser> {
+  const cleanEmail = email.trim().toLowerCase();
   try {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Requested-With': 'MideoCode',
-      },
-      body: JSON.stringify({
-        email: email.trim(),
-        password,
-        rememberMe,
-      }),
-    });
-    const rawBody = await res.text();
+    let useFallback = false;
+    let res: Response | null = null;
+    let rawBody = '';
     let data: {
       user?: ServerAuthUserPayload;
       token?: string;
       error?: string;
       code?: string;
     } = {};
-    if (rawBody) {
-      try {
-        data = JSON.parse(rawBody) as typeof data;
-      } catch (parseErr) {
-        console.error('[Auth] loginWithEmailReal non-JSON response:', {
-          status: res.status,
-          statusText: res.statusText,
-          rawBodyPreview: rawBody.slice(0, 300),
-          parseErr,
-        });
+
+    try {
+      res = await fetch('/api/auth/login', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'MideoCode',
+        },
+        body: JSON.stringify({
+          email: cleanEmail,
+          password,
+          rememberMe,
+        }),
+      });
+      rawBody = await res.text();
+      if (rawBody) {
+        try {
+          data = JSON.parse(rawBody) as typeof data;
+        } catch {
+          // Non-JSON response
+        }
       }
+      if (shouldFallbackForHttpStatus(res.status, res.headers.get('content-type'), Boolean(data.error))) {
+        useFallback = true;
+      }
+    } catch (networkErr) {
+      console.warn('[Auth] /api/auth/login unreachable, using browser account store fallback:', networkErr);
+      useFallback = true;
     }
-    if (!res.ok || !data.user || !data.token) {
-      const resolvedCode = data.code || `http/${res.status || 'unknown'}`;
-      const resolvedMessage = data.error || `Sign-in failed (HTTP ${res.status || 'unknown'}).`;
+
+    if (useFallback) {
+      const localResult = await browserLoginAccount({
+        email: cleanEmail,
+        password,
+        rememberMe,
+      });
+      const signedInUser = setSessionState(localResult.user, localResult.token);
+      if (!signedInUser) {
+        throw new AuthServiceError('Session initialization failed.', 'auth/session-init-failed');
+      }
+      return signedInUser;
+    }
+
+    if (!res || !res.ok || !data.user || !data.token) {
+      // Also check browser fallback account if user previously registered during static fallback
+      if (res?.status === 401 && data.code === 'auth/user-not-found') {
+        try {
+          const localResult = await browserLoginAccount({ email: cleanEmail, password, rememberMe });
+          const signedInLocal = setSessionState(localResult.user, localResult.token);
+          if (signedInLocal) return signedInLocal;
+        } catch {
+          // Not in browser store either; surface server error cleanly
+        }
+      }
+      const resolvedCode = data.code || `http/${res?.status || 'unknown'}`;
+      const resolvedMessage = data.error || `Sign-in failed (HTTP ${res?.status || 'unknown'}).`;
       console.error('[Auth] loginWithEmailReal failed:', {
-        status: res.status,
+        status: res?.status,
         code: resolvedCode,
         message: resolvedMessage,
         hostname: getCurrentAuthHostname(),
       });
-      throw new AuthServiceError(
-        resolvedMessage,
-        resolvedCode,
-        getCurrentAuthHostname(),
-      );
+      throw new AuthServiceError(resolvedMessage, resolvedCode, getCurrentAuthHostname());
     }
+
     const signedInUser = setSessionState(data.user, data.token);
     if (!signedInUser) {
       throw new AuthServiceError('Session initialization failed.', 'auth/session-init-failed');
@@ -503,12 +570,13 @@ export async function loginWithEmailReal(
     return signedInUser;
   } catch (err) {
     if (err instanceof AuthServiceError) throw err;
-    console.error('[Auth] loginWithEmailReal exception:', err);
-    throw new AuthServiceError(
-      err instanceof Error ? err.message : 'Sign-in failed.',
-      'auth/network-or-unexpected-error',
-      getCurrentAuthHostname(),
-    );
+    const message = err instanceof Error ? err.message : 'Sign-in failed.';
+    const code =
+      err && typeof err === 'object' && 'code' in err && typeof (err as { code?: unknown }).code === 'string'
+        ? (err as { code: string }).code
+        : 'auth/invalid-credential';
+    console.error('[Auth] loginWithEmailReal exception:', { code, message, error: err });
+    throw new AuthServiceError(message, code, getCurrentAuthHostname());
   }
 }
 
@@ -517,22 +585,40 @@ export async function resetPasswordWithPhoneReal(
   phoneNumber: string,
   newPassword: string,
 ): Promise<void> {
-  const res = await fetch('/api/auth/reset-password', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Requested-With': 'MideoCode',
-    },
-    body: JSON.stringify({
-      email: email.trim(),
-      phoneNumber: phoneNumber.trim(),
-      newPassword,
-    }),
-  });
-  const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-  if (!res.ok || !data.ok) {
-    throw new AuthServiceError(data.error || 'Could not reset password.');
+  const cleanEmail = email.trim().toLowerCase();
+  try {
+    const res = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'MideoCode',
+      },
+      body: JSON.stringify({
+        email: cleanEmail,
+        phoneNumber: phoneNumber.trim(),
+        newPassword,
+      }),
+    });
+    const rawBody = await res.text();
+    let data: { ok?: boolean; error?: string; code?: string } = {};
+    if (rawBody) {
+      try {
+        data = JSON.parse(rawBody) as typeof data;
+      } catch {
+        // non-json
+      }
+    }
+    if (shouldFallbackForHttpStatus(res.status, res.headers.get('content-type'), Boolean(data.error))) {
+      await browserResetPassword({ email: cleanEmail, phoneNumber: phoneNumber.trim(), newPassword });
+      return;
+    }
+    if (!res.ok || !data.ok) {
+      throw new AuthServiceError(data.error || 'Could not reset password.', data.code);
+    }
+  } catch (err) {
+    if (err instanceof AuthServiceError) throw err;
+    await browserResetPassword({ email: cleanEmail, phoneNumber: phoneNumber.trim(), newPassword });
   }
 }
 
@@ -547,6 +633,8 @@ export async function refreshAuthUser(_user?: AppUser): Promise<AppUser> {
 export async function logoutReal(): Promise<void> {
   const token = memorySessionToken;
   setSessionState(null, null);
+  browserLogoutSession();
+  if (isLocalFallbackToken(token)) return;
   try {
     await fetch('/api/auth/logout', {
       method: 'POST',

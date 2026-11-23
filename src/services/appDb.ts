@@ -1,4 +1,9 @@
-import { fetchWithAuthAndRetry } from './authService';
+import { fetchWithAuthAndRetry, getCurrentSessionToken } from './authService';
+import {
+  browserDbOperation,
+  isLocalFallbackToken,
+  shouldFallbackForHttpStatus,
+} from './localBrowserStore';
 
 export interface DbReference {
   kind: 'doc' | 'collection';
@@ -167,16 +172,41 @@ function notifySnapshotListeners(): void {
 }
 
 async function postDb<T>(endpoint: string, body: unknown): Promise<T> {
-  const res = await fetchWithAuthAndRetry(`/api/db/${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const payload = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) {
-    throw new Error(payload.error || `Database ${endpoint} operation failed (${res.status})`);
+  const token = getCurrentSessionToken();
+  if (isLocalFallbackToken(token)) {
+    return browserDbOperation(endpoint, (body as Record<string, unknown>) || {}) as T;
   }
-  return payload;
+
+  try {
+    const res = await fetchWithAuthAndRetry(`/api/db/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const rawText = await res.text();
+    let payload: (T & { error?: string }) | null = null;
+    if (rawText) {
+      try {
+        payload = JSON.parse(rawText) as T & { error?: string };
+      } catch {
+        payload = null;
+      }
+    }
+
+    if (shouldFallbackForHttpStatus(res.status, res.headers.get('content-type'), Boolean(payload?.error))) {
+      return browserDbOperation(endpoint, (body as Record<string, unknown>) || {}) as T;
+    }
+
+    if (!res.ok) {
+      throw new Error(payload?.error || `Database ${endpoint} operation failed (${res.status})`);
+    }
+    return (payload || {}) as T;
+  } catch (err) {
+    if (err instanceof TypeError) {
+      return browserDbOperation(endpoint, (body as Record<string, unknown>) || {}) as T;
+    }
+    throw err;
+  }
 }
 
 export async function getDoc<T = Record<string, unknown>>(

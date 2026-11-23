@@ -111,27 +111,23 @@ export function AuthModal() {
     }
 
     if (tab === 'register' || tab === 'reset') {
-      if (tab === 'register' && fullName.trim().length < 2) {
-        nextFieldErrors.fullName = 'Please enter your full name (at least 2 characters).';
-      }
-      if (!phoneNumber.trim()) {
-        nextFieldErrors.phoneNumber = 'Please enter your phone number.';
-      } else {
+      if (phoneNumber.trim()) {
         const phoneCheck = normalizePhoneToE164(selectedCountry, phoneNumber);
-        if (!phoneCheck.valid) {
-          nextFieldErrors.phoneNumber =
-            phoneCheck.error || 'Enter a valid phone number with country code.';
-        } else {
+        if (phoneCheck.valid) {
           const countryObj = getCountryByCode(phoneCheck.detectedCountry);
           validatedPhone = {
             phoneNumber: phoneCheck.e164,
             country: `${countryObj.name} (${countryObj.code})`,
           };
+        } else {
+          validatedPhone = {
+            phoneNumber: phoneNumber.trim().slice(0, 32),
+            country: `${selectedCountry.name} (${selectedCountry.code})`,
+          };
         }
       }
-      if (password.length < 8 || !/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
-        nextFieldErrors.password =
-          'Password must be at least 8 characters and include both letters and numbers.';
+      if (password.length < 4) {
+        nextFieldErrors.password = 'Password must be at least 4 characters.';
       }
       if (password !== confirmPassword) {
         nextFieldErrors.confirmPassword = 'Password and Confirm Password do not match.';
@@ -291,6 +287,15 @@ export function AuthModal() {
                 Sign in with this email instead →
               </button>
             )}
+            {errorCode === 'auth/user-not-found' && (
+              <button
+                type="button"
+                onClick={() => switchTab('register')}
+                className="text-[11px] font-semibold underline text-red-800 dark:text-red-200 cursor-pointer"
+              >
+                Create an account with this email →
+              </button>
+            )}
           </div>
         )}
 
@@ -306,20 +311,19 @@ export function AuthModal() {
           {tab === 'register' && (
             <div>
               <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                Full Name
+                Full Name <span className="font-normal text-slate-400">(optional)</span>
               </label>
               <div className="relative">
                 <UserIcon className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                 <input
                   type="text"
-                  required
                   autoComplete="name"
                   value={fullName}
                   onChange={(e) => {
                     setFullName(e.target.value);
                     if (fieldErrors.fullName) setFieldErrors((p) => ({ ...p, fullName: undefined }));
                   }}
-                  placeholder="Enter your full name"
+                  placeholder="Enter your name (optional)"
                   className={`w-full pl-10 pr-3.5 py-2.5 rounded-lg border bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${
                     fieldErrors.fullName
                       ? 'border-red-500 focus:ring-red-600'
@@ -364,7 +368,13 @@ export function AuthModal() {
           {(tab === 'register' || tab === 'reset') && (
             <div>
               <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                {tab === 'reset' ? 'Registered Phone Number' : 'Phone Number'}
+                {tab === 'reset' ? (
+                  'Registered Phone Number (if set)'
+                ) : (
+                  <>
+                    Phone Number <span className="font-normal text-slate-400">(optional)</span>
+                  </>
+                )}
               </label>
               <div className="flex gap-2">
                 <select
@@ -384,11 +394,10 @@ export function AuthModal() {
                   <input
                     type="tel"
                     inputMode="tel"
-                    required
                     autoComplete="tel"
                     value={phoneNumber}
                     onChange={(e) => handlePhoneChange(e.target.value)}
-                    placeholder={`${selectedCountry.dial} phone number`}
+                    placeholder={`${selectedCountry.dial} phone number (optional)`}
                     className={`w-full pl-9 pr-3.5 py-2.5 rounded-lg border bg-white dark:bg-slate-900 text-sm font-mono tabular-nums text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${
                       fieldErrors.phoneNumber
                         ? 'border-red-500 focus:ring-red-600'
@@ -399,17 +408,9 @@ export function AuthModal() {
               </div>
               {fieldErrors.phoneNumber ? (
                 <p className="text-[11px] text-red-500 mt-1">{fieldErrors.phoneNumber}</p>
-              ) : livePhoneCheck ? (
-                <p
-                  className={`text-[11px] font-mono mt-1 ${
-                    livePhoneCheck.valid
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : 'text-amber-600 dark:text-amber-400'
-                  }`}
-                >
-                  {livePhoneCheck.valid
-                    ? `Formatted: ${livePhoneCheck.nationalFormatted}`
-                    : `Enter a valid ${selectedCountry.name} (${selectedCountry.dial}) or +E.164 number`}
+              ) : livePhoneCheck?.valid ? (
+                <p className="text-[11px] font-mono mt-1 text-emerald-600 dark:text-emerald-400">
+                  Formatted: {livePhoneCheck.nationalFormatted}
                 </p>
               ) : null}
             </div>
@@ -443,7 +444,7 @@ export function AuthModal() {
                 placeholder={
                   tab === 'signin'
                     ? 'Enter your password'
-                    : 'At least 8 chars with letters & numbers'
+                    : 'Minimum 4 characters'
                 }
                 className={`w-full pl-3.5 pr-10 py-2.5 rounded-lg border bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${
                   fieldErrors.password
@@ -465,7 +466,7 @@ export function AuthModal() {
             ) : (
               (tab === 'register' || tab === 'reset') && (
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
-                  Minimum 8 characters, at least 1 letter and 1 number.
+                  Minimum 4 characters.
                 </p>
               )
             )}

@@ -123,11 +123,8 @@ export function toPublicAuthUser(acc: StoredAccount): PublicAuthUser {
 }
 
 export function validatePasswordStrength(password: string): string | null {
-  if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
-    return 'Password must be between 8 and 128 characters.';
-  }
-  if (!/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
-    return 'Password must include both letters and numbers.';
+  if (typeof password !== 'string' || password.length < 4 || password.length > 128) {
+    return 'Password must be between 4 and 128 characters.';
   }
   return null;
 }
@@ -155,33 +152,18 @@ export function createSessionForAccount(acc: StoredAccount, rememberMe: boolean)
 export function registerLocalAccount(input: {
   fullName: string;
   email: string;
-  phoneNumber: string;
+  phoneNumber?: string;
   country?: string;
   password: string;
 }): { user: PublicAuthUser; token: string; expiresAt: number } {
-  const cleanName = (input.fullName || '').trim().slice(0, 80);
   const cleanEmail = (input.email || '').trim().toLowerCase();
-  const cleanPhone = (input.phoneNumber || '').trim().slice(0, 32);
-  const cleanCountry = input.country ? input.country.trim().slice(0, 80) : undefined;
-
-  if (cleanName.length < 2) {
-    throw Object.assign(new Error('Please enter your full name (at least 2 characters).'), {
-      status: 400,
-      code: 'auth/invalid-display-name',
-    });
-  }
   if (!isValidEmail(cleanEmail)) {
     throw Object.assign(new Error('Enter a valid email address.'), {
       status: 400,
       code: 'auth/invalid-email',
     });
   }
-  if (!cleanPhone || cleanPhone.length < 6) {
-    throw Object.assign(new Error('Enter a valid phone number.'), {
-      status: 400,
-      code: 'auth/invalid-phone-number',
-    });
-  }
+
   const pwdError = validatePasswordStrength(input.password);
   if (pwdError) {
     throw Object.assign(new Error(pwdError), {
@@ -190,8 +172,20 @@ export function registerLocalAccount(input: {
     });
   }
 
-  const existing = Object.values(accountsCache).find((a) => a.email === cleanEmail);
+  const rawName = (input.fullName || '').trim().slice(0, 80);
+  const cleanName =
+    rawName.length >= 1
+      ? rawName
+      : (cleanEmail.split('@')[0]?.replace(/[._-]+/g, ' ').trim() || 'MideoCode Learner').slice(0, 80);
+  const cleanPhone = (input.phoneNumber || '').trim().slice(0, 32);
+  const cleanCountry = input.country ? input.country.trim().slice(0, 80) : undefined;
+
+  const existing = Object.values(accountsCache).find((a) => a.email.toLowerCase() === cleanEmail);
   if (existing) {
+    if (verifyPassword(input.password, existing.passwordHash)) {
+      const { token, expiresAt } = createSessionForAccount(existing, true);
+      return { user: toPublicAuthUser(existing), token, expiresAt };
+    }
     throw Object.assign(new Error('An account with this email address already exists. Sign in instead.'), {
       status: 409,
       code: 'auth/email-already-in-use',
@@ -225,13 +219,25 @@ export function loginLocalAccount(input: {
   rememberMe?: boolean;
 }): { user: PublicAuthUser; token: string; expiresAt: number } {
   const cleanEmail = (input.email || '').trim().toLowerCase();
-  if (!isValidEmail(cleanEmail) || typeof input.password !== 'string' || !input.password) {
-    throw Object.assign(new Error('Incorrect email or password.'), { status: 401, code: 'auth/invalid-credential' });
+  if (!isValidEmail(cleanEmail)) {
+    throw Object.assign(new Error('Enter a valid email address.'), { status: 400, code: 'auth/invalid-email' });
+  }
+  if (typeof input.password !== 'string' || !input.password) {
+    throw Object.assign(new Error('Enter your password.'), { status: 400, code: 'auth/wrong-password' });
   }
 
-  const account = Object.values(accountsCache).find((a) => a.email === cleanEmail);
-  if (!account || !verifyPassword(input.password, account.passwordHash)) {
-    throw Object.assign(new Error('Incorrect email or password.'), { status: 401, code: 'auth/invalid-credential' });
+  const account = Object.values(accountsCache).find((a) => a.email.toLowerCase() === cleanEmail);
+  if (!account) {
+    throw Object.assign(
+      new Error('No account found for this email address. Switch to Sign Up to create one.'),
+      { status: 401, code: 'auth/user-not-found' },
+    );
+  }
+  if (!verifyPassword(input.password, account.passwordHash)) {
+    throw Object.assign(
+      new Error('Incorrect password for this account. Double-check your password or reset it.'),
+      { status: 401, code: 'auth/wrong-password' },
+    );
   }
 
   const { token, expiresAt } = createSessionForAccount(account, input.rememberMe !== false);
@@ -245,23 +251,31 @@ export function resetPasswordWithPhoneVerification(input: {
 }): void {
   const cleanEmail = (input.email || '').trim().toLowerCase();
   const cleanPhone = (input.phoneNumber || '').trim();
-  if (!isValidEmail(cleanEmail) || !cleanPhone) {
-    throw Object.assign(new Error('Email and registered phone number are required.'), { status: 400 });
+  if (!isValidEmail(cleanEmail)) {
+    throw Object.assign(new Error('Enter a valid email address.'), { status: 400, code: 'auth/invalid-email' });
   }
   const pwdError = validatePasswordStrength(input.newPassword);
   if (pwdError) {
-    throw Object.assign(new Error(pwdError), { status: 400 });
+    throw Object.assign(new Error(pwdError), { status: 400, code: 'auth/weak-password' });
   }
 
-  const account = Object.values(accountsCache).find((a) => a.email === cleanEmail);
+  const account = Object.values(accountsCache).find((a) => a.email.toLowerCase() === cleanEmail);
   if (!account) {
-    throw Object.assign(new Error('Account details could not be verified.'), { status: 400 });
+    throw Object.assign(new Error('No account found with that email address.'), {
+      status: 404,
+      code: 'auth/user-not-found',
+    });
   }
 
-  const aBuf = Buffer.from(account.phoneNumber.trim());
-  const bBuf = Buffer.from(cleanPhone);
-  if (aBuf.length !== bBuf.length || !crypto.timingSafeEqual(aBuf, bBuf)) {
-    throw Object.assign(new Error('Account details could not be verified.'), { status: 400 });
+  if (account.phoneNumber.trim()) {
+    const aBuf = Buffer.from(account.phoneNumber.trim());
+    const bBuf = Buffer.from(cleanPhone);
+    if (aBuf.length !== bBuf.length || !crypto.timingSafeEqual(aBuf, bBuf)) {
+      throw Object.assign(new Error('Phone number does not match the registered account.'), {
+        status: 400,
+        code: 'auth/invalid-phone-number',
+      });
+    }
   }
 
   account.passwordHash = hashPassword(input.newPassword);

@@ -110,15 +110,13 @@ export function OnboardingFlow() {
     let resolvedCountry: string | undefined;
     if (phoneInput.trim()) {
       const check = normalizePhoneToE164(selectedCountry, phoneInput);
-      if (!check.valid) {
-        if (!skipOptional) {
-          setPhoneError(check.error || 'Please enter a valid phone number.');
-          return;
-        }
-      } else {
+      if (check.valid) {
         validatedPhone = check.e164;
         const countryObj = getCountryByCode(check.detectedCountry);
         resolvedCountry = `${countryObj.name} (${countryObj.code})`;
+      } else {
+        validatedPhone = phoneInput.trim().slice(0, 32);
+        resolvedCountry = `${selectedCountry.name} (${selectedCountry.code})`;
       }
     }
 
