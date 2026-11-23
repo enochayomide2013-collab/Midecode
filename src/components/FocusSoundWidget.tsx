@@ -41,7 +41,7 @@ export function FocusSoundWidget() {
         }`}
       >
         <Music className={`w-3.5 h-3.5 ${isPlaying ? 'animate-bounce' : ''}`} />
-        <span>Focus Mode {isPlaying ? `(${activeMode.toUpperCase()})` : ''}</span>
+        <span>Focus Audio {isPlaying ? `(${activeMode.toUpperCase()})` : ''}</span>
       </button>
 
       {isOpen && (

@@ -151,7 +151,10 @@ function WorkspaceShell() {
     openInIde,
     refreshUserData,
     signOutUser,
+    ideFocusMode,
   } = useMideo();
+
+  const isFocusModeActive = Boolean(ideFocusMode && activeView === 'ide');
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -381,11 +384,12 @@ function WorkspaceShell() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#070B14] text-slate-900 dark:text-slate-100 flex">
       {/* Desktop Sidebar */}
-      <aside
-        className={`hidden lg:flex flex-col border-r border-slate-200 dark:border-slate-800/80 bg-white dark:bg-[#0B101D] shrink-0 transition-all duration-200 ${
-          sidebarCollapsed ? 'w-16' : 'w-60'
-        }`}
-      >
+      {!isFocusModeActive && (
+        <aside
+          className={`hidden lg:flex flex-col border-r border-slate-200 dark:border-slate-800/80 bg-white dark:bg-[#0B101D] shrink-0 transition-all duration-200 ${
+            sidebarCollapsed ? 'w-16' : 'w-60'
+          }`}
+        >
         <div className="h-16 px-3 border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between gap-2">
           <button
             onClick={() => setActiveView('dashboard')}
@@ -468,9 +472,10 @@ function WorkspaceShell() {
           </button>
         </div>
       </aside>
+      )}
 
       {/* Mobile Navigation Drawer */}
-      {mobileNavOpen && (
+      {!isFocusModeActive && mobileNavOpen && (
         <div className="fixed inset-0 z-50 lg:hidden flex">
           <div className="fixed inset-0 bg-black/60" onClick={() => setMobileNavOpen(false)} />
           <div className="relative w-64 max-w-[80vw] bg-white dark:bg-[#0B101D] border-r border-slate-200 dark:border-slate-800 flex flex-col h-full z-10">
@@ -551,6 +556,7 @@ function WorkspaceShell() {
       {/* Main Content Column */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Top Bar */}
+        {!isFocusModeActive && (
         <header className="h-14 px-4 sm:px-6 border-b border-slate-200 dark:border-slate-800/80 bg-white/90 dark:bg-[#0B101D]/90 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5 flex-1 max-w-md">
             <button
@@ -688,9 +694,16 @@ function WorkspaceShell() {
             </button>
           </div>
         </header>
+        )}
 
         {/* Active View Surface */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+        <main
+          className={
+            isFocusModeActive
+              ? 'flex-1 p-3 sm:p-4 w-full max-w-none min-h-screen flex flex-col'
+              : 'flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto'
+          }
+        >
           {renderActiveView()}
         </main>
       </div>

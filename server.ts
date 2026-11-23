@@ -725,6 +725,7 @@ except Exception as _ex:
 
 async function startServer() {
   const app = express();
+  app.set('trust proxy', 1);
   app.use((_req: Request, res: Response, next: NextFunction) => {
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
     next();
@@ -795,9 +796,17 @@ async function startServer() {
       res.status(201).json(result);
     } catch (err) {
       const status = (err as { status?: number }).status || 400;
-      const code = (err as { code?: string }).code;
+      const code = (err as { code?: string }).code || 'auth/registration-failed';
+      const message = err instanceof Error ? err.message : 'Registration failed.';
+      console.error('[Auth] /api/auth/register error:', {
+        status,
+        code,
+        message,
+        ip,
+        hasBody: Boolean(req.body && typeof req.body === 'object'),
+      });
       res.status(status).json({
-        error: err instanceof Error ? err.message : 'Registration failed.',
+        error: message,
         code,
       });
     }

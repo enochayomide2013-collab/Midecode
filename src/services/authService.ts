@@ -359,16 +359,49 @@ export async function registerWithEmailReal(
         password,
       }),
     });
-    const data = (await res.json().catch(() => ({}))) as {
+
+    const rawBody = await res.text();
+    let data: {
       user?: ServerAuthUserPayload;
       token?: string;
       error?: string;
       code?: string;
-    };
+    } = {};
+    if (rawBody) {
+      try {
+        data = JSON.parse(rawBody) as typeof data;
+      } catch (parseErr) {
+        console.error('[Auth] registerWithEmailReal non-JSON response:', {
+          status: res.status,
+          statusText: res.statusText,
+          contentType: res.headers.get('content-type'),
+          rawBodyPreview: rawBody.slice(0, 300),
+          hostname: getCurrentAuthHostname(),
+          parseErr,
+        });
+      }
+    }
+
     if (!res.ok || !data.user || !data.token) {
+      const resolvedCode = data.code || `http/${res.status || 'unknown'}`;
+      const resolvedMessage =
+        data.error ||
+        (res.status
+          ? `Account registration failed (HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}).`
+          : 'Account registration failed due to an unexpected server response.');
+      console.error('[Auth] registerWithEmailReal failed:', {
+        status: res.status,
+        statusText: res.statusText,
+        code: resolvedCode,
+        message: resolvedMessage,
+        hasUser: Boolean(data.user),
+        hasToken: Boolean(data.token),
+        rawBodyPreview: !data.error ? rawBody.slice(0, 300) : undefined,
+        hostname: getCurrentAuthHostname(),
+      });
       throw new AuthServiceError(
-        data.error || 'Could not create account.',
-        data.code,
+        resolvedMessage,
+        resolvedCode,
         getCurrentAuthHostname(),
       );
     }
@@ -380,7 +413,9 @@ export async function registerWithEmailReal(
 
     const signedInUser = setSessionState(data.user, data.token);
     if (!signedInUser) {
-      throw new AuthServiceError('Session creation failed.');
+      const err = new AuthServiceError('Session creation failed.', 'auth/session-init-failed', getCurrentAuthHostname());
+      console.error('[Auth] registerWithEmailReal session error:', err);
+      throw err;
     }
     return signedInUser;
   } catch (err) {
@@ -389,9 +424,20 @@ export async function registerWithEmailReal(
       pendingRegistrationPhoneByEmail.delete(cleanEmail.toLowerCase());
     }
     if (err instanceof AuthServiceError) throw err;
+    const message = err instanceof Error ? err.message : 'Account registration failed.';
+    const code =
+      err && typeof err === 'object' && 'code' in err && typeof (err as { code?: unknown }).code === 'string'
+        ? (err as { code: string }).code
+        : 'auth/network-or-unexpected-error';
+    console.error('[Auth] registerWithEmailReal exception:', {
+      code,
+      message,
+      hostname: getCurrentAuthHostname(),
+      error: err,
+    });
     throw new AuthServiceError(
-      err instanceof Error ? err.message : 'Account registration failed.',
-      undefined,
+      message,
+      code,
       getCurrentAuthHostname(),
     );
   }
@@ -402,37 +448,68 @@ export async function loginWithEmailReal(
   password: string,
   rememberMe = true,
 ): Promise<AppUser> {
-  const res = await fetch('/api/auth/login', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Requested-With': 'MideoCode',
-    },
-    body: JSON.stringify({
-      email: email.trim(),
-      password,
-      rememberMe,
-    }),
-  });
-  const data = (await res.json().catch(() => ({}))) as {
-    user?: ServerAuthUserPayload;
-    token?: string;
-    error?: string;
-    code?: string;
-  };
-  if (!res.ok || !data.user || !data.token) {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'MideoCode',
+      },
+      body: JSON.stringify({
+        email: email.trim(),
+        password,
+        rememberMe,
+      }),
+    });
+    const rawBody = await res.text();
+    let data: {
+      user?: ServerAuthUserPayload;
+      token?: string;
+      error?: string;
+      code?: string;
+    } = {};
+    if (rawBody) {
+      try {
+        data = JSON.parse(rawBody) as typeof data;
+      } catch (parseErr) {
+        console.error('[Auth] loginWithEmailReal non-JSON response:', {
+          status: res.status,
+          statusText: res.statusText,
+          rawBodyPreview: rawBody.slice(0, 300),
+          parseErr,
+        });
+      }
+    }
+    if (!res.ok || !data.user || !data.token) {
+      const resolvedCode = data.code || `http/${res.status || 'unknown'}`;
+      const resolvedMessage = data.error || `Sign-in failed (HTTP ${res.status || 'unknown'}).`;
+      console.error('[Auth] loginWithEmailReal failed:', {
+        status: res.status,
+        code: resolvedCode,
+        message: resolvedMessage,
+        hostname: getCurrentAuthHostname(),
+      });
+      throw new AuthServiceError(
+        resolvedMessage,
+        resolvedCode,
+        getCurrentAuthHostname(),
+      );
+    }
+    const signedInUser = setSessionState(data.user, data.token);
+    if (!signedInUser) {
+      throw new AuthServiceError('Session initialization failed.', 'auth/session-init-failed');
+    }
+    return signedInUser;
+  } catch (err) {
+    if (err instanceof AuthServiceError) throw err;
+    console.error('[Auth] loginWithEmailReal exception:', err);
     throw new AuthServiceError(
-      data.error || 'Incorrect email or password.',
-      data.code,
+      err instanceof Error ? err.message : 'Sign-in failed.',
+      'auth/network-or-unexpected-error',
       getCurrentAuthHostname(),
     );
   }
-  const signedInUser = setSessionState(data.user, data.token);
-  if (!signedInUser) {
-    throw new AuthServiceError('Session initialization failed.');
-  }
-  return signedInUser;
 }
 
 export async function resetPasswordWithPhoneReal(

@@ -4,6 +4,7 @@ import {
   BookOpen,
   CheckSquare,
   Download,
+  EyeOff,
   GitBranch,
   History,
   LifeBuoy,
@@ -66,6 +67,9 @@ export function IdeView() {
     refreshUserData,
     askAi,
     notify,
+    ideFocusMode,
+    setIdeFocusMode,
+    toggleIdeFocusMode,
   } = useMideo();
 
   const [files, setFiles] = useState<ProjectFile[]>([]);
@@ -82,6 +86,17 @@ export function IdeView() {
   const [fullScreen, setFullScreen] = useState(false);
   const [showDocsDrawer, setShowDocsDrawer] = useState(false);
   const fileImportRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!ideFocusMode) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIdeFocusMode(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [ideFocusMode, setIdeFocusMode]);
 
   // Real-time pair programming state
   const pairClientRef = useRef<PairSessionClient | null>(null);
@@ -530,7 +545,15 @@ export function IdeView() {
   }
 
   return (
-    <div className={`${fullScreen ? 'fixed inset-0 z-40 bg-slate-50 dark:bg-[#070B14] p-4 flex flex-col overflow-y-auto' : 'space-y-4'}`}>
+    <div
+      className={`${
+        fullScreen
+          ? 'fixed inset-0 z-40 bg-slate-50 dark:bg-[#070B14] p-4 flex flex-col overflow-y-auto'
+          : ideFocusMode
+            ? 'flex-1 flex flex-col space-y-3 min-h-[calc(100vh-2rem)]'
+            : 'space-y-4'
+      }`}
+    >
       {/* Project Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0D1322]">
         <div className="flex items-center gap-3 min-w-0">
@@ -637,6 +660,20 @@ export function IdeView() {
             .zip
           </button>
           <FocusSoundWidget />
+          <button
+            type="button"
+            onClick={toggleIdeFocusMode}
+            aria-pressed={ideFocusMode}
+            title={ideFocusMode ? 'Exit Focus Mode (Esc)' : 'Enter Focus Mode (hide sidebar & top navigation)'}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+              ideFocusMode
+                ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            {ideFocusMode ? <Minimize2 className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5 text-blue-500" />}
+            <span>{ideFocusMode ? 'Exit Focus Mode' : 'Focus Mode'}</span>
+          </button>
           <button
             onClick={handleExportProject}
             aria-label="Export project JSON bundle"

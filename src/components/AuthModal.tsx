@@ -188,9 +188,22 @@ export function AuthModal() {
         setInfoMsg('Password updated successfully. You can now sign in with your new password.');
       }
     } catch (err) {
-      const code = err instanceof AuthServiceError ? err.code || null : null;
+      const code =
+        err instanceof AuthServiceError
+          ? err.code || null
+          : err && typeof err === 'object' && 'code' in err && typeof (err as { code?: unknown }).code === 'string'
+            ? (err as { code: string }).code
+            : null;
+      const message = err instanceof Error ? err.message : 'Authentication failed.';
+      console.error('[AuthModal] Authentication failed:', {
+        tab,
+        code,
+        message,
+        hostname: err instanceof AuthServiceError ? err.hostname : undefined,
+        error: err,
+      });
       setErrorCode(code);
-      setErrorMsg(err instanceof Error ? err.message : 'Authentication failed.');
+      setErrorMsg(message);
     } finally {
       setLoading(false);
     }
@@ -262,7 +275,12 @@ export function AuthModal() {
           <div className="mb-4 p-3 rounded-lg border border-red-300 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-xs space-y-2">
             <div className="flex items-start gap-2">
               <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{errorMsg}</span>
+              <div className="space-y-0.5">
+                <span>{errorMsg}</span>
+                {errorCode && (
+                  <p className="text-[10px] font-mono opacity-80">Code: {errorCode}</p>
+                )}
+              </div>
             </div>
             {errorCode === 'auth/email-already-in-use' && (
               <button

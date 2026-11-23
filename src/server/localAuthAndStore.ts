@@ -52,7 +52,8 @@ const SESSION_TTL_REMEMBER_MS = 30 * 24 * 60 * 60 * 1000;
 const SESSION_TTL_SHORT_MS = 12 * 60 * 60 * 1000;
 
 function atomicWriteJson(filePath: string, data: unknown): void {
-  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: 0o600 });
   fs.renameSync(tmpPath, filePath);
 }
@@ -164,17 +165,29 @@ export function registerLocalAccount(input: {
   const cleanCountry = input.country ? input.country.trim().slice(0, 80) : undefined;
 
   if (cleanName.length < 2) {
-    throw Object.assign(new Error('Please enter your full name (at least 2 characters).'), { status: 400 });
+    throw Object.assign(new Error('Please enter your full name (at least 2 characters).'), {
+      status: 400,
+      code: 'auth/invalid-display-name',
+    });
   }
   if (!isValidEmail(cleanEmail)) {
-    throw Object.assign(new Error('Enter a valid email address.'), { status: 400 });
+    throw Object.assign(new Error('Enter a valid email address.'), {
+      status: 400,
+      code: 'auth/invalid-email',
+    });
   }
   if (!cleanPhone || cleanPhone.length < 6) {
-    throw Object.assign(new Error('Enter a valid phone number.'), { status: 400 });
+    throw Object.assign(new Error('Enter a valid phone number.'), {
+      status: 400,
+      code: 'auth/invalid-phone-number',
+    });
   }
   const pwdError = validatePasswordStrength(input.password);
   if (pwdError) {
-    throw Object.assign(new Error(pwdError), { status: 400 });
+    throw Object.assign(new Error(pwdError), {
+      status: 400,
+      code: 'auth/weak-password',
+    });
   }
 
   const existing = Object.values(accountsCache).find((a) => a.email === cleanEmail);

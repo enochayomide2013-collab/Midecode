@@ -117,6 +117,9 @@ interface MideoContextValue {
   selectedChallengeId: string;
   activeIdeProjectId: string | null;
   setActiveIdeProjectId: (id: string | null) => void;
+  ideFocusMode: boolean;
+  setIdeFocusMode: (enabled: boolean) => void;
+  toggleIdeFocusMode: () => void;
   testLabLaunch: { projectId: string; initialTab?: 'dashboard' | 'generate' | 'suites' | 'results' | 'history' } | null;
   clearTestLabLaunch: () => void;
   openTestLabForProject: (
@@ -252,6 +255,7 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
   const [selectedLabTool, setSelectedLabTool] = useState('flexbox');
   const [selectedChallengeId, setSelectedChallengeId] = useState('two-sum-indices');
   const [activeIdeProjectId, setActiveIdeProjectId] = useState<string | null>(null);
+  const [ideFocusMode, setIdeFocusMode] = useState<boolean>(false);
   const activeIdeProjectIdRef = useRef<string | null>(null);
   activeIdeProjectIdRef.current = activeIdeProjectId;
   const [testLabLaunch, setTestLabLaunch] = useState<{
@@ -315,8 +319,21 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (activeView !== 'ide' && ideFocusMode) {
+      setIdeFocusMode(false);
+    }
+  }, [activeView, ideFocusMode]);
+
+  const toggleIdeFocusMode = useCallback(() => {
+    setIdeFocusMode((prev) => !prev);
+  }, []);
+
   const setActiveView = useCallback((view: NavSection) => {
     setActiveViewState(view);
+    if (view !== 'ide') {
+      setIdeFocusMode(false);
+    }
     if (view === 'missions') {
       setMissionSubView('landing');
       setSelectedMissionId(null);
@@ -816,6 +833,9 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
         selectedChallengeId,
         activeIdeProjectId,
         setActiveIdeProjectId,
+        ideFocusMode,
+        setIdeFocusMode,
+        toggleIdeFocusMode,
         testLabLaunch,
         clearTestLabLaunch,
         openTestLabForProject,

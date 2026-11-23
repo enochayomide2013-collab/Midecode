@@ -5,19 +5,5 @@
     "rememberMe": true,
     "createdAt": 1795369479847,
     "expiresAt": 1797961479847
-  },
-  "4593dc3000f3d1404966a6298595920d645fedf32e16159474784edcea311840": {
-    "tokenHash": "4593dc3000f3d1404966a6298595920d645fedf32e16159474784edcea311840",
-    "uid": "usr_f0926adf2d9969473baa66f1",
-    "rememberMe": true,
-    "createdAt": 1795369663808,
-    "expiresAt": 1797961663808
-  },
-  "af24cb13d8b4c0234d106f6f8372be03305bc7f4b6885d9817c295e810b14a69": {
-    "tokenHash": "af24cb13d8b4c0234d106f6f8372be03305bc7f4b6885d9817c295e810b14a69",
-    "uid": "usr_ed520330fc86d5f5e8aaec62",
-    "rememberMe": true,
-    "createdAt": 1795369719301,
-    "expiresAt": 1797961719301
   }
 }
