@@ -539,9 +539,13 @@ export function CollaborationView() {
                         <button
                           type="button"
                           onClick={async () => {
-                            await declineOrCancelInvitation(inv, 'declined');
-                            await loadInvites();
-                            notify('info', 'Invitation declined.');
+                            try {
+                              await declineOrCancelInvitation(inv, 'declined');
+                              await loadInvites();
+                              notify('info', 'Invitation declined.');
+                            } catch (err) {
+                              notify('error', err instanceof Error ? err.message : 'Unable to decline invitation.');
+                            }
                           }}
                           className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium cursor-pointer"
                         >
@@ -578,9 +582,13 @@ export function CollaborationView() {
                       <button
                         type="button"
                         onClick={async () => {
-                          await declineOrCancelInvitation(inv, 'cancelled');
-                          await loadInvites();
-                          notify('info', 'Invitation cancelled.');
+                          try {
+                            await declineOrCancelInvitation(inv, 'cancelled');
+                            await loadInvites();
+                            notify('info', 'Invitation cancelled.');
+                          } catch (err) {
+                            notify('error', err instanceof Error ? err.message : 'Unable to cancel invitation.');
+                          }
                         }}
                         className="px-2.5 py-1 rounded border border-slate-300 dark:border-slate-700 text-xs text-red-500 cursor-pointer"
                       >
@@ -801,16 +809,20 @@ export function CollaborationView() {
                                       onChange={async (e) => {
                                         if (!firebaseUser || !profile) return;
                                         const nextR = e.target.value as 'editor' | 'viewer';
-                                        await updateCollaboratorRole(
-                                          activeProject,
-                                          firebaseUser.uid,
-                                          profile.displayName,
-                                          uid,
-                                          nextR,
-                                        );
-                                        await refreshUserData();
-                                        await loadProjectCollabData(activeProject.id);
-                                        notify('success', `Updated ${name} to ${nextR}.`);
+                                        try {
+                                          await updateCollaboratorRole(
+                                            activeProject,
+                                            firebaseUser.uid,
+                                            profile.displayName,
+                                            uid,
+                                            nextR,
+                                          );
+                                          await refreshUserData();
+                                          await loadProjectCollabData(activeProject.id);
+                                          notify('success', `Updated ${name} to ${nextR}.`);
+                                        } catch (err) {
+                                          notify('error', err instanceof Error ? err.message : 'Failed to update role.');
+                                        }
                                       }}
                                       className="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-[11px]"
                                     >
@@ -966,13 +978,17 @@ export function CollaborationView() {
                                     type="button"
                                     onClick={async () => {
                                       if (!firebaseUser || !profile) return;
-                                      await toggleProjectCommentResolution(
-                                        activeProject,
-                                        cmt,
-                                        firebaseUser.uid,
-                                        profile.displayName,
-                                      );
-                                      await loadProjectCollabData(activeProject.id);
+                                      try {
+                                        await toggleProjectCommentResolution(
+                                          activeProject,
+                                          cmt,
+                                          firebaseUser.uid,
+                                          profile.displayName,
+                                        );
+                                        await loadProjectCollabData(activeProject.id);
+                                      } catch (err) {
+                                        notify('error', err instanceof Error ? err.message : 'Failed to update comment status.');
+                                      }
                                     }}
                                     className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
                                   >
@@ -1051,16 +1067,20 @@ export function CollaborationView() {
               <button
                 type="button"
                 onClick={async () => {
-                  await removeCollaborator(
-                    activeProject,
-                    firebaseUser.uid,
-                    profile.displayName,
-                    confirmRemoveMember.uid,
-                  );
-                  setConfirmRemoveMember(null);
-                  await refreshUserData();
-                  await loadProjectCollabData(activeProject.id);
-                  notify('info', 'Collaborator removed.');
+                  try {
+                    await removeCollaborator(
+                      activeProject,
+                      firebaseUser.uid,
+                      profile.displayName,
+                      confirmRemoveMember.uid,
+                    );
+                    setConfirmRemoveMember(null);
+                    await refreshUserData();
+                    await loadProjectCollabData(activeProject.id);
+                    notify('info', 'Collaborator removed.');
+                  } catch (err) {
+                    notify('error', err instanceof Error ? err.message : 'Failed to remove collaborator.');
+                  }
                 }}
                 className="px-3.5 py-2 rounded-lg bg-red-600 text-white text-xs font-semibold cursor-pointer"
               >
@@ -1090,10 +1110,14 @@ export function CollaborationView() {
               <button
                 type="button"
                 onClick={async () => {
-                  await deleteProjectComment(activeProject.id, confirmDeleteComment.id);
-                  setComments((prev) => prev.filter((c) => c.id !== confirmDeleteComment.id));
-                  setConfirmDeleteComment(null);
-                  notify('info', 'Comment deleted.');
+                  try {
+                    await deleteProjectComment(activeProject.id, confirmDeleteComment.id);
+                    setComments((prev) => prev.filter((c) => c.id !== confirmDeleteComment.id));
+                    setConfirmDeleteComment(null);
+                    notify('info', 'Comment deleted.');
+                  } catch (err) {
+                    notify('error', err instanceof Error ? err.message : 'Failed to delete comment.');
+                  }
                 }}
                 className="px-3.5 py-2 rounded-lg bg-red-600 text-white text-xs font-semibold cursor-pointer"
               >

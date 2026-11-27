@@ -1,6 +1,6 @@
 import { deleteDoc, doc } from './appDb';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { fetchWithAuthAndRetry } from './authService';
+import { fetchWithAuthAndRetry, readJsonSafe } from './authService';
 import type {
   FileDiffSummary,
   ProjectVersionSnapshot,
@@ -21,11 +21,13 @@ export async function compareSnapshotsViaApi(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ baseSnapshot, targetSnapshot }),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Failed to compute snapshot diff.');
-  }
-  return data;
+  return readJsonSafe<{
+    files: FileDiffSummary[];
+    addedCount: number;
+    removedCount: number;
+    modifiedCount: number;
+    unchangedCount: number;
+  }>(res, 'Failed to compute snapshot diff.');
 }
 
 export async function deleteProjectVersionSnapshot(

@@ -2,6 +2,9 @@ export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
 export type UserRole = 'member' | 'moderator' | 'admin';
 export type ThemeMode = 'dark' | 'light';
 export type EditorTheme = 'oneDark' | 'githubLight';
+export type WorkspaceStartMode = 'dashboard' | 'academy' | 'ide' | 'missions' | 'challenges';
+export type AiStylePreference = 'fast' | 'balanced' | 'deep';
+export type FocusAudioPreference = 'off' | 'lofi' | 'rain' | 'whitenoise';
 
 export type NavSection =
   | 'dashboard'
@@ -27,7 +30,7 @@ export type NavSection =
   | 'profile'
   | 'admin';
 
-export type AiMode = 'learn' | 'debug' | 'explain' | 'practice' | 'build' | 'review';
+export type AiMode = 'general' | 'learn' | 'debug' | 'explain' | 'practice' | 'build' | 'review';
 
 export interface UserProfile {
   uid: string;
@@ -45,6 +48,11 @@ export interface UserProfile {
   codingCommitment?: string;
   onboardingComplete: boolean;
   activeCareerPathId?: string;
+  startingView?: WorkspaceStartMode;
+  aiStylePreference?: AiStylePreference;
+  defaultFocusMode?: boolean;
+  defaultFocusAudio?: FocusAudioPreference;
+  starterTemplateId?: string;
   xp: number;
   level: number;
   streak: number;
@@ -72,6 +80,10 @@ export interface UserSettings {
   editorFontSize: number;
   tabSize: 2 | 4;
   autosave: boolean;
+  startingView?: WorkspaceStartMode;
+  aiStylePreference?: AiStylePreference;
+  defaultFocusMode?: boolean;
+  defaultFocusAudio?: FocusAudioPreference;
   updatedAt: unknown;
 }
 
@@ -354,6 +366,13 @@ export interface CareerPathway {
   interviewQuestions: { question: string; keyPoints: string[] }[];
 }
 
+export interface AiProposedFile {
+  filename: string;
+  folder?: string;
+  language: string;
+  code: string;
+}
+
 export interface AiChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -363,6 +382,10 @@ export interface AiChatMessage {
     language: string;
     code: string;
   };
+  proposedFiles?: AiProposedFile[];
+  sources?: Array<{ title: string; uri: string }>;
+  actions?: Array<{ type: 'open_view' | 'focus_mode'; target: string; label: string }>;
+  attachments?: Array<{ name: string; kind: 'image' | 'text' }>;
   createdAt: string;
 }
 

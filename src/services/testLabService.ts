@@ -13,7 +13,7 @@ import {
   where,
 } from './appDb';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { fetchWithAuthAndRetry } from './authService';
+import { fetchWithAuthAndRetry, readJsonSafe } from './authService';
 import { recordDeveloperActivity, sanitizeForFirestore } from './dataService';
 import type {
   Project,
@@ -161,11 +161,7 @@ export async function generateTestsViaApi(input: {
       focusPrompt: input.focusPrompt,
     }),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Failed to generate test cases.');
-  }
-  return data;
+  return readJsonSafe(res, 'Failed to generate test cases.');
 }
 
 export async function executeAndRecordTestSuite(
@@ -183,7 +179,7 @@ export async function executeAndRecordTestSuite(
       cases: suite.cases,
     }),
   });
-  const exec = (await res.json()) as {
+  const exec = await readJsonSafe<{
     status: 'passed' | 'failed' | 'error';
     totalTests: number;
     passedTests: number;
@@ -194,10 +190,7 @@ export async function executeAndRecordTestSuite(
     results: TestCaseResult[];
     coverage: TestCoverageSummary;
     error?: string;
-  };
-  if (!res.ok) {
-    throw new Error(exec.error || 'Test execution failed on isolated server runner.');
-  }
+  }>(res, 'Test execution failed on isolated server runner.');
 
   const runId = `trun_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   const aiAssisted = suite.cases.some((c) => c.aiGenerated);
@@ -268,9 +261,6 @@ export async function askTestLabAssistant(input: {
       coverage: input.coverage,
     }),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Unable to contact TestLab AI assistant.');
-  }
-  return data.reply as string;
+  const data = await readJsonSafe<{ reply: string }>(res, 'Unable to contact TestLab AI assistant.');
+  return data.reply;
 }

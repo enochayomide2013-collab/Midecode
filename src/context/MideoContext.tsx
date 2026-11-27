@@ -5,6 +5,7 @@ import {
   logoutReal,
   onAppAuthStateChanged,
   refreshAuthUser,
+  tryReadJson,
   type AppUser as User,
 } from '../services/authService';
 import {
@@ -84,9 +85,23 @@ interface MideoContextValue {
   profile: UserProfile | null;
   settings: UserSettings | null;
   theme: ThemeMode;
+  previewTheme: (next: ThemeMode) => void;
   toggleTheme: () => Promise<void>;
   updateEditorSettings: (
-    patch: Partial<Pick<UserSettings, 'editorTheme' | 'editorFontSize' | 'tabSize' | 'autosave'>>,
+    patch: Partial<
+      Pick<
+        UserSettings,
+        | 'theme'
+        | 'editorTheme'
+        | 'editorFontSize'
+        | 'tabSize'
+        | 'autosave'
+        | 'startingView'
+        | 'aiStylePreference'
+        | 'defaultFocusMode'
+        | 'defaultFocusAudio'
+      >
+    >,
   ) => Promise<void>;
   activeView: NavSection;
   setActiveView: (view: NavSection) => void;
@@ -258,6 +273,7 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
   const [ideFocusMode, setIdeFocusMode] = useState<boolean>(false);
   const activeIdeProjectIdRef = useRef<string | null>(null);
   activeIdeProjectIdRef.current = activeIdeProjectId;
+  const hasAppliedInitialStartViewRef = useRef<boolean>(false);
   const [testLabLaunch, setTestLabLaunch] = useState<{
     projectId: string;
     initialTab?: 'dashboard' | 'generate' | 'suites' | 'results' | 'history';
@@ -312,9 +328,9 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     fetch('/api/runtime/capabilities')
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => (r.ok ? tryReadJson<RuntimeCapabilities>(r) : null))
       .then((data) => {
-        if (data) setCapabilities(data as RuntimeCapabilities);
+        if (data) setCapabilities(data);
       })
       .catch(() => {});
   }, []);
@@ -450,6 +466,26 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
       setAchievements(achs);
       setMissions(loadedMissions);
       setMissionAttempts(loadedAttempts);
+
+      // Apply user's preferred starting view on initial workspace load
+      const preferredStart = userSet?.startingView || prof?.startingView;
+      const preferFocus = Boolean(userSet?.defaultFocusMode ?? prof?.defaultFocusMode);
+      if (
+        !hasAppliedInitialStartViewRef.current &&
+        prof?.onboardingComplete &&
+        preferredStart &&
+        preferredStart !== 'dashboard'
+      ) {
+        hasAppliedInitialStartViewRef.current = true;
+        const currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
+        if (currentPath === '/' || currentPath === '/dashboard') {
+          setActiveViewState(preferredStart);
+          pushAppUrl(`/dashboard/${preferredStart}`);
+          if (preferredStart === 'ide' && preferFocus) {
+            setIdeFocusMode(true);
+          }
+        }
+      }
     })().finally(() => {
       inFlightWorkspaceLoadsRef.current.delete(user.uid);
     });
@@ -528,6 +564,10 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
     setAuthRevision((r) => r + 1);
   }, [firebaseUser]);
 
+  const previewTheme = useCallback((next: ThemeMode) => {
+    setTheme(next);
+  }, []);
+
   const toggleTheme = useCallback(async () => {
     const next: ThemeMode = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
@@ -543,13 +583,47 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
   }, [theme, firebaseUser]);
 
   const updateEditorSettings = useCallback(
-    async (patch: Partial<Pick<UserSettings, 'editorTheme' | 'editorFontSize' | 'tabSize' | 'autosave'>>) => {
+    async (
+      patch: Partial<
+        Pick<
+          UserSettings,
+          | 'theme'
+          | 'editorTheme'
+          | 'editorFontSize'
+          | 'tabSize'
+          | 'autosave'
+          | 'startingView'
+          | 'aiStylePreference'
+          | 'defaultFocusMode'
+          | 'defaultFocusAudio'
+        >
+      >,
+    ) => {
+      if (patch.theme) {
+        setTheme(patch.theme);
+      }
       if (!firebaseUser) return;
       await saveUserSettings(firebaseUser.uid, patch);
-      setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
-      notify('success', 'Editor preferences saved.');
+      setSettings((prev) =>
+        prev
+          ? { ...prev, ...patch }
+          : {
+              userId: firebaseUser.uid,
+              theme: patch.theme || theme,
+              editorTheme: patch.editorTheme || 'oneDark',
+              editorFontSize: patch.editorFontSize || 14,
+              tabSize: patch.tabSize || 2,
+              autosave: patch.autosave ?? true,
+              startingView: patch.startingView || 'dashboard',
+              aiStylePreference: patch.aiStylePreference || 'balanced',
+              defaultFocusMode: Boolean(patch.defaultFocusMode),
+              defaultFocusAudio: patch.defaultFocusAudio || 'off',
+              updatedAt: Date.now(),
+            },
+      );
+      notify('success', 'Workspace preferences saved.');
     },
-    [firebaseUser, notify],
+    [firebaseUser, notify, theme],
   );
 
   const openCourse = useCallback((courseId: string, lessonId?: string) => {
@@ -802,6 +876,7 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
         profile,
         settings,
         theme,
+        previewTheme,
         toggleTheme,
         updateEditorSettings,
         activeView,

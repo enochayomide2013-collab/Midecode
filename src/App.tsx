@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
   Bell,
@@ -161,6 +161,11 @@ function WorkspaceShell() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [globalQuery, setGlobalQuery] = useState('');
   const [adminAccessModalOpen, setAdminAccessModalOpen] = useState(false);
+  const [avatarLoadError, setAvatarLoadError] = useState(false);
+
+  useEffect(() => {
+    setAvatarLoadError(false);
+  }, [profile?.photoURL]);
 
   const isAdminUser = Boolean(
     (firebaseUser &&
@@ -676,11 +681,12 @@ function WorkspaceShell() {
               onClick={() => setActiveView('profile')}
               className="flex items-center gap-2 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800 hover:border-blue-500 cursor-pointer"
             >
-              {profile?.photoURL ? (
+              {profile?.photoURL && !avatarLoadError ? (
                 <img
                   src={profile.photoURL}
                   alt={profile.displayName || 'User avatar'}
                   referrerPolicy="no-referrer"
+                  onError={() => setAvatarLoadError(true)}
                   className="w-5 h-5 rounded object-cover"
                 />
               ) : (

@@ -13,7 +13,7 @@ import {
   where,
 } from './appDb';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
-import { fetchWithAuthAndRetry } from './authService';
+import { fetchWithAuthAndRetry, readJsonSafe } from './authService';
 import { recordDeveloperActivity, sanitizeForFirestore } from './dataService';
 import type {
   ArchitecturePlan,
@@ -56,11 +56,7 @@ export async function generateArchitectureViaApi(input: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Architecture generation failed.');
-  }
-  return data;
+  return readJsonSafe(res, 'Architecture generation failed.');
 }
 
 export async function reviseArchitectureViaApi(input: {
@@ -72,11 +68,7 @@ export async function reviseArchitectureViaApi(input: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Architecture revision failed.');
-  }
-  return data;
+  return readJsonSafe(res, 'Architecture revision failed.');
 }
 
 export async function exportArchitectureViaApi(
@@ -88,11 +80,7 @@ export async function exportArchitectureViaApi(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ format, plan }),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Export failed.');
-  }
-  return data;
+  return readJsonSafe(res, 'Export failed.');
 }
 
 export async function saveArchitecturePlan(

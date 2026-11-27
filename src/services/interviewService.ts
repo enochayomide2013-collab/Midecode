@@ -11,7 +11,7 @@ import {
   where,
 } from './appDb';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { fetchWithAuthAndRetry } from './authService';
+import { fetchWithAuthAndRetry, readJsonSafe } from './authService';
 import { sanitizeForFirestore } from './dataService';
 import type {
   MockInterviewQuestionTurn,
@@ -34,13 +34,13 @@ export async function requestInterviewFollowup(input: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  const data = (await res.json()) as {
+  const data = await readJsonSafe<{
     briefReaction?: string;
     question?: string;
     topicTag?: string;
     error?: string;
-  };
-  if (!res.ok || !data.question) {
+  }>(res, 'Unable to generate interviewer question.');
+  if (!data.question) {
     throw new Error(data.error || 'Unable to generate interviewer question.');
   }
   return {
@@ -66,11 +66,11 @@ export async function evaluateMockInterview(input: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  const data = (await res.json()) as {
+  const data = await readJsonSafe<{
     scorecard?: MockInterviewScorecard;
     error?: string;
-  };
-  if (!res.ok || !data.scorecard) {
+  }>(res, 'Unable to evaluate mock interview session.');
+  if (!data.scorecard) {
     throw new Error(data.error || 'Unable to evaluate mock interview session.');
   }
   return data.scorecard;

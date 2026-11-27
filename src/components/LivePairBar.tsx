@@ -131,6 +131,9 @@ export function LivePairBar({
                         src={peer.photoURL}
                         alt={peer.displayName}
                         referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
                         className="w-5 h-5 rounded-full object-cover"
                       />
                     ) : (

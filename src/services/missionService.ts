@@ -12,7 +12,7 @@ import {
   where,
 } from './appDb';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { fetchWithAuthAndRetry } from './authService';
+import { fetchWithAuthAndRetry, readJsonSafe, tryReadJson } from './authService';
 import {
   awardVerifiedXp,
   createProjectWithFiles,
@@ -444,11 +444,7 @@ export async function validateCheckpointWithServer(
       files: files.map((f) => ({ name: f.name, language: f.language, content: f.content })),
     }),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Checkpoint validation request failed.');
-  }
-  return data;
+  return readJsonSafe(res, 'Checkpoint validation request failed.');
 }
 
 export async function submitAndEvaluateMission(
@@ -473,7 +469,7 @@ export async function submitAndEvaluateMission(
       files: files.map((f) => ({ name: f.name, language: f.language, content: f.content })),
     }),
   });
-  const evalData = (await evalRes.json()) as {
+  const evalData = await readJsonSafe<{
     error?: string;
     passed: boolean;
     passedCount: number;
@@ -488,10 +484,7 @@ export async function submitAndEvaluateMission(
     badgeId: string | null;
     badgeTitle: string | null;
     attestation: string;
-  };
-  if (!evalRes.ok) {
-    throw new Error(evalData.error || 'Mission evaluation failed.');
-  }
+  }>(evalRes, 'Mission evaluation failed.');
 
   const submissionId = `sub_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const evaluationId = `eval_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -971,8 +964,8 @@ export async function adminSaveMissionBundle(
       }),
     });
     if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      throw new Error(d.error || 'Failed to save server evaluation configuration.');
+      const d = await tryReadJson<{ error?: string }>(res);
+      throw new Error(d?.error || 'Failed to save server evaluation configuration.');
     }
   }
 }
@@ -994,7 +987,7 @@ export async function adminUpdateMissionStatus(
   if (!snapExists) {
     // Materialize curated mission into Firestore before changing status
     const evalMetaRes = await fetchWithAuthAndRetry(`/api/admin/missions/eval-config/${mission.id}`);
-    const evalConfig = evalMetaRes.ok ? ((await evalMetaRes.json()) as MissionServerEvalConfig) : null;
+    const evalConfig = evalMetaRes.ok ? await tryReadJson<MissionServerEvalConfig>(evalMetaRes) : null;
     await adminSaveMissionBundle(
       adminUid,
       { ...mission, status: nextStatus },
@@ -1007,7 +1000,7 @@ export async function adminUpdateMissionStatus(
 
   if (nextStatus === 'published') {
     const evalRes = await fetchWithAuthAndRetry(`/api/missions/eval-meta/${mission.id}`);
-    const evalMeta = evalRes.ok ? await evalRes.json() : null;
+    const evalMeta = evalRes.ok ? await tryReadJson<{ publicTests?: unknown[] }>(evalRes) : null;
     if (!evalMeta || !evalMeta.publicTests?.length) {
       throw new Error('Evaluation tests must be configured before publishing.');
     }

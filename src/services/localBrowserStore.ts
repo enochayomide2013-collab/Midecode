@@ -463,16 +463,28 @@ function syncBrowserAccountFromUserDoc(docId: string, saved: Record<string, unkn
     acc.displayName = saved.displayName.trim().slice(0, 80);
     changed = true;
   }
-  if (typeof saved.phoneNumber === 'string') {
+  if (typeof saved.phoneNumber === 'string' && saved.phoneNumber.trim()) {
     acc.phoneNumber = saved.phoneNumber.trim().slice(0, 32);
     changed = true;
-  }
-  if (typeof saved.country === 'string') {
-    acc.country = saved.country.trim().slice(0, 80);
+  } else if (!('phoneNumber' in saved) && acc.phoneNumber) {
+    acc.phoneNumber = '';
     changed = true;
   }
-  if (typeof saved.photoURL === 'string') {
-    acc.photoURL = saved.photoURL.trim().slice(0, 500);
+  if (typeof saved.country === 'string' && saved.country.trim()) {
+    acc.country = saved.country.trim().slice(0, 80);
+    changed = true;
+  } else if (!('country' in saved) && acc.country !== undefined) {
+    delete acc.country;
+    changed = true;
+  }
+  if (typeof saved.photoURL === 'string' && saved.photoURL.trim()) {
+    const cleanPhoto = saved.photoURL.trim();
+    acc.photoURL = cleanPhoto.startsWith('data:image/')
+      ? cleanPhoto.slice(0, 60_000)
+      : cleanPhoto.slice(0, 500);
+    changed = true;
+  } else if (!('photoURL' in saved) && acc.photoURL !== undefined) {
+    delete acc.photoURL;
     changed = true;
   }
   if (changed) {

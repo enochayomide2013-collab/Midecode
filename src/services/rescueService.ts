@@ -12,7 +12,7 @@ import {
   where,
 } from './appDb';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { fetchWithAuthAndRetry } from './authService';
+import { fetchWithAuthAndRetry, readJsonSafe, tryReadJson } from './authService';
 import {
   recordDeveloperActivity,
   sanitizeForFirestore,
@@ -382,16 +382,12 @@ export async function importZipArchiveViaApi(
     headers: { 'Content-Type': 'application/zip' },
     body: buffer,
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Failed to inspect and extract ZIP archive.');
-  }
-  return data as {
+  return readJsonSafe<{
     requiresRootSelection: boolean;
     rootCandidates: RescueZipRootCandidate[];
     summary: RescueImportSummary;
     files: NormalizedImportedFile[];
-  };
+  }>(res, 'Failed to inspect and extract ZIP archive.');
 }
 
 export async function importGitRepoViaApi(input: {
@@ -413,16 +409,12 @@ export async function importGitRepoViaApi(input: {
       githubToken: input.githubToken?.trim() || undefined,
     }),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Git repository import failed.');
-  }
-  return data as {
+  return readJsonSafe<{
     summary: RescueImportSummary;
     files: NormalizedImportedFile[];
     branch: string;
     availableBranches: string[];
-  };
+  }>(res, 'Git repository import failed.');
 }
 
 export async function startScanJobViaApi(input: {
@@ -443,22 +435,14 @@ export async function startScanJobViaApi(input: {
       customConfig: input.customConfig,
     }),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Unable to start background scan job.');
-  }
-  return data as RescueScanJob;
+  return readJsonSafe<RescueScanJob>(res, 'Unable to start background scan job.');
 }
 
 export async function getScanJobStatusViaApi(jobId: string): Promise<RescueScanJob> {
   const res = await fetchWithAuthAndRetry(`/api/rescue/jobs/${encodeURIComponent(jobId)}`, {
     method: 'GET',
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Scan job not found.');
-  }
-  return data as RescueScanJob;
+  return readJsonSafe<RescueScanJob>(res, 'Scan job not found.');
 }
 
 export async function cancelScanJobViaApi(jobId: string): Promise<RescueScanJob> {
@@ -467,11 +451,7 @@ export async function cancelScanJobViaApi(jobId: string): Promise<RescueScanJob>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({}),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Could not cancel scan job.');
-  }
-  return data as RescueScanJob;
+  return readJsonSafe<RescueScanJob>(res, 'Could not cancel scan job.');
 }
 
 export async function scanProjectViaApi(input: {
@@ -492,11 +472,7 @@ export async function scanProjectViaApi(input: {
       customConfig: input.customConfig,
     }),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Project Rescue scan failed.');
-  }
-  return data as RescueScanReport;
+  return readJsonSafe<RescueScanReport>(res, 'Project Rescue scan failed.');
 }
 
 export async function investigateIssueViaApi(input: {
@@ -521,11 +497,7 @@ export async function investigateIssueViaApi(input: {
       screenshot: input.screenshot || null,
     }),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Root cause investigation failed.');
-  }
-  return data as RescueRootCauseAnalysis;
+  return readJsonSafe<RescueRootCauseAnalysis>(res, 'Root cause investigation failed.');
 }
 
 export async function analyzeFixImpactViaApi(input: {
@@ -542,20 +514,12 @@ export async function analyzeFixImpactViaApi(input: {
       proposedCode: input.proposedCode,
     }),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Fix impact analysis failed.');
-  }
-  return data as RescueImpactReport;
+  return readJsonSafe<RescueImpactReport>(res, 'Fix impact analysis failed.');
 }
 
 export async function fetchRescueAdminTelemetry(): Promise<RescueAdminTelemetry> {
   const res = await fetchWithAuthAndRetry('/api/rescue/admin/telemetry', { method: 'GET' });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Unable to load Project Rescue telemetry.');
-  }
-  return data as RescueAdminTelemetry;
+  return readJsonSafe<RescueAdminTelemetry>(res, 'Unable to load Project Rescue telemetry.');
 }
 
 export async function proposeFixViaApi(input: {
@@ -578,11 +542,7 @@ export async function proposeFixViaApi(input: {
       issueId: input.issueId,
     }),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Unable to generate automatic fix proposal.');
-  }
-  return data as RescueFixProposal;
+  return readJsonSafe<RescueFixProposal>(res, 'Unable to generate automatic fix proposal.');
 }
 
 export async function verifyRescueFixViaApi(input: {
@@ -605,11 +565,7 @@ export async function verifyRescueFixViaApi(input: {
       testSuite: input.testSuite || null,
     }),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Post-fix verification failed.');
-  }
-  return data as RescueVerificationResult;
+  return readJsonSafe<RescueVerificationResult>(res, 'Post-fix verification failed.');
 }
 
 export async function sendRescueChatViaApi(input: {
@@ -630,11 +586,10 @@ export async function sendRescueChatViaApi(input: {
       latestIssues: (input.latestIssues || []).slice(0, 20),
     }),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Rescue Chat assistant could not respond.');
-  }
-  return data as { reply: string; citedFiles: string[]; suggestedTab?: RescueInternalTab };
+  return readJsonSafe<{ reply: string; citedFiles: string[]; suggestedTab?: RescueInternalTab }>(
+    res,
+    'Rescue Chat assistant could not respond.',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -994,12 +949,12 @@ export async function uploadAdminCommunityMediaChunked(
       kind,
     }),
   });
-  const initData = await initRes.json();
-  if (!initRes.ok) {
-    throw new Error(initData.error || 'Could not start media upload.');
-  }
+  const initData = await readJsonSafe<{ uploadId: string; maxChunkBytes?: number; error?: string }>(
+    initRes,
+    'Could not start media upload.',
+  );
 
-  const uploadId = initData.uploadId as string;
+  const uploadId = initData.uploadId;
   const chunkSize = Number(initData.maxChunkBytes) || 4 * 1024 * 1024;
   let offset = 0;
 
@@ -1014,9 +969,9 @@ export async function uploadAdminCommunityMediaChunked(
         body: slice,
       },
     );
-    const chunkData = await chunkRes.json().catch(() => ({}));
+    const chunkData = await tryReadJson<{ error?: string }>(chunkRes);
     if (!chunkRes.ok) {
-      throw new Error(chunkData.error || 'Chunk upload failed.');
+      throw new Error(chunkData?.error || 'Chunk upload failed.');
     }
     offset = end;
     onProgress?.(Math.min(95, Math.round((offset / file.size) * 92) + 3));
@@ -1030,13 +985,13 @@ export async function uploadAdminCommunityMediaChunked(
       body: JSON.stringify({}),
     },
   );
-  const completeData = await completeRes.json();
-  if (!completeRes.ok) {
-    throw new Error(completeData.error || 'Media verification failed.');
-  }
+  const completeData = await readJsonSafe<UploadedCommunityMediaResult>(
+    completeRes,
+    'Media verification failed.',
+  );
 
   onProgress?.(100);
-  return completeData as UploadedCommunityMediaResult;
+  return completeData;
 }
 
 export async function deleteAdminCommunityMedia(filename: string): Promise<void> {
@@ -1045,7 +1000,7 @@ export async function deleteAdminCommunityMedia(filename: string): Promise<void>
     { method: 'DELETE' },
   );
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to delete uploaded media.');
+    const data = await tryReadJson<{ error?: string }>(res);
+    throw new Error(data?.error || 'Failed to delete uploaded media.');
   }
 }

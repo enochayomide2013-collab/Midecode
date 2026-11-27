@@ -17,7 +17,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { getIdTokenHeader } from '../services/authService';
+import { getIdTokenHeader, tryReadJson } from '../services/authService';
 import type { UserSettings } from '../types/mideocode';
 
 export interface EditorSurfaceFile {
@@ -208,9 +208,15 @@ export function MideoCodeEditorSurface({
         headers: { 'Content-Type': 'application/json', ...headers },
         body: JSON.stringify({ language: lang, code: activeFile.content }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        const msg = `[error] ${data.error || 'Execution failed'}`;
+      const data = await tryReadJson<{
+        error?: string;
+        stdout?: string;
+        returnValue?: unknown;
+        stderr?: string;
+        executionMs?: number;
+      }>(res);
+      if (!res.ok || !data) {
+        const msg = `[error] ${data?.error || 'Execution failed'}`;
         setConsoleLogs((prev) => [...prev, msg]);
         onConsoleErrorChange?.(msg);
         return;

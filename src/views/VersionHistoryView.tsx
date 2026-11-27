@@ -739,10 +739,14 @@ export function VersionHistoryView() {
               <button
                 type="button"
                 onClick={async () => {
-                  await deleteProjectVersionSnapshot(activeProject.id, confirmDeleteVer.id);
-                  setVersions((prev) => prev.filter((v) => v.id !== confirmDeleteVer.id));
-                  setConfirmDeleteVer(null);
-                  notify('info', 'Snapshot deleted.');
+                  try {
+                    await deleteProjectVersionSnapshot(activeProject.id, confirmDeleteVer.id);
+                    setVersions((prev) => prev.filter((v) => v.id !== confirmDeleteVer.id));
+                    setConfirmDeleteVer(null);
+                    notify('info', 'Snapshot deleted.');
+                  } catch (err) {
+                    notify('error', err instanceof Error ? err.message : 'Failed to delete snapshot.');
+                  }
                 }}
                 className="px-3.5 py-2 rounded-lg bg-red-600 text-white text-xs font-semibold cursor-pointer"
               >

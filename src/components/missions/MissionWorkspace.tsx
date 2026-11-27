@@ -22,7 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import { useMideo } from '../../context/MideoContext';
-import { getIdTokenHeader } from '../../services/authService';
+import { getIdTokenHeader, readJsonSafe } from '../../services/authService';
 import {
   clearOfflineMissionDraft,
   exportCompletedMissionToPortfolioAndPassport,
@@ -471,10 +471,7 @@ export function MissionWorkspace({ mission }: MissionWorkspaceProps) {
           },
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Mideo AI Mentor request failed.');
-      }
+      const data = await readJsonSafe<{ reply?: string }>(res, 'Mideo AI Mentor request failed.');
       setMentorMessages((prev) => [
         ...prev,
         { id: `a_${Date.now()}`, role: 'assistant', content: String(data.reply || '') },

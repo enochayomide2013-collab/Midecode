@@ -105,7 +105,9 @@ service cloud.firestore {
       data.keys().hasOnly([
         'uid', 'displayName', 'photoURL', 'email', 'phoneNumber', 'country',
         'experienceLevel', 'preferredLanguages', 'learningGoals', 'interests',
-        'onboardingComplete', 'activeCareerPathId', 'xp', 'level', 'streak',
+        'hearAboutUs', 'primaryFocus', 'codingCommitment', 'onboardingComplete',
+        'activeCareerPathId', 'startingView', 'aiStylePreference', 'defaultFocusMode',
+        'defaultFocusAudio', 'starterTemplateId', 'xp', 'level', 'streak',
         'lastActivityDate', 'role', 'createdAt', 'updatedAt'
       ]) &&
       data.uid == userId &&
@@ -115,7 +117,15 @@ service cloud.firestore {
       isValidOptionalString(data, 'email', 254) &&
       isValidOptionalString(data, 'phoneNumber', 32) &&
       isValidOptionalString(data, 'country', 80) &&
+      isValidOptionalString(data, 'hearAboutUs', 100) &&
+      isValidOptionalString(data, 'primaryFocus', 120) &&
+      isValidOptionalString(data, 'codingCommitment', 80) &&
       isValidOptionalString(data, 'activeCareerPathId', 64) &&
+      (!('startingView' in data) || data.startingView in ['dashboard', 'academy', 'ide', 'missions', 'challenges']) &&
+      (!('aiStylePreference' in data) || data.aiStylePreference in ['fast', 'balanced', 'deep']) &&
+      (!('defaultFocusMode' in data) || data.defaultFocusMode is bool) &&
+      (!('defaultFocusAudio' in data) || data.defaultFocusAudio in ['off', 'lofi', 'rain', 'whitenoise']) &&
+      isValidOptionalString(data, 'starterTemplateId', 32) &&
       isValidOptionalString(data, 'lastActivityDate', 32) &&
       data.experienceLevel in ['beginner', 'intermediate', 'advanced'] &&
       isValidStringArray(data.preferredLanguages, 12) &&
@@ -146,13 +156,17 @@ service cloud.firestore {
 
     function isValidUserSettings(data, userId) {
       return data.keys().hasAll(['userId', 'theme', 'editorTheme', 'editorFontSize', 'tabSize', 'autosave', 'updatedAt']) &&
-        data.keys().hasOnly(['userId', 'theme', 'editorTheme', 'editorFontSize', 'tabSize', 'autosave', 'updatedAt']) &&
+        data.keys().hasOnly(['userId', 'theme', 'editorTheme', 'editorFontSize', 'tabSize', 'autosave', 'startingView', 'aiStylePreference', 'defaultFocusMode', 'defaultFocusAudio', 'updatedAt']) &&
         data.userId == userId &&
         data.theme in ['dark', 'light'] &&
         data.editorTheme in ['oneDark', 'githubLight'] &&
         data.editorFontSize is number && data.editorFontSize >= 11 && data.editorFontSize <= 24 &&
         data.tabSize is number && (data.tabSize == 2 || data.tabSize == 4) &&
         data.autosave is bool &&
+        (!('startingView' in data) || data.startingView in ['dashboard', 'academy', 'ide', 'missions', 'challenges']) &&
+        (!('aiStylePreference' in data) || data.aiStylePreference in ['fast', 'balanced', 'deep']) &&
+        (!('defaultFocusMode' in data) || data.defaultFocusMode is bool) &&
+        (!('defaultFocusAudio' in data) || data.defaultFocusAudio in ['off', 'lofi', 'rain', 'whitenoise']) &&
         data.updatedAt is timestamp;
     }
 
@@ -424,7 +438,7 @@ service cloud.firestore {
         isValidId(data.id) &&
         isValidId(data.userId) &&
         isValidString(data.title, 1, 140) &&
-        data.mode in ['learn', 'debug', 'explain', 'practice', 'build', 'review'] &&
+        data.mode in ['general', 'learn', 'debug', 'explain', 'practice', 'build', 'review'] &&
         data.messages is list && data.messages.size() <= 100 &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
@@ -1280,7 +1294,9 @@ service cloud.firestore {
           incoming().diff(existing()).affectedKeys().hasOnly([
             'displayName', 'photoURL', 'email', 'phoneNumber', 'country',
             'experienceLevel', 'preferredLanguages', 'learningGoals', 'interests',
-            'onboardingComplete', 'activeCareerPathId', 'xp', 'level', 'streak',
+            'hearAboutUs', 'primaryFocus', 'codingCommitment', 'onboardingComplete',
+            'activeCareerPathId', 'startingView', 'aiStylePreference', 'defaultFocusMode',
+            'defaultFocusAudio', 'starterTemplateId', 'xp', 'level', 'streak',
             'lastActivityDate', 'updatedAt'
           ])
         )
@@ -1324,7 +1340,8 @@ service cloud.firestore {
         incoming().userId == existing().userId &&
         incoming().updatedAt == request.time &&
         incoming().diff(existing()).affectedKeys().hasOnly([
-          'theme', 'editorTheme', 'editorFontSize', 'tabSize', 'autosave', 'updatedAt'
+          'theme', 'editorTheme', 'editorFontSize', 'tabSize', 'autosave',
+          'startingView', 'aiStylePreference', 'defaultFocusMode', 'defaultFocusAudio', 'updatedAt'
         ]);
       allow delete: if isOwner(userId) || isAdmin();
     }

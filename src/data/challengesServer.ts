@@ -21,7 +21,7 @@ export const SERVER_CHALLENGE_SPECS: Record<string, ServerChallengeSpec> = {
       { args: [[3, 2, 4], 6], expected: [1, 2], isHidden: false },
       { args: [[3, 3], 6], expected: [0, 1], isHidden: true },
       { args: [[-5, 1, 8, 12], 7], expected: [0, 3], isHidden: true },
-      { args: [[10, 22, 5, 75, 65, 80], 85], expected: [2, 5], isHidden: true },
+      { args: [[11, 22, 5, 75, 65, 80], 85], expected: [2, 5], isHidden: true },
     ],
   },
   'valid-palindrome': {

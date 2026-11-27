@@ -334,7 +334,10 @@ export function updateLocalAccountProfile(
   if (patch.photoURL === null) {
     account.photoURL = undefined;
   } else if (typeof patch.photoURL === 'string' && patch.photoURL.trim()) {
-    account.photoURL = patch.photoURL.trim().slice(0, 500);
+    const cleanPhoto = patch.photoURL.trim();
+    account.photoURL = cleanPhoto.startsWith('data:image/')
+      ? cleanPhoto.slice(0, 60_000)
+      : cleanPhoto.slice(0, 500);
   }
   account.updatedAt = Date.now();
   saveAccounts();
@@ -564,7 +567,9 @@ const USER_OWNED_COLLECTIONS = new Set([
   'testSuites',
   'testRuns',
   'mockInterviews',
+  'architectures',
   'architecturePlans',
+  'xpTransactions',
 ]);
 
 function authorizeDocAccess(
@@ -644,11 +649,23 @@ function authorizeDocAccess(
     return false;
   }
 
-  // architecturePlans/{planId}/versions
-  if (parts.length === 3 && parts[0] === 'architecturePlans' && parts[2] === 'versions') {
-    const parentPlan = getRawCollection('architecturePlans')[parts[1]];
+  // userProgress/{uid}/courses
+  if (parts.length === 3 && parts[0] === 'userProgress' && parts[2] === 'courses') {
+    return parts[1] === ctx.uid;
+  }
+
+  // architectures/{archId}/versions (and legacy architecturePlans/{planId}/versions)
+  if (parts.length === 3 && (parts[0] === 'architectures' || parts[0] === 'architecturePlans') && parts[2] === 'versions') {
+    const parentPlan = getRawCollection(parts[0])[parts[1]];
     if (!parentPlan) return false;
     return parentPlan.userId === ctx.uid || parentPlan.ownerId === ctx.uid;
+  }
+
+  // missionAttempts/{attemptId}/versions
+  if (parts.length === 3 && parts[0] === 'missionAttempts' && parts[2] === 'versions') {
+    const parentAttempt = getRawCollection('missionAttempts')[parts[1]];
+    if (!parentAttempt) return false;
+    return parentAttempt.userId === ctx.uid || parentAttempt.ownerId === ctx.uid;
   }
 
   // projectInvitations
@@ -661,14 +678,28 @@ function authorizeDocAccess(
     if (action === 'delete') return isOwner;
   }
 
-  // playgroundItems
-  if (colPath === 'playgroundItems') {
+  // playgrounds (and legacy playgroundItems)
+  if (colPath === 'playgrounds' || colPath === 'playgroundItems') {
     if (action === 'read') {
       if (!existing) return true;
       return existing.ownerId === ctx.uid || existing.userId === ctx.uid || existing.visibility === 'public' || existing.isPublic === true;
     }
     const owner = (existing?.ownerId || existing?.userId || incoming?.ownerId || incoming?.userId);
     return owner === ctx.uid;
+  }
+
+  // testSuites & testRuns (owner or project collaborators)
+  if (colPath === 'testSuites' || colPath === 'testRuns') {
+    if (action === 'read') {
+      if (!existing) return true;
+      if (existing.userId === ctx.uid || existing.ownerId === ctx.uid) return true;
+      return Array.isArray(existing.collaboratorIds) && existing.collaboratorIds.includes(ctx.uid);
+    }
+    if (!existing) {
+      return (incoming?.userId || incoming?.ownerId) === ctx.uid;
+    }
+    if (existing.userId === ctx.uid || existing.ownerId === ctx.uid) return true;
+    return action === 'write' && Array.isArray(existing.collaboratorIds) && existing.collaboratorIds.includes(ctx.uid);
   }
 
   // missions / checkpoints / templates / rewards / leaderboard

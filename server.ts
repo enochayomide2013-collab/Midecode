@@ -738,12 +738,32 @@ async function startServer() {
       next();
       return;
     }
-    const limit = req.path.startsWith('/api/rescue/')
-      ? '10mb'
-      : req.path.startsWith('/api/db/')
-        ? '2mb'
-        : '512kb';
-    express.json({ limit })(req, res, next);
+    const limit =
+      req.path.startsWith('/api/rescue/') || req.path.startsWith('/api/ai/')
+        ? '10mb'
+        : req.path.startsWith('/api/testlab/') ||
+            req.path.startsWith('/api/architect/') ||
+            req.path.startsWith('/api/missions/')
+          ? '4mb'
+          : req.path.startsWith('/api/db/') || req.path === '/api/profile/avatar'
+            ? '2mb'
+            : '1mb';
+    express.json({ limit })(req, res, (err?: unknown) => {
+      if (err) {
+        const errObj = err as { type?: string; status?: number; message?: string };
+        if (errObj?.type === 'entity.too.large' || errObj?.status === 413) {
+          res.status(413).json({
+            error: 'Request payload is too large. Please reduce the image or file size and try again.',
+          });
+          return;
+        }
+        res.status(400).json({
+          error: 'Invalid JSON request payload.',
+        });
+        return;
+      }
+      next();
+    });
   });
 
   app.get('/api/health', (_req: Request, res: Response) => {
@@ -917,7 +937,7 @@ async function startServer() {
       if (!isOwnerAdminCredentials(email, password)) {
         res.status(401).json({
           ok: false,
-          error: 'Incorrect credentials. Required Owner Email is Enochayomide2013@gmail.com and Owner Password is 2013.',
+          error: 'Access denied.',
         });
         return;
       }
@@ -1055,7 +1075,7 @@ async function startServer() {
       return;
     }
 
-    const match = imageDataUrl.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/);
+    const match = imageDataUrl.trim().match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=\s]+)$/i);
     if (!match) {
       res.status(400).json({ error: 'Invalid image format. Upload a PNG, JPG, WebP, or GIF image.' });
       return;
@@ -1063,7 +1083,7 @@ async function startServer() {
 
     const rawExt = match[1].toLowerCase();
     const ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
-    const buffer = Buffer.from(match[2], 'base64');
+    const buffer = Buffer.from(match[2].replace(/\s+/g, ''), 'base64');
     if (buffer.length === 0 || buffer.length > 350 * 1024) {
       res.status(400).json({ error: 'Processed profile image must be under 350 KB.' });
       return;
@@ -1110,12 +1130,21 @@ async function startServer() {
     res.sendFile(filePath);
   });
 
+  type AiAttachmentInput = {
+    name?: string;
+    mimeType?: string;
+    kind?: 'image' | 'text';
+    data?: string;
+  };
+
   type AiAssistBody = {
     mode?: string;
-    depth?: 'fast' | 'balanced' | 'deep';
+    depth?: 'fast' | 'balanced' | 'deep' | 'extreme';
     prompt?: string;
+    useWebSearch?: boolean;
     history?: { role: string; content: string }[];
     includeContext?: boolean;
+    attachments?: AiAttachmentInput[];
     learnerProfile?: {
       experienceLevel?: string;
       preferredLanguages?: string[];
@@ -1133,41 +1162,54 @@ async function startServer() {
       selectedCode?: string;
       errorMessage?: string;
       filename?: string;
+      projectTitle?: string;
+      projectFiles?: Array<{
+        name?: string;
+        folder?: string;
+        language?: string;
+        content?: string;
+      }>;
     };
   };
 
+  type GeminiContentPart =
+    | { text: string }
+    | { inlineData: { mimeType: string; data: string } };
+
   function resolveThinkingLevel(_mode: string, depth?: string): ThinkingLevel {
     if (depth === 'fast') return ThinkingLevel.LOW;
-    if (depth === 'deep') return ThinkingLevel.MEDIUM;
-    if (depth === 'extreme') return ThinkingLevel.HIGH;
-    // ThinkingLevel.LOW delivers near-instant sub-second first-token streaming with Gemini 4 Hydrogen's native reasoning
-    return ThinkingLevel.LOW;
+    if (depth === 'balanced') return ThinkingLevel.MEDIUM;
+    if (depth === 'deep') return ThinkingLevel.HIGH;
+    if (depth === 'extreme') return ThinkingLevel.XHIGH;
+    return ThinkingLevel.MEDIUM;
   }
 
   function buildMideoAiPayload(body: AiAssistBody) {
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
-    const validModes = ['learn', 'debug', 'explain', 'practice', 'build', 'review'];
-    const mode = body.mode && validModes.includes(body.mode) ? body.mode : 'learn';
+    const validModes = ['general', 'learn', 'debug', 'explain', 'practice', 'build', 'review'];
+    const mode = body.mode && validModes.includes(body.mode) ? body.mode : 'general';
     const thinkingLevel = resolveThinkingLevel(mode, body.depth);
 
     const modeDirectives: Record<string, string> = {
+      general:
+        'Act as a versatile, do-anything AI assistant: answer general knowledge, math, science, writing, planning, research, coding, automation, data analysis, and MideoCode workspace requests thoroughly, accurately, and efficiently.',
       learn:
-        'Teach the concept with senior clarity: lead with the core mental model in 1-2 sentences, provide a clean minimal runnable example, and list high-stakes pitfalls.',
+        'Teach clearly with senior expertise: lead with the core mental model in 1-2 sentences, give a clean practical example, and highlight key pitfalls.',
       debug:
-        'Pinpoint the exact mechanical root cause first, explain why the runtime or compiler breaks, distinguish verified facts from hypotheses, and give a minimal, copy-ready fix.',
+        'Pinpoint the exact root cause first, distinguish verified facts from hypotheses, and provide a minimal, working fix.',
       explain:
-        'Deconstruct the supplied code or architecture step by step, highlighting execution control flow, state mutations, edge cases, and complexity.',
+        'Break down the supplied topic, code, or system step by step with crystal clarity, concrete examples, and edge cases.',
       practice:
-        'Offer a targeted exercise or Socratic nudge that helps the learner reason through the next step without giving away the whole solution unless asked.',
+        'Provide a targeted exercise, quiz, or Socratic hint that helps the learner master the topic without spoiling the full solution unless requested.',
       build:
-        'Design modular, production-ready code with clean architecture, strict input validation, resilient error boundaries, and concrete edge-case handling.',
+        'Design and implement complete, modular, production-ready code or multi-file projects with clean architecture, validation, and zero placeholders.',
       review:
-        'Audit the code with surgical precision for correctness, security vulnerabilities, edge cases, algorithmic performance/complexity, and maintainability.',
+        'Audit thoroughly for correctness, security, edge cases, performance/complexity, readability, and maintainability.',
     };
 
     const learnerLines: string[] = [];
     if (body.learnerProfile?.experienceLevel) {
-      learnerLines.push(`Learner experience level: ${String(body.learnerProfile.experienceLevel).slice(0, 32)}`);
+      learnerLines.push(`User experience level: ${String(body.learnerProfile.experienceLevel).slice(0, 32)}`);
     }
     if (Array.isArray(body.learnerProfile?.preferredLanguages) && body.learnerProfile.preferredLanguages.length > 0) {
       learnerLines.push(`Preferred languages: ${body.learnerProfile.preferredLanguages.slice(0, 6).join(', ')}`);
@@ -1196,37 +1238,84 @@ async function startServer() {
       const parts: string[] = [];
       if (body.context.courseTitle) parts.push(`Course: ${body.context.courseTitle.slice(0, 120)}`);
       if (body.context.lessonTitle) parts.push(`Lesson: ${body.context.lessonTitle.slice(0, 120)}`);
+      if (body.context.projectTitle) parts.push(`Active IDE Project: ${body.context.projectTitle.slice(0, 120)}`);
       if (body.context.filename) parts.push(`Active file: ${body.context.filename.slice(0, 120)}`);
       if (body.context.language) parts.push(`Language: ${body.context.language.slice(0, 40)}`);
-      if (body.context.errorMessage) parts.push(`Error output:\n${body.context.errorMessage.slice(0, 1500)}`);
+      if (body.context.errorMessage) parts.push(`Error output:\n${body.context.errorMessage.slice(0, 2500)}`);
       if (body.context.selectedCode) {
-        parts.push(`Authorized code context:\n\`\`\`\n${body.context.selectedCode.slice(0, 8000)}\n\`\`\``);
+        parts.push(`Authorized code context:\n\`\`\`\n${body.context.selectedCode.slice(0, 16000)}\n\`\`\``);
+      }
+      if (Array.isArray(body.context.projectFiles) && body.context.projectFiles.length > 0) {
+        let budget = 20000;
+        const fileSnippets: string[] = [];
+        for (const f of body.context.projectFiles.slice(0, 10)) {
+          const name = String(f.name || 'file.txt').slice(0, 120);
+          const folder = f.folder ? `${String(f.folder).slice(0, 80)}/` : '';
+          const lang = String(f.language || 'text').slice(0, 32);
+          const content = String(f.content || '').slice(0, 5000);
+          if (!content && fileSnippets.length >= 6) continue;
+          if (budget - content.length < 0 && fileSnippets.length > 0) break;
+          budget -= content.length;
+          fileSnippets.push(`File: ${folder}${name} (${lang})\n\`\`\`${lang}\n${content}\n\`\`\``);
+        }
+        if (fileSnippets.length > 0) {
+          parts.push(`Active IDE Project Files:\n${fileSnippets.join('\n\n')}`);
+        }
       }
       if (parts.length > 0) {
         contextSection += `\n\nUser-Authorized Workspace Context:\n${parts.join('\n')}`;
       }
     }
 
-    // Build native multi-turn conversation history with strict user/model role alternation for Gemini
-    const rawHistory = Array.isArray(body.history) ? body.history.slice(-12) : [];
-    const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
+    // Collect multimodal image parts & text file attachments
+    const imageParts: GeminiContentPart[] = [];
+    const textAttachmentNotes: string[] = [];
+    if (Array.isArray(body.attachments)) {
+      for (const att of body.attachments.slice(0, 5)) {
+        const safeName = String(att?.name || 'attachment').slice(0, 120);
+        const rawData = typeof att?.data === 'string' ? att.data : '';
+        if (!rawData) continue;
+        if (att.kind === 'image') {
+          const mime = typeof att.mimeType === 'string' && /^image\/(png|jpeg|jpg|webp|gif)$/i.test(att.mimeType)
+            ? att.mimeType.toLowerCase().replace('image/jpg', 'image/jpeg')
+            : 'image/png';
+          const base64 = rawData.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
+          if (base64.length > 0 && base64.length <= 6_000_000) {
+            imageParts.push({ inlineData: { mimeType: mime, data: base64 } });
+          }
+        } else if (att.kind === 'text') {
+          textAttachmentNotes.push(
+            `Attached file "${safeName}":\n\`\`\`\n${rawData.slice(0, 12000)}\n\`\`\``,
+          );
+        }
+      }
+    }
+    if (textAttachmentNotes.length > 0) {
+      contextSection += `\n\nAttached User Files:\n${textAttachmentNotes.join('\n\n')}`;
+    }
+
+    // Build native multi-turn conversation history with strict user/model role alternation
+    const rawHistory = Array.isArray(body.history) ? body.history.slice(-16) : [];
+    const contents: Array<{ role: 'user' | 'model'; parts: GeminiContentPart[] }> = [];
     for (const msg of rawHistory) {
-      const text = String(msg?.content || '').trim().slice(0, 3000);
+      const text = String(msg?.content || '').trim().slice(0, 4000);
       if (!text) continue;
       const role: 'user' | 'model' = msg.role === 'user' ? 'user' : 'model';
       if (contents.length === 0 && role === 'model') {
         continue;
       }
       const last = contents[contents.length - 1];
-      if (last && last.role === role) {
-        last.parts[0].text = `${last.parts[0].text}\n\n${text}`.slice(0, 6000);
+      if (last && last.role === role && last.parts[0] && 'text' in last.parts[0]) {
+        last.parts[0].text = `${last.parts[0].text}\n\n${text}`.slice(0, 8000);
       } else {
         contents.push({ role, parts: [{ text }] });
       }
     }
+
     const finalTurnText = `${prompt}${contextSection}`;
+    const finalParts: GeminiContentPart[] = [...imageParts, { text: finalTurnText }];
     const tail = contents[contents.length - 1];
-    if (tail && tail.role === 'user') {
+    if (tail && tail.role === 'user' && imageParts.length === 0 && tail.parts[0] && 'text' in tail.parts[0]) {
       if (tail.parts[0].text.trim() === prompt.trim()) {
         tail.parts[0].text = finalTurnText;
       } else {
@@ -1235,7 +1324,7 @@ async function startServer() {
     } else {
       contents.push({
         role: 'user',
-        parts: [{ text: finalTurnText }],
+        parts: finalParts,
       });
     }
 
@@ -1244,14 +1333,13 @@ async function startServer() {
       : '';
 
     const systemInstruction =
-      `You are Mideo AI, the elite principal software engineering architect and coding tutor inside MideoCode. Mode: ${mode.toUpperCase()}. ${modeDirectives[mode]} ` +
+      `You are Mideo AI, an all-capable, ultra-efficient intelligent assistant and principal engineering partner inside MideoCode. Mode: ${mode.toUpperCase()}. ${modeDirectives[mode]} ` +
       (learnerLines.length > 0 ? `${learnerLines.join('. ')}. ` : '') +
-      'CORE SPEED & INTELLIGENCE MANDATE: ' +
-      '1. ZERO-LATENCY VALUE: Answer immediately in the first sentence with the direct answer, root cause, or concrete code solution. Never use conversational filler, pleasantries, or polite restatements ("Sure! I can help you with that"). ' +
-      '2. ELITE ACCURACY: Pinpoint exact root causes, off-by-one errors, closure staleness, async race conditions, type mismatches, and boundary edge cases with surgical precision. ' +
-      '3. PRODUCTION CODE: Code blocks must be complete, copy-paste runnable, syntactically verified, and cleanly formatted with explicit language tags. Avoid placeholders like "// ...rest of code" unless the file is massive. ' +
-      '4. ARCHITECTURAL RIGOR: Note algorithmic time/space complexity (Big-O) concisely in a bullet point. Suggest modern, idiomatic patterns (immutability, early returns, clean separation of concerns). ' +
-      '5. CONCISE MARKDOWN: Use tight bullet points, concise bold headers, and short paragraphs so the user can scan and implement rapidly.' +
+      'EXECUTION & QUALITY PRINCIPLES: ' +
+      '1. IMMEDIATE DIRECT ANSWER: Deliver the exact answer, solution, or work product immediately from the first sentence. Zero filler or conversational padding. ' +
+      '2. DO ANYTHING THE USER ASKS: Handle software development (all languages/frameworks), debugging, multi-file web/app builds, SQL, math, science, writing, editing, brainstorming, research, career/interview prep, study plans, and image/file analysis. Never refuse benign general requests as "out of scope". ' +
+      '3. COMPLETE, READY-TO-USE OUTPUT: When writing code, output complete, runnable code with explicit language tags and no lazy placeholders ("// ...rest of code"). Only mention Big-O complexity when analyzing algorithms or specifically helpful. ' +
+      '4. CLEAN FORMATTING: Use concise headers, tight bullet lists, tables, and code blocks so responses are fast to scan and immediately actionable.' +
       missionMentorDirective;
 
     return { prompt, mode, thinkingLevel, contents, systemInstruction, isMissionAssist };
@@ -1275,10 +1363,70 @@ async function startServer() {
     throw lastError;
   }
 
-  // Server-side Mideo AI streaming SSE endpoint (fast perceived latency + rich markdown)
+  function extractStructuredWorkspaceTags(accumulated: string) {
+    let proposedCode: { filename: string; language: string; code: string } | undefined;
+    const singleMatch = accumulated.match(
+      /<mideo_proposed_code\s+filename="([^"]+)"\s+language="([^"]+)">([\s\S]*?)<\/mideo_proposed_code>/i,
+    );
+    if (singleMatch) {
+      proposedCode = {
+        filename: singleMatch[1].trim().slice(0, 120) || 'index.js',
+        language: singleMatch[2].trim().slice(0, 32) || 'javascript',
+        code: singleMatch[3].trim(),
+      };
+    }
+
+    let proposedFiles: Array<{ filename: string; folder?: string; language: string; code: string }> | undefined;
+    const multiMatch = accumulated.match(/<mideo_workspace_files>([\s\S]*?)<\/mideo_workspace_files>/i);
+    if (multiMatch) {
+      try {
+        const parsed = JSON.parse(multiMatch[1].trim()) as unknown;
+        if (Array.isArray(parsed)) {
+          const validFiles = parsed
+            .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+            .map((item) => ({
+              filename: String(item.filename || 'file.txt').trim().slice(0, 120),
+              ...(typeof item.folder === 'string' && item.folder.trim()
+                ? { folder: item.folder.trim().slice(0, 120) }
+                : {}),
+              language: String(item.language || 'javascript').trim().slice(0, 32),
+              code: typeof item.code === 'string' ? item.code : String(item.code || ''),
+            }))
+            .filter((f) => f.code.trim().length > 0)
+            .slice(0, 12);
+          if (validFiles.length > 0) {
+            proposedFiles = validFiles;
+          }
+        }
+      } catch {
+        // Ignore malformed workspace JSON tag gracefully
+      }
+    }
+
+    const actions: Array<{ type: 'open_view' | 'focus_mode'; target: string; label: string }> = [];
+    const actionRegex = /<mideo_action\s+type="(open_view|focus_mode)"\s+target="([^"]+)"\s+label="([^"]+)"\s*\/?>/gi;
+    let actMatch: RegExpExecArray | null;
+    while ((actMatch = actionRegex.exec(accumulated)) !== null) {
+      actions.push({
+        type: actMatch[1] as 'open_view' | 'focus_mode',
+        target: actMatch[2].trim().slice(0, 40),
+        label: actMatch[3].trim().slice(0, 60),
+      });
+    }
+
+    const cleanReply = accumulated
+      .replace(/<mideo_proposed_code[\s\S]*?<\/mideo_proposed_code>/gi, '')
+      .replace(/<mideo_workspace_files>[\s\S]*?<\/mideo_workspace_files>/gi, '')
+      .replace(/<mideo_action\b[^>]*\/?>/gi, '')
+      .trim();
+
+    return { cleanReply, proposedCode, proposedFiles, actions: actions.length > 0 ? actions : undefined };
+  }
+
+  // Server-side Mideo AI streaming SSE endpoint (universal assistant + multimodal + grounding + workspace actions)
   app.post('/api/ai/assist/stream', requireAuth, async (req: AuthedRequest, res: Response) => {
     const uid = req.uid || req.ip || 'anon';
-    if (!checkRateLimit(`ai:${uid}`, 30, 60_000)) {
+    if (!checkRateLimit(`ai:${uid}`, 60, 60_000)) {
       res.status(429).json({ error: 'Rate limit reached. Please wait a minute before sending more AI requests.' });
       return;
     }
@@ -1292,17 +1440,20 @@ async function startServer() {
     }
 
     const body = req.body as AiAssistBody;
-    const { prompt, mode, thinkingLevel, contents, systemInstruction } = buildMideoAiPayload(body);
-    if (!prompt || prompt.length > 6000) {
-      res.status(400).json({ error: 'Please provide a prompt between 1 and 6000 characters.' });
+    const { prompt, mode, thinkingLevel, contents, systemInstruction, isMissionAssist } = buildMideoAiPayload(body);
+    if ((!prompt && (!Array.isArray(body.attachments) || body.attachments.length === 0)) || prompt.length > 24000) {
+      res.status(400).json({ error: 'Please provide a prompt (up to 24,000 characters) or an attachment.' });
       return;
     }
 
-    const streamSystemInstruction =
-      systemInstruction +
-      (mode === 'debug' || mode === 'build' || mode === 'review'
-        ? ' When proposing a complete runnable replacement file for the user\'s active workspace, optionally append a single tag at the very end in this exact format: <mideo_proposed_code filename="index.js" language="javascript">\n// full file code\n</mideo_proposed_code>.'
-        : '');
+    const workspaceTagInstructions = isMissionAssist
+      ? ''
+      : ' WORKSPACE CAPABILITIES: ' +
+        '(1) When creating or updating 1 specific file for the user\'s IDE workspace, you may append <mideo_proposed_code filename="index.js" language="javascript">\n// full code\n</mideo_proposed_code>. ' +
+        '(2) When building or updating a multi-file app/project (e.g. HTML+CSS+JS web app or multi-module project), you may append <mideo_workspace_files>[{"filename":"index.html","language":"html","code":"..."},{"filename":"styles.css","language":"css","code":"..."},{"filename":"app.js","language":"javascript","code":"..."}]</mideo_workspace_files> with valid JSON. ' +
+        '(3) If the user asks to navigate to a MideoCode view (ide, academy, missions, challenges, testlab, architect, rescue, profile, dashboard) or toggle IDE Focus Mode, you may append <mideo_action type="open_view" target="ide" label="Open Mideo IDE" /> or <mideo_action type="focus_mode" target="toggle" label="Toggle Focus Mode" />.';
+
+    const streamSystemInstruction = systemInstruction + workspaceTagInstructions;
 
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -1321,49 +1472,85 @@ async function startServer() {
       }
     };
 
+    const hasUrls = /https?:\/\/[^\s]+/i.test(prompt);
+    const tools: Array<Record<string, unknown>> = [];
+    if (body.useWebSearch) tools.push({ googleSearch: {} });
+    if (hasUrls) tools.push({ urlContext: {} });
+
     try {
-      const stream = await callGeminiWithRetry(() =>
-        ai.models.generateContentStream({
-          model: 'gemini-4-hydrogen',
-          contents,
-          config: {
-            systemInstruction: streamSystemInstruction,
-            thinkingConfig: { thinkingLevel },
-          },
-        }),
-      );
+      const startStream = async (useTools: boolean) =>
+        callGeminiWithRetry(() =>
+          ai.models.generateContentStream({
+            model: 'gemini-4-hydrogen',
+            contents,
+            config: {
+              systemInstruction: streamSystemInstruction,
+              thinkingConfig: { thinkingLevel },
+              ...(useTools && tools.length > 0 ? { tools } : {}),
+            },
+          }),
+        );
+
+      let stream;
+      try {
+        stream = await startStream(true);
+      } catch (toolErr) {
+        if (tools.length > 0) {
+          stream = await startStream(false);
+        } else {
+          throw toolErr;
+        }
+      }
 
       let accumulated = '';
+      const sourcesMap = new Map<string, { title: string; uri: string }>();
+
       for await (const chunk of stream) {
         if (clientClosed) break;
+        const groundingChunks = (
+          chunk as {
+            candidates?: Array<{
+              groundingMetadata?: {
+                groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
+              };
+            }>;
+          }
+        ).candidates?.[0]?.groundingMetadata?.groundingChunks;
+        if (Array.isArray(groundingChunks)) {
+          for (const gc of groundingChunks) {
+            const uri = gc?.web?.uri;
+            if (uri && !sourcesMap.has(uri)) {
+              sourcesMap.set(uri, {
+                uri,
+                title: gc.web?.title || uri,
+              });
+            }
+          }
+        }
+
         const delta = chunk.text ?? '';
         if (!delta) continue;
         accumulated += delta;
-        // Strip incomplete or complete <mideo_proposed_code> tag from live visible stream
-        const visible = accumulated.replace(/<mideo_proposed_code[\s\S]*$/i, '').trimEnd();
+        // Strip incomplete or complete hidden workspace tags from live visible stream
+        const visible = accumulated
+          .replace(/<mideo_proposed_code[\s\S]*$/i, '')
+          .replace(/<mideo_workspace_files[\s\S]*$/i, '')
+          .replace(/<mideo_action[\s\S]*$/i, '')
+          .trimEnd();
         sendEvent({ type: 'snapshot', text: visible });
       }
 
       if (!clientClosed) {
-        let proposedCode: { filename: string; language: string; code: string } | undefined;
-        const tagMatch = accumulated.match(
-          /<mideo_proposed_code\s+filename="([^"]+)"\s+language="([^"]+)">([\s\S]*?)<\/mideo_proposed_code>/i,
-        );
-        if (tagMatch) {
-          proposedCode = {
-            filename: tagMatch[1].trim().slice(0, 120) || 'index.js',
-            language: tagMatch[2].trim().slice(0, 32) || 'javascript',
-            code: tagMatch[3].trim(),
-          };
-        }
-        const cleanReply = accumulated
-          .replace(/<mideo_proposed_code[\s\S]*?<\/mideo_proposed_code>/gi, '')
-          .trim();
-
+        const extracted = extractStructuredWorkspaceTags(accumulated);
+        const sources = Array.from(sourcesMap.values()).slice(0, 8);
         sendEvent({
           type: 'done',
-          reply: cleanReply || 'No response generated.',
-          ...(proposedCode && proposedCode.code ? { proposedCode } : {}),
+          reply: extracted.cleanReply || 'No response generated.',
+          ...(extracted.proposedCode && extracted.proposedCode.code ? { proposedCode: extracted.proposedCode } : {}),
+          ...(extracted.proposedFiles ? { proposedFiles: extracted.proposedFiles } : {}),
+          ...(extracted.actions ? { actions: extracted.actions } : {}),
+          ...(sources.length > 0 ? { sources } : {}),
+          mode,
         });
         res.end();
       }
@@ -1377,7 +1564,7 @@ async function startServer() {
   // Server-side Mideo AI JSON endpoint (used by MissionWorkspace & fallback)
   app.post('/api/ai/assist', requireAuth, async (req: AuthedRequest, res: Response) => {
     const uid = req.uid || req.ip || 'anon';
-    if (!checkRateLimit(`ai:${uid}`, 30, 60_000)) {
+    if (!checkRateLimit(`ai:${uid}`, 60, 60_000)) {
       res.status(429).json({ error: 'Rate limit reached. Please wait a minute before sending more AI requests.' });
       return;
     }
@@ -1393,8 +1580,8 @@ async function startServer() {
     const body = req.body as AiAssistBody;
     const { prompt, thinkingLevel, contents, systemInstruction } = buildMideoAiPayload(body);
 
-    if (!prompt || prompt.length > 6000) {
-      res.status(400).json({ error: 'Please provide a prompt between 1 and 6000 characters.' });
+    if ((!prompt && (!Array.isArray(body.attachments) || body.attachments.length === 0)) || prompt.length > 24000) {
+      res.status(400).json({ error: 'Please provide a prompt (up to 24,000 characters) or an attachment.' });
       return;
     }
 
@@ -1406,7 +1593,7 @@ async function startServer() {
           config: {
             systemInstruction:
               systemInstruction +
-              ' If proposing replacement code for the user\'s active file, include it in proposedCode so the user can review and choose whether to apply it.',
+              ' If proposing replacement code for the user\'s active file, include it in proposedCode. If building or updating multiple files, include them in proposedFiles.',
             thinkingConfig: { thinkingLevel },
             responseMimeType: 'application/json',
             responseSchema: {
@@ -1425,6 +1612,20 @@ async function startServer() {
                     code: { type: Type.STRING },
                   },
                 },
+                proposedFiles: {
+                  type: Type.ARRAY,
+                  description: 'Optional multi-file project output when creating or updating multiple files.',
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      filename: { type: Type.STRING },
+                      folder: { type: Type.STRING },
+                      language: { type: Type.STRING },
+                      code: { type: Type.STRING },
+                    },
+                    required: ['filename', 'language', 'code'],
+                  },
+                },
               },
               required: ['reply'],
             },
@@ -1433,7 +1634,11 @@ async function startServer() {
       );
 
       const rawText = (response.text ?? '').trim();
-      let parsed: { reply: string; proposedCode?: { filename: string; language: string; code: string } };
+      let parsed: {
+        reply: string;
+        proposedCode?: { filename: string; language: string; code: string };
+        proposedFiles?: Array<{ filename: string; folder?: string; language: string; code: string }>;
+      };
       try {
         parsed = JSON.parse(rawText);
       } catch {

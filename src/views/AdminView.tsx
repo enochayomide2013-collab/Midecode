@@ -32,7 +32,7 @@ import { useMideo } from '../context/MideoContext';
 import { ACADEMY_COURSES } from '../data/academyData';
 import { CHALLENGES } from '../data/challengesData';
 import { AdminMissionStudio } from '../components/missions/AdminMissionStudio';
-import { getCountryInfoFromPhone } from '../services/authService';
+import { getCountryInfoFromPhone, getIdTokenHeader, tryReadJson } from '../services/authService';
 import {
   adminListReports,
   adminListUsers,
@@ -57,13 +57,14 @@ import type {
 } from '../types/mideocode';
 
 export function AdminView() {
-  const { firebaseUser, profile, capabilities, missions, notify } = useMideo();
+  const { firebaseUser, profile, capabilities, missions, refreshUserData, refreshAuthState, notify } = useMideo();
 
   const [adminTab, setAdminTab] = useState<'moderation' | 'missions' | 'rescue_ops'>('moderation');
   const [rescueTelemetry, setRescueTelemetry] = useState<RescueAdminTelemetry | null>(null);
   const [loadingRescueTelemetry, setLoadingRescueTelemetry] = useState(false);
   const [adminEmailInput, setAdminEmailInput] = useState('');
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
+  const [accessDeniedError, setAccessDeniedError] = useState<string | null>(null);
   const [passwordUnlocked, setPasswordUnlocked] = useState(
     () =>
       sessionStorage.getItem('mideocode_admin_password_unlocked') === 'true' ||
@@ -115,7 +116,7 @@ export function AdminView() {
       const [userRows, reportRows, healthRes] = await Promise.all([
         adminListUsers(),
         adminListReports(),
-        fetch('/api/health').then((r) => (r.ok ? r.json() : null)),
+        fetch('/api/health').then((r) => (r.ok ? tryReadJson<typeof healthStatus>(r) : null)),
       ]);
       setUsers(userRows);
       setReports(reportRows);
@@ -218,25 +219,41 @@ export function AdminView() {
 
   const handleVerifyPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAccessDeniedError(null);
     const cleanEmail = adminEmailInput.trim().toLowerCase();
     const cleanPass = adminPasswordInput.trim();
 
-    if (cleanEmail === 'enochayomide2013@gmail.com' && cleanPass === '2013') {
+    if (cleanEmail !== 'enochayomide2013@gmail.com' || cleanPass !== '2013') {
+      setAccessDeniedError('Access denied.');
+      notify('error', 'Access denied.');
+      return;
+    }
+
+    try {
+      const authHeaders = await getIdTokenHeader();
+      const res = await fetch('/api/admin/verify-credentials', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ email: cleanEmail, password: cleanPass }),
+      });
+      const data = await tryReadJson<{ ok?: boolean; error?: string }>(res);
+      if (!res.ok || !data?.ok) {
+        setAccessDeniedError(data?.error || 'Access denied.');
+        notify('error', data?.error || 'Access denied.');
+        return;
+      }
+
       sessionStorage.setItem('mideocode_admin_password_unlocked', 'true');
       sessionStorage.setItem('mideocode_admin_email_unlocked', 'enochayomide2013@gmail.com');
       sessionStorage.setItem('mideocode_unrestricted_admin', 'true');
 
-      // Call server elevation endpoint
-      fetch('/api/admin/verify-credentials', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'MideoCode' },
-        body: JSON.stringify({ email: cleanEmail, password: cleanPass }),
-      }).catch(() => {});
-
+      await Promise.all([refreshAuthState().catch(() => {}), refreshUserData().catch(() => {})]);
       setPasswordUnlocked(true);
       notify('success', 'Owner identity verified. Unrestricted administrator access unlocked.');
-    } else {
-      notify('error', 'Incorrect credentials. Required Owner Email is Enochayomide2013@gmail.com and Password is 2013.');
+    } catch {
+      setAccessDeniedError('Access denied.');
+      notify('error', 'Access denied.');
     }
   };
 
@@ -248,7 +265,7 @@ export function AdminView() {
           Owner Admin Verification Required
         </h1>
         <p className="text-xs text-slate-600 dark:text-slate-400">
-          Enter the Owner Email (Enochayomide2013@gmail.com) and Owner Password (2013) to unlock unrestricted administrator access.
+          Enter the Owner Email and Owner Password to unlock unrestricted administrator access.
         </p>
         <form onSubmit={handleVerifyPassword} className="space-y-3 pt-2 text-left">
           <div>
@@ -260,8 +277,11 @@ export function AdminView() {
               required
               autoFocus
               value={adminEmailInput}
-              onChange={(e) => setAdminEmailInput(e.target.value)}
-              placeholder="Enochayomide2013@gmail.com"
+              onChange={(e) => {
+                setAdminEmailInput(e.target.value);
+                if (accessDeniedError) setAccessDeniedError(null);
+              }}
+              placeholder="Enter owner email"
               className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-900 dark:text-white"
             />
           </div>
@@ -273,10 +293,18 @@ export function AdminView() {
               type="password"
               required
               value={adminPasswordInput}
-              onChange={(e) => setAdminPasswordInput(e.target.value)}
-              placeholder="Enter owner password (2013)..."
+              onChange={(e) => {
+                setAdminPasswordInput(e.target.value);
+                if (accessDeniedError) setAccessDeniedError(null);
+              }}
+              placeholder="Enter owner password"
               className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-mono tracking-wider text-slate-900 dark:text-white"
             />
+            {accessDeniedError && (
+              <p className="text-xs font-semibold text-red-500 dark:text-red-400 mt-2 p-2 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50">
+                {accessDeniedError}
+              </p>
+            )}
           </div>
           <button
             type="submit"

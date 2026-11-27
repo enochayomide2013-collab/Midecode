@@ -17,7 +17,7 @@ import {
 import { collection, getDocs, limit, orderBy, query } from '../../services/appDb';
 import { useMideo } from '../../context/MideoContext';
 import { db } from '../../services/firebase';
-import { getIdTokenHeader } from '../../services/authService';
+import { getIdTokenHeader, tryReadJson } from '../../services/authService';
 import { MISSION_CATEGORIES, MISSION_DIFFICULTIES } from '../../data/missionsData';
 import {
   adminDeleteMissionDraft,
@@ -228,8 +228,8 @@ export function AdminMissionStudio() {
       const res = await fetch(`/api/admin/missions/eval-config/${encodeURIComponent(mission.id)}`, {
         headers,
       });
-      if (res.ok) {
-        const cfg = (await res.json()) as MissionServerEvalConfig;
+      const cfg = res.ok ? await tryReadJson<MissionServerEvalConfig>(res) : null;
+      if (cfg) {
         setEditEvalConfig(cfg);
       } else {
         setEditEvalConfig({

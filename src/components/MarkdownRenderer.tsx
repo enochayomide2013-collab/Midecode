@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Check, Code2, Copy } from 'lucide-react';
+import { Check, Code2, Copy, Play } from 'lucide-react';
 
 interface MarkdownRendererProps {
   content: string;
   onOpenCodeInIde?: (code: string, language: string, filename?: string) => void;
+  onRunCode?: (code: string, language: string) => void;
 }
 
 function defaultFilenameForLanguage(language: string): string {
@@ -14,6 +15,13 @@ function defaultFilenameForLanguage(language: string): string {
   if (norm === 'css') return 'styles.css';
   if (norm === 'sql') return 'query.sql';
   return 'index.js';
+}
+
+function ideProjectLanguageFor(normLang: string): string {
+  if (normLang === 'python' || normLang === 'py') return 'python';
+  if (normLang === 'html' || normLang === 'css' || normLang === 'web') return 'web';
+  if (normLang === 'sql') return 'sql';
+  return 'javascript';
 }
 
 function renderInline(text: string): React.ReactNode[] {
@@ -80,10 +88,12 @@ function CodeBlock({
   code,
   language,
   onOpenCodeInIde,
+  onRunCode,
 }: {
   code: string;
   language: string;
   onOpenCodeInIde?: (code: string, language: string, filename?: string) => void;
+  onRunCode?: (code: string, language: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const langLabel = language.trim() || 'code';
@@ -93,19 +103,32 @@ function CodeBlock({
     ['javascript', 'js', 'typescript', 'ts', 'python', 'py', 'html', 'css', 'sql', 'web'].includes(
       normalizedLang,
     );
+  const canRun =
+    Boolean(onRunCode) &&
+    ['javascript', 'js', 'python', 'py', 'html'].includes(normalizedLang);
 
   return (
     <div className="my-3 rounded-lg border border-slate-300 dark:border-slate-700/90 overflow-hidden bg-[#090D16]">
       <div className="px-3 py-1.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 text-[11px] text-slate-300">
         <span className="font-mono uppercase tracking-wide text-slate-400">{langLabel}</span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          {canRun && onRunCode && (
+            <button
+              type="button"
+              onClick={() => onRunCode(code, normalizedLang)}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white transition-colors cursor-pointer"
+            >
+              <Play className="w-3 h-3" />
+              {normalizedLang === 'html' ? 'Preview' : 'Run'}
+            </button>
+          )}
           {canOpenInIde && onOpenCodeInIde && (
             <button
               type="button"
               onClick={() =>
                 onOpenCodeInIde(
                   code,
-                  normalizedLang === 'python' || normalizedLang === 'py' ? 'python' : 'javascript',
+                  ideProjectLanguageFor(normalizedLang),
                   defaultFilenameForLanguage(normalizedLang),
                 )
               }
@@ -308,7 +331,7 @@ function renderTextSegment(
   return blocks;
 }
 
-export function MarkdownRenderer({ content, onOpenCodeInIde }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, onOpenCodeInIde, onRunCode }: MarkdownRendererProps) {
   // Split content by fenced code blocks (supports incomplete trailing block during streaming)
   const parts: Array<{ type: 'text' | 'code'; content: string; language?: string }> = [];
   const fenceRegex = /```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```/g;
@@ -351,6 +374,7 @@ export function MarkdownRenderer({ content, onOpenCodeInIde }: MarkdownRendererP
             code={part.content}
             language={part.language || 'code'}
             onOpenCodeInIde={onOpenCodeInIde}
+            onRunCode={onRunCode}
           />
         ) : (
           <React.Fragment key={`txt_${idx}`}>{renderTextSegment(part.content, `seg_${idx}`)}</React.Fragment>

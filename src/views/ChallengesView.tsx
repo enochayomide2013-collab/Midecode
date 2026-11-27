@@ -7,7 +7,7 @@ import { CheckCircle2, EyeOff, HelpCircle, Loader2, Play, Timer, Trophy, XCircle
 import { useMideo } from '../context/MideoContext';
 import { MockInterviewSimulator } from '../components/MockInterviewSimulator';
 import { CHALLENGES } from '../data/challengesData';
-import { fetchWithAuthAndRetry } from '../services/authService';
+import { fetchWithAuthAndRetry, readJsonSafe } from '../services/authService';
 import {
   listChallengeAttempts,
   listPublicLeaderboard,
@@ -78,10 +78,13 @@ export function ChallengesView() {
           code,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Challenge execution failed.');
-      }
+      const data = await readJsonSafe<{
+        passed: boolean;
+        passedCount: number;
+        totalCount: number;
+        executionMs: number;
+        results: ChallengeTestResult[];
+      }>(res, 'Challenge execution failed.');
 
       setEvalResult({
         passed: data.passed,

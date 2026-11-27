@@ -22,9 +22,12 @@ import {
   clearPendingRegistrationPhone,
   fetchWithAuthAndRetry,
   getCountryInfoFromPhone,
+  getCurrentSessionToken,
   getPendingRegistrationName,
   getPendingRegistrationPhone,
+  tryReadJson,
 } from './authService';
+import { isLocalFallbackToken, shouldFallbackForHttpStatus } from './localBrowserStore';
 import type {
   UserProfile,
   UserRole,
@@ -48,6 +51,9 @@ import type {
   ExperienceLevel,
   VersionChangeType,
   ActivityCategory,
+  WorkspaceStartMode,
+  AiStylePreference,
+  FocusAudioPreference,
 } from '../types/mideocode';
 
 const utf8Encoder = new TextEncoder();
@@ -358,6 +364,97 @@ export async function loadOrCreateUserProfile(firebaseUser: User): Promise<UserP
   return run;
 }
 
+function sanitizePhotoUrlValue(photoURL?: string | null): string | null {
+  const clean = (photoURL || '').trim();
+  if (!clean) return null;
+  if (clean.startsWith('data:image/')) {
+    return clean.slice(0, 60_000);
+  }
+  return truncateToUtf8Bytes(clean, 500);
+}
+
+function isFieldDeleteSentinel(val: unknown): boolean {
+  return Boolean(val && typeof val === 'object' && (val as Record<string, unknown>).__dbOp === 'deleteField');
+}
+
+function applyCleanPatchForCreate(base: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(patch)) {
+    if (isFieldDeleteSentinel(v)) {
+      delete out[k];
+    } else if (v !== undefined) {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+async function ensureAndUpdateUserDocs(
+  uid: string,
+  userPatch: Record<string, unknown>,
+  publicPatch?: Record<string, unknown>,
+): Promise<void> {
+  const userRef = doc(db, 'users', uid);
+  const userSnap = await getDoc(userRef);
+  if (userSnap.exists()) {
+    await updateDoc(userRef, userPatch);
+  } else {
+    const fallbackName =
+      truncateToUtf8Bytes((auth.currentUser?.displayName || 'MideoCode Learner').trim(), 80) ||
+      'MideoCode Learner';
+    const baseProfile: Record<string, unknown> = {
+      uid,
+      displayName: fallbackName,
+      experienceLevel: 'beginner',
+      preferredLanguages: ['JavaScript', 'HTML/CSS'],
+      learningGoals: ['Build real-world projects'],
+      interests: ['Web Development'],
+      onboardingComplete: false,
+      xp: 0,
+      level: 1,
+      streak: 1,
+      lastActivityDate: getTodayKey(),
+      role: auth.currentUser?.role || 'member',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    if (auth.currentUser?.email) baseProfile.email = truncateToUtf8Bytes(auth.currentUser.email, 254);
+    await setDoc(userRef, applyCleanPatchForCreate(baseProfile, userPatch));
+  }
+
+  if (publicPatch) {
+    const publicRef = doc(db, 'publicProfiles', uid);
+    const publicSnap = await getDoc(publicRef);
+    if (publicSnap.exists()) {
+      await updateDoc(publicRef, publicPatch);
+    } else {
+      const resolvedName =
+        (typeof publicPatch.displayName === 'string' && publicPatch.displayName.trim()) ||
+        (typeof userPatch.displayName === 'string' && userPatch.displayName.trim()) ||
+        (userSnap.exists() && typeof (userSnap.data() as { displayName?: string })?.displayName === 'string'
+          ? (userSnap.data() as { displayName: string }).displayName
+          : '') ||
+        auth.currentUser?.displayName?.trim() ||
+        'MideoCode Learner';
+      const userData = userSnap.exists() ? (userSnap.data() as Partial<UserProfile>) : undefined;
+      const basePublic: Record<string, unknown> = {
+        uid,
+        displayName: truncateToUtf8Bytes(resolvedName, 80) || 'MideoCode Learner',
+        level: userData?.level ?? 1,
+        xp: userData?.xp ?? 0,
+        streak: userData?.streak ?? 1,
+        badgesCount: 0,
+        updatedAt: serverTimestamp(),
+      };
+      if (userData?.photoURL) {
+        const cleanExistingPhoto = sanitizePhotoUrlValue(userData.photoURL);
+        if (cleanExistingPhoto) basePublic.photoURL = cleanExistingPhoto;
+      }
+      await setDoc(publicRef, applyCleanPatchForCreate(basePublic, publicPatch));
+    }
+  }
+}
+
 export async function saveOnboardingProfile(
   uid: string,
   payload: {
@@ -373,6 +470,11 @@ export async function saveOnboardingProfile(
     primaryFocus?: string;
     codingCommitment?: string;
     activeCareerPathId?: string;
+    startingView?: WorkspaceStartMode;
+    aiStylePreference?: AiStylePreference;
+    defaultFocusMode?: boolean;
+    defaultFocusAudio?: FocusAudioPreference;
+    starterTemplateId?: string;
   },
 ): Promise<void> {
   const path = `users/${uid}`;
@@ -388,6 +490,11 @@ export async function saveOnboardingProfile(
       primaryFocus: payload.primaryFocus ? truncateToUtf8Bytes(payload.primaryFocus.trim(), 120) : '',
       codingCommitment: payload.codingCommitment ? truncateToUtf8Bytes(payload.codingCommitment.trim(), 80) : '',
       activeCareerPathId: payload.activeCareerPathId || 'frontend-developer',
+      startingView: payload.startingView || 'dashboard',
+      aiStylePreference: payload.aiStylePreference || 'balanced',
+      defaultFocusMode: Boolean(payload.defaultFocusMode),
+      defaultFocusAudio: payload.defaultFocusAudio || 'off',
+      starterTemplateId: payload.starterTemplateId || 'none',
       onboardingComplete: true,
       updatedAt: serverTimestamp(),
     };
@@ -405,79 +512,156 @@ export async function saveOnboardingProfile(
       displayName: cleanName,
       updatedAt: serverTimestamp(),
     };
-    if (payload.photoURL && payload.photoURL.trim()) {
-      const cleanPhoto = truncateToUtf8Bytes(payload.photoURL.trim(), 500);
+    const cleanPhoto = sanitizePhotoUrlValue(payload.photoURL);
+    if (cleanPhoto) {
       userPatch.photoURL = cleanPhoto;
       publicPatch.photoURL = cleanPhoto;
     }
-    await updateDoc(doc(db, 'users', uid), userPatch);
-    await updateDoc(doc(db, 'publicProfiles', uid), publicPatch);
+    await ensureAndUpdateUserDocs(uid, userPatch, publicPatch);
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, path);
   }
 }
 
 export async function processAndUploadAvatar(file: File): Promise<string> {
-  if (!file.type.startsWith('image/')) {
+  const hasImageMime = Boolean(file.type && file.type.startsWith('image/'));
+  const hasImageExt = /\.(png|jpe?g|webp|gif|bmp|avif|ico|tiff?)$/i.test(file.name || '');
+  if (!hasImageMime && !hasImageExt) {
     throw new Error('Please choose a valid image file (PNG, JPG, WebP, or GIF).');
+  }
+  if (file.size === 0) {
+    throw new Error('The selected image file is empty.');
   }
   if (file.size > 10 * 1024 * 1024) {
     throw new Error('Selected image must be smaller than 10 MB.');
   }
 
-  const imageDataUrl = await new Promise<string>((resolve, reject) => {
+  const renderCanvasJpeg = (img: HTMLImageElement, size: number, quality: number): string => {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Canvas context unavailable for image resizing.');
+    }
+    const naturalW = img.naturalWidth || img.width;
+    const naturalH = img.naturalHeight || img.height;
+    if (!naturalW || !naturalH) {
+      throw new Error('Selected image has invalid dimensions.');
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, size, size);
+    const minDim = Math.min(naturalW, naturalH);
+    const sx = (naturalW - minDim) / 2;
+    const sy = (naturalH - minDim) / 2;
+    ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
+    return canvas.toDataURL('image/jpeg', quality);
+  };
+
+  const { uploadDataUrl, compactDataUrl } = await new Promise<{
+    uploadDataUrl: string;
+    compactDataUrl: string;
+  }>((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Failed to read selected image file.'));
     reader.onload = () => {
       const img = new Image();
       img.onerror = () => reject(new Error('Unsupported or corrupted image file.'));
       img.onload = () => {
-        const size = 256;
-        const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Canvas context unavailable for image resizing.'));
-          return;
+        try {
+          const attempts: Array<[number, number]> = [
+            [256, 0.85],
+            [256, 0.72],
+            [192, 0.68],
+            [144, 0.6],
+            [128, 0.5],
+          ];
+          let chosen = renderCanvasJpeg(img, 128, 0.5);
+          for (const [sz, q] of attempts) {
+            const candidate = renderCanvasJpeg(img, sz, q);
+            const approxBytes = Math.ceil((candidate.length * 3) / 4);
+            chosen = candidate;
+            if (approxBytes <= 335 * 1024) {
+              break;
+            }
+          }
+          const compact = renderCanvasJpeg(img, 96, 0.62);
+          resolve({ uploadDataUrl: chosen, compactDataUrl: compact });
+        } catch (convErr) {
+          reject(convErr instanceof Error ? convErr : new Error('Failed to process selected image.'));
         }
-        const minDim = Math.min(img.width, img.height);
-        const sx = (img.width - minDim) / 2;
-        const sy = (img.height - minDim) / 2;
-        ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
-        resolve(canvas.toDataURL('image/jpeg', 0.86));
       };
       img.src = String(reader.result || '');
     };
     reader.readAsDataURL(file);
   });
 
-  const res = await fetchWithAuthAndRetry('/api/profile/avatar', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ imageDataUrl }),
-  });
-  const data = (await res.json()) as { photoURL?: string; error?: string };
-  if (!res.ok || !data.photoURL) {
-    throw new Error(data.error || 'Failed to upload profile picture.');
+  if (isLocalFallbackToken(getCurrentSessionToken())) {
+    return compactDataUrl;
   }
-  return data.photoURL;
+
+  try {
+    const res = await fetchWithAuthAndRetry('/api/profile/avatar', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ imageDataUrl: uploadDataUrl }),
+    });
+    const data = await tryReadJson<{ photoURL?: string; error?: string }>(res);
+    if (shouldFallbackForHttpStatus(res.status, res.headers.get('content-type'), Boolean(data?.error))) {
+      return compactDataUrl;
+    }
+    if (!res.ok || !data?.photoURL) {
+      throw new Error(data?.error || `Failed to upload profile picture (HTTP ${res.status}).`);
+    }
+    return data.photoURL;
+  } catch (err) {
+    if (err instanceof TypeError || (err instanceof Error && /failed to fetch|network/i.test(err.message))) {
+      return compactDataUrl;
+    }
+    throw err instanceof Error ? err : new Error('Failed to upload profile picture.');
+  }
 }
 
 export async function updateUserAvatar(uid: string, photoURL: string | null): Promise<void> {
   const path = `users/${uid}`;
   try {
-    const clean = photoURL?.trim().slice(0, 500) || null;
-    await updateDoc(doc(db, 'users', uid), {
-      photoURL: clean ? clean : deleteField(),
-      updatedAt: serverTimestamp(),
-    });
-    await updateDoc(doc(db, 'publicProfiles', uid), {
-      photoURL: clean ? clean : deleteField(),
-      updatedAt: serverTimestamp(),
-    });
+    const clean = sanitizePhotoUrlValue(photoURL);
+    await ensureAndUpdateUserDocs(
+      uid,
+      {
+        photoURL: clean ? clean : deleteField(),
+        updatedAt: serverTimestamp(),
+      },
+      {
+        photoURL: clean ? clean : deleteField(),
+        updatedAt: serverTimestamp(),
+      },
+    );
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+  }
+}
+
+export async function updateUserDisplayName(uid: string, displayName: string): Promise<void> {
+  const path = `users/${uid}`;
+  try {
+    const clean = truncateToUtf8Bytes(displayName.trim(), 80);
+    if (!clean) {
+      throw new Error('Display name cannot be empty.');
+    }
+    await ensureAndUpdateUserDocs(
+      uid,
+      {
+        displayName: clean,
+        updatedAt: serverTimestamp(),
+      },
+      {
+        displayName: clean,
+        updatedAt: serverTimestamp(),
+      },
+    );
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, path);
   }
@@ -494,7 +678,7 @@ export async function updateUserPhoneNumber(
     const cleanCountry = clean
       ? (country?.trim() || getCountryInfoFromPhone(clean)?.name || '').slice(0, 80) || null
       : null;
-    await updateDoc(doc(db, 'users', uid), {
+    await ensureAndUpdateUserDocs(uid, {
       phoneNumber: clean ? clean : deleteField(),
       country: cleanCountry ? cleanCountry : deleteField(),
       updatedAt: serverTimestamp(),
@@ -516,7 +700,20 @@ export async function getUserSettings(uid: string): Promise<UserSettings | null>
 
 export async function saveUserSettings(
   uid: string,
-  partial: Partial<Pick<UserSettings, 'theme' | 'editorTheme' | 'editorFontSize' | 'tabSize' | 'autosave'>>,
+  partial: Partial<
+    Pick<
+      UserSettings,
+      | 'theme'
+      | 'editorTheme'
+      | 'editorFontSize'
+      | 'tabSize'
+      | 'autosave'
+      | 'startingView'
+      | 'aiStylePreference'
+      | 'defaultFocusMode'
+      | 'defaultFocusAudio'
+    >
+  >,
 ): Promise<void> {
   const path = `userSettings/${uid}`;
   const ref = doc(db, 'userSettings', uid);
@@ -536,6 +733,10 @@ export async function saveUserSettings(
         editorFontSize: 14,
         tabSize: 2,
         autosave: true,
+        startingView: 'dashboard',
+        aiStylePreference: 'balanced',
+        defaultFocusMode: false,
+        defaultFocusAudio: 'off',
         ...cleanPartial,
         updatedAt: serverTimestamp(),
       });
@@ -619,17 +820,11 @@ export async function awardVerifiedXp(
       body: JSON.stringify({ sourceType, sourceId: cleanSourceId }),
     });
     if (!res.ok) {
-      let errMsg = 'Failed to verify XP reward on backend.';
-      try {
-        const errPayload = (await res.json()) as { error?: string };
-        if (errPayload?.error) errMsg = errPayload.error;
-      } catch {
-        // Use fallback error message
-      }
-      throw new Error(errMsg);
+      const errPayload = await tryReadJson<{ error?: string }>(res);
+      throw new Error(errPayload?.error || `Failed to verify XP reward on backend (HTTP ${res.status}).`);
     }
-    const attested = (await res.json()) as { amount: number };
-    amount = Math.min(250, Math.max(5, Number(attested.amount) || 25));
+    const attested = await tryReadJson<{ amount?: number }>(res);
+    amount = Math.min(250, Math.max(5, Number(attested?.amount) || 25));
   } catch (err) {
     if (err instanceof TypeError || (err instanceof Error && /failed to fetch|network/i.test(err.message))) {
       throw new Error('Unable to reach the XP verification server. Please check your connection and try again.');
@@ -1965,8 +2160,8 @@ export async function saveAiConversation(
 ): Promise<void> {
   const convId = String(conv.id || `conv_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
   const ref = doc(db, 'aiConversations', convId);
-  const validModes = ['learn', 'debug', 'explain', 'practice', 'build', 'review'] as const;
-  const safeMode = validModes.includes(conv.mode) ? conv.mode : 'learn';
+  const validModes = ['general', 'learn', 'debug', 'explain', 'practice', 'build', 'review'] as const;
+  const safeMode = validModes.includes(conv.mode) ? conv.mode : 'general';
   const sanitizedMessages = (conv.messages || []).map((m) => {
     const msg: Record<string, unknown> = {
       id: m.id || `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -1981,6 +2176,26 @@ export async function saveAiConversation(
         language: typeof pc.language === 'string' && pc.language ? pc.language : 'javascript',
         code: typeof pc.code === 'string' ? pc.code : String(pc.code || ''),
       };
+    }
+    if (Array.isArray(m.proposedFiles) && m.proposedFiles.length > 0) {
+      msg.proposedFiles = m.proposedFiles.slice(0, 12).map((pf) => ({
+        filename: typeof pf.filename === 'string' && pf.filename ? pf.filename.slice(0, 120) : 'file.txt',
+        ...(typeof pf.folder === 'string' && pf.folder ? { folder: pf.folder.slice(0, 120) } : {}),
+        language: typeof pf.language === 'string' && pf.language ? pf.language.slice(0, 32) : 'javascript',
+        code: typeof pf.code === 'string' ? pf.code : String(pf.code || ''),
+      }));
+    }
+    if (Array.isArray(m.sources) && m.sources.length > 0) {
+      msg.sources = m.sources.slice(0, 10).map((s) => ({
+        title: String(s.title || s.uri || 'Source').slice(0, 140),
+        uri: String(s.uri || '').slice(0, 500),
+      }));
+    }
+    if (Array.isArray(m.actions) && m.actions.length > 0) {
+      msg.actions = m.actions.slice(0, 6);
+    }
+    if (Array.isArray(m.attachments) && m.attachments.length > 0) {
+      msg.attachments = m.attachments.slice(0, 6);
     }
     return msg;
   });

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ShieldCheck, X, Mail, KeyRound, Loader2, Sparkles } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
+import { getIdTokenHeader, tryReadJson } from '../services/authService';
 
 interface AdminAccessModalProps {
   isOpen: boolean;
@@ -9,7 +10,7 @@ interface AdminAccessModalProps {
 }
 
 export function AdminAccessModal({ isOpen, onClose, onAccessGranted }: AdminAccessModalProps) {
-  const { refreshUserData, notify } = useMideo();
+  const { refreshUserData, refreshAuthState, notify } = useMideo();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [verifying, setVerifying] = useState(false);
@@ -24,18 +25,19 @@ export function AdminAccessModal({ isOpen, onClose, onAccessGranted }: AdminAcce
     const cleanPass = password.trim();
 
     if (cleanEmail !== 'enochayomide2013@gmail.com' || cleanPass !== '2013') {
-      setError('Access denied. You must enter Owner Email (Enochayomide2013@gmail.com) and Owner Password (2013).');
+      setError('Access denied.');
       return;
     }
 
     setVerifying(true);
     try {
-      // Call server to verify credentials and elevate current session to admin
+      const authHeaders = await getIdTokenHeader();
       const res = await fetch('/api/admin/verify-credentials', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
-          'X-Requested-With': 'MideoCode',
+          ...authHeaders,
         },
         body: JSON.stringify({
           email: cleanEmail,
@@ -43,19 +45,17 @@ export function AdminAccessModal({ isOpen, onClose, onAccessGranted }: AdminAcce
         }),
       });
 
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const data = await tryReadJson<{ ok?: boolean; error?: string }>(res);
 
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Server rejected admin credentials.');
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || 'Access denied.');
       }
 
-      // Mark session-level unrestricted admin access in browser storage
       sessionStorage.setItem('mideocode_admin_password_unlocked', 'true');
       sessionStorage.setItem('mideocode_admin_email_unlocked', 'enochayomide2013@gmail.com');
       sessionStorage.setItem('mideocode_unrestricted_admin', 'true');
 
-      // Refresh user context so profile role updates to admin immediately
-      await refreshUserData().catch(() => {});
+      await Promise.all([refreshAuthState().catch(() => {}), refreshUserData().catch(() => {})]);
 
       notify('success', 'Owner credentials verified. Unrestricted administrator access unlocked.');
       setError(null);
@@ -63,7 +63,7 @@ export function AdminAccessModal({ isOpen, onClose, onAccessGranted }: AdminAcce
       setPassword('');
       onAccessGranted();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Admin verification failed.');
+      setError(err instanceof Error ? err.message : 'Access denied.');
     } finally {
       setVerifying(false);
     }
@@ -115,7 +115,7 @@ export function AdminAccessModal({ isOpen, onClose, onAccessGranted }: AdminAcce
                   setEmail(e.target.value);
                   if (error) setError(null);
                 }}
-                placeholder="Enter owner email (e.g. Enochayomide2013@gmail.com)"
+                placeholder="Enter owner email"
                 className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               />
             </div>
@@ -135,7 +135,7 @@ export function AdminAccessModal({ isOpen, onClose, onAccessGranted }: AdminAcce
                   setPassword(e.target.value);
                   if (error) setError(null);
                 }}
-                placeholder="Enter owner password (2013)"
+                placeholder="Enter owner password"
                 className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-mono tracking-wider text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               />
             </div>

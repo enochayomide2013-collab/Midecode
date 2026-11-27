@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
 import { CAREER_PATHWAYS, CHALLENGES } from '../data/challengesData';
-import { fetchWithAuthAndRetry } from '../services/authService';
+import { fetchWithAuthAndRetry, readJsonSafe, tryReadJson } from '../services/authService';
 import {
   evaluateMockInterview,
   requestInterviewFollowup,
@@ -122,16 +122,24 @@ export function MockInterviewSimulator({
           }),
         });
         if (execRes.ok) {
-          const execData = await execRes.json();
-          latestPassed = Number(execData.passedCount ?? 0);
-          latestTotal = Number(execData.totalCount ?? 0);
-          setTestResult({
-            passed: Boolean(execData.passed),
-            passedCount: latestPassed,
-            totalCount: latestTotal,
-            executionMs: Number(execData.executionMs ?? 0),
-            results: Array.isArray(execData.results) ? execData.results : [],
-          });
+          const execData = await tryReadJson<{
+            passedCount?: number;
+            totalCount?: number;
+            passed?: boolean;
+            executionMs?: number;
+            results?: ChallengeTestResult[];
+          }>(execRes);
+          if (execData) {
+            latestPassed = Number(execData.passedCount ?? 0);
+            latestTotal = Number(execData.totalCount ?? 0);
+            setTestResult({
+              passed: Boolean(execData.passed),
+              passedCount: latestPassed,
+              totalCount: latestTotal,
+              executionMs: Number(execData.executionMs ?? 0),
+              results: Array.isArray(execData.results) ? execData.results : [],
+            });
+          }
         }
       } catch {
         // Proceed with last known test metrics if final test request fails
@@ -249,10 +257,13 @@ export function MockInterviewSimulator({
           code,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Challenge execution failed.');
-      }
+      const data = await readJsonSafe<{
+        passed?: boolean;
+        passedCount?: number;
+        totalCount?: number;
+        executionMs?: number;
+        results?: ChallengeTestResult[];
+      }>(res, 'Challenge execution failed.');
       setTestResult({
         passed: Boolean(data.passed),
         passedCount: Number(data.passedCount ?? 0),

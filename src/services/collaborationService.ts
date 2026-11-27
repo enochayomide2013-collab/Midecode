@@ -14,7 +14,7 @@ import {
   writeBatch,
 } from './appDb';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
-import { fetchWithAuthAndRetry } from './authService';
+import { fetchWithAuthAndRetry, readJsonSafe } from './authService';
 import { sanitizeForFirestore } from './dataService';
 import type {
   Project,
@@ -103,17 +103,14 @@ export async function sendProjectInvitation(
       ttlDays: 7,
     }),
   });
-  const signed = (await signRes.json()) as {
+  const signed = await readJsonSafe<{
     inviteId: string;
     inviteeEmail: string;
     role: 'editor' | 'viewer';
     expiresAt: string;
     inviteSignature: string;
     error?: string;
-  };
-  if (!signRes.ok) {
-    throw new Error(signed.error || 'Unable to sign invitation.');
-  }
+  }>(signRes, 'Unable to sign invitation.');
 
   const ref = doc(db, 'projectInvitations', signed.inviteId);
   try {
@@ -205,8 +202,11 @@ export async function acceptProjectInvitation(
       inviteSignature: invite.inviteSignature,
     }),
   });
-  const verifyData = (await verifyRes.json()) as { valid?: boolean; reason?: string; error?: string };
-  if (!verifyRes.ok || !verifyData.valid) {
+  const verifyData = await readJsonSafe<{ valid?: boolean; reason?: string; error?: string }>(
+    verifyRes,
+    'Invitation validation failed.',
+  );
+  if (!verifyData.valid) {
     throw new Error(verifyData.reason || verifyData.error || 'Invitation validation failed.');
   }
 

@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CountryCode } from 'libphonenumber-js';
-import { doc, serverTimestamp, updateDoc } from '../services/appDb';
 import {
   Camera,
   CheckCircle2,
@@ -17,7 +16,6 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { useMideo } from '../context/MideoContext';
-import { db } from '../services/firebase';
 import {
   SUPPORTED_COUNTRIES,
   formatPhoneAsYouType,
@@ -28,6 +26,7 @@ import {
 import {
   processAndUploadAvatar,
   updateUserAvatar,
+  updateUserDisplayName,
   updateUserPhoneNumber,
 } from '../services/dataService';
 
@@ -50,6 +49,7 @@ export function ProfileView() {
   // Profile picture states
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarLoadError, setAvatarLoadError] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [avatarUrlInput, setAvatarUrlInput] = useState('');
 
@@ -61,6 +61,10 @@ export function ProfileView() {
   useEffect(() => {
     setDisplayName(profile?.displayName || '');
   }, [profile?.displayName]);
+
+  useEffect(() => {
+    setAvatarLoadError(false);
+  }, [profile?.photoURL]);
 
   useEffect(() => {
     setPhoneInput(profile?.phoneNumber || '');
@@ -85,15 +89,8 @@ export function ProfileView() {
     if (!clean) return;
     setSavingName(true);
     try {
-      await updateDoc(doc(db, 'users', firebaseUser.uid), {
-        displayName: clean,
-        updatedAt: serverTimestamp(),
-      });
-      await updateDoc(doc(db, 'publicProfiles', firebaseUser.uid), {
-        displayName: clean,
-        updatedAt: serverTimestamp(),
-      });
-      await refreshUserData();
+      await updateUserDisplayName(firebaseUser.uid, clean);
+      await Promise.all([refreshUserData(), refreshAuthState().catch(() => {})]);
       notify('success', 'Display name updated.');
     } catch (err) {
       notify('error', err instanceof Error ? err.message : 'Failed to update display name.');
@@ -109,7 +106,8 @@ export function ProfileView() {
     try {
       const uploadedUrl = await processAndUploadAvatar(file);
       await updateUserAvatar(firebaseUser.uid, uploadedUrl);
-      await refreshUserData();
+      setAvatarLoadError(false);
+      await Promise.all([refreshUserData(), refreshAuthState().catch(() => {})]);
       notify('success', 'Profile picture updated.');
     } catch (err) {
       notify('error', err instanceof Error ? err.message : 'Failed to update profile picture.');
@@ -134,7 +132,8 @@ export function ProfileView() {
     setUploadingAvatar(true);
     try {
       await updateUserAvatar(firebaseUser.uid, clean);
-      await refreshUserData();
+      setAvatarLoadError(false);
+      await Promise.all([refreshUserData(), refreshAuthState().catch(() => {})]);
       setAvatarUrlInput('');
       setShowUrlInput(false);
       notify('success', 'Profile picture updated.');
@@ -149,7 +148,8 @@ export function ProfileView() {
     setUploadingAvatar(true);
     try {
       await updateUserAvatar(firebaseUser.uid, null);
-      await refreshUserData();
+      setAvatarLoadError(false);
+      await Promise.all([refreshUserData(), refreshAuthState().catch(() => {})]);
       notify('info', 'Profile picture removed.');
     } catch (err) {
       notify('error', err instanceof Error ? err.message : 'Failed to remove profile picture.');
@@ -173,7 +173,7 @@ export function ProfileView() {
       setSavingPhone(true);
       try {
         await updateUserPhoneNumber(firebaseUser.uid, null);
-        await refreshUserData();
+        await Promise.all([refreshUserData(), refreshAuthState().catch(() => {})]);
         notify('info', 'Phone number removed from profile.');
       } catch (err) {
         notify('error', err instanceof Error ? err.message : 'Failed to update phone number.');
@@ -191,7 +191,7 @@ export function ProfileView() {
     try {
       const countryObj = getCountryByCode(normalized.detectedCountry);
       await updateUserPhoneNumber(firebaseUser.uid, normalized.e164, `${countryObj.name} (${countryObj.code})`);
-      await refreshUserData();
+      await Promise.all([refreshUserData(), refreshAuthState().catch(() => {})]);
       notify('success', 'Phone number updated in your profile.');
     } catch (err) {
       notify('error', err instanceof Error ? err.message : 'Failed to save phone number.');
@@ -216,11 +216,12 @@ export function ProfileView() {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div className="flex items-start sm:items-center gap-4">
             <div className="relative shrink-0">
-              {profile.photoURL ? (
+              {profile.photoURL && !avatarLoadError ? (
                 <img
                   src={profile.photoURL}
                   alt={profile.displayName}
                   referrerPolicy="no-referrer"
+                  onError={() => setAvatarLoadError(true)}
                   className="w-16 h-16 rounded-xl object-cover border border-slate-200 dark:border-slate-700"
                 />
               ) : (
@@ -245,7 +246,7 @@ export function ProfileView() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
+                accept="image/*"
                 onChange={handleAvatarFileChange}
                 className="hidden"
               />
@@ -500,6 +501,77 @@ export function ProfileView() {
               <UserCheck className="w-4 h-4 text-emerald-500" />
               {settings?.autosave ?? true ? 'Autosave Enabled' : 'Manual Save Only'}
             </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2 border-t border-slate-200 dark:border-slate-800">
+          <div className="p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2">
+            <div className="text-xs font-medium text-slate-500">Default Landing View</div>
+            <select
+              value={settings?.startingView || profile?.startingView || 'dashboard'}
+              onChange={(e) =>
+                updateEditorSettings({
+                  startingView: e.target.value as 'dashboard' | 'academy' | 'ide' | 'missions' | 'challenges',
+                })
+              }
+              className="w-full py-2 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#080C17] text-xs"
+            >
+              <option value="dashboard">Dashboard Overview</option>
+              <option value="academy">Academy &amp; Courses</option>
+              <option value="ide">Cloud IDE Workspace</option>
+              <option value="missions">Practical Missions</option>
+              <option value="challenges">Coding Challenges</option>
+            </select>
+          </div>
+
+          <div className="p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2">
+            <div className="text-xs font-medium text-slate-500">Mideo AI Response Style</div>
+            <select
+              value={settings?.aiStylePreference || profile?.aiStylePreference || 'balanced'}
+              onChange={(e) =>
+                updateEditorSettings({
+                  aiStylePreference: e.target.value as 'fast' | 'balanced' | 'deep',
+                })
+              }
+              className="w-full py-2 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#080C17] text-xs"
+            >
+              <option value="fast">Fast &amp; Concise</option>
+              <option value="balanced">Balanced (Smart + Quick)</option>
+              <option value="deep">Deep Step-by-Step Mentor</option>
+            </select>
+          </div>
+
+          <div className="p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2">
+            <div className="text-xs font-medium text-slate-500">IDE Focus Mode Default</div>
+            <button
+              type="button"
+              onClick={() =>
+                updateEditorSettings({
+                  defaultFocusMode: !(settings?.defaultFocusMode ?? profile?.defaultFocusMode ?? false),
+                })
+              }
+              className="w-full py-2 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium cursor-pointer"
+            >
+              {settings?.defaultFocusMode ?? profile?.defaultFocusMode ? 'Distraction-Free On' : 'Standard Layout'}
+            </button>
+          </div>
+
+          <div className="p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2">
+            <div className="text-xs font-medium text-slate-500">Default Focus Audio</div>
+            <select
+              value={settings?.defaultFocusAudio || profile?.defaultFocusAudio || 'off'}
+              onChange={(e) =>
+                updateEditorSettings({
+                  defaultFocusAudio: e.target.value as 'off' | 'lofi' | 'rain' | 'whitenoise',
+                })
+              }
+              className="w-full py-2 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#080C17] text-xs"
+            >
+              <option value="off">Off</option>
+              <option value="lofi">Lofi Chill</option>
+              <option value="rain">Cozy Rain</option>
+              <option value="whitenoise">White Noise</option>
+            </select>
           </div>
         </div>
       </section>

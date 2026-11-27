@@ -1,0 +1,889 @@
+{
+  "collections": {
+    "users": {
+      "usr_a3f8ba7ea79a268464483452": {
+        "uid": "usr_a3f8ba7ea79a268464483452",
+        "displayName": "Ayomide Jame",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript",
+          "HTML/CSS"
+        ],
+        "learningGoals": [
+          "Build real-world projects"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": false,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-23",
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795460363,
+          "nanoseconds": 675000000,
+          "ms": 1795460363675
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795460363,
+          "nanoseconds": 675000000,
+          "ms": 1795460363675
+        },
+        "email": "isiomajoy34@gmail.com",
+        "phoneNumber": "+23480328138855",
+        "country": "Nigeria (NG)"
+      },
+      "usr_3e7246d5bc7bff73ef2e3846": {
+        "uid": "usr_3e7246d5bc7bff73ef2e3846",
+        "displayName": "Smoke Tester",
+        "photoURL": "/api/profile/avatar/usr_3e7246d5bc7bff73ef2e3846_c414cd0e20.png",
+        "email": "smoke_1795462741367@example.com",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "javascript"
+        ],
+        "learningGoals": [
+          "Build web apps"
+        ],
+        "interests": [
+          "Web Apps"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "role": "member",
+        "createdAt": {
+          "__type": "serverTimestamp"
+        },
+        "updatedAt": {
+          "__type": "serverTimestamp"
+        }
+      },
+      "usr_a4f560334a64a08c169b43e7": {
+        "uid": "usr_a4f560334a64a08c169b43e7",
+        "displayName": "Smoke Tester",
+        "photoURL": "/api/profile/avatar/usr_a4f560334a64a08c169b43e7_c414cd0e20.png",
+        "email": "smoke_1795462766840@example.com",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "javascript"
+        ],
+        "learningGoals": [
+          "Build web apps"
+        ],
+        "interests": [
+          "Web Apps"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462767,
+          "nanoseconds": 71000000,
+          "ms": 1795462767071
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462767,
+          "nanoseconds": 71000000,
+          "ms": 1795462767071
+        }
+      },
+      "usr_665bdd5fb36fca06a8c766f7": {
+        "uid": "usr_665bdd5fb36fca06a8c766f7",
+        "displayName": "Smoke Tester",
+        "email": "smoke_1795462796886@example.com",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "javascript"
+        ],
+        "learningGoals": [
+          "Build web apps"
+        ],
+        "interests": [
+          "Web Apps"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462797,
+          "nanoseconds": 72000000,
+          "ms": 1795462797072
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462797,
+          "nanoseconds": 81000000,
+          "ms": 1795462797081
+        }
+      },
+      "usr_e3b4040c66c69d242d6a5228": {
+        "uid": "usr_e3b4040c66c69d242d6a5228",
+        "displayName": "Smoke Tester",
+        "email": "smoke_1795462821319@example.com",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "javascript"
+        ],
+        "learningGoals": [
+          "Build web apps"
+        ],
+        "interests": [
+          "Web Apps"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462821,
+          "nanoseconds": 485000000,
+          "ms": 1795462821485
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462821,
+          "nanoseconds": 493000000,
+          "ms": 1795462821493
+        }
+      },
+      "usr_a97502129399ce368ec53489": {
+        "uid": "usr_a97502129399ce368ec53489",
+        "displayName": "Smoke Tester",
+        "email": "smoke_1795462853753@example.com",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "javascript"
+        ],
+        "learningGoals": [
+          "Build web apps"
+        ],
+        "interests": [
+          "Web Apps"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "role": "admin",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462853,
+          "nanoseconds": 981000000,
+          "ms": 1795462853981
+        },
+        "updatedAt": 1795462854052
+      },
+      "usr_3c30cd2eee3d8957f703a08c": {
+        "uid": "usr_3c30cd2eee3d8957f703a08c",
+        "displayName": "Smoke Tester",
+        "email": "smoke_1795462874224@example.com",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "javascript"
+        ],
+        "learningGoals": [
+          "Build web apps"
+        ],
+        "interests": [
+          "Web Apps"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "role": "admin",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462874,
+          "nanoseconds": 418000000,
+          "ms": 1795462874418
+        },
+        "updatedAt": 1795462874490
+      },
+      "usr_3f7b72a2267e570131323f06": {
+        "uid": "usr_3f7b72a2267e570131323f06",
+        "displayName": "UI Tester",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript",
+          "HTML/CSS"
+        ],
+        "learningGoals": [
+          "Build real-world projects"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": false,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-23",
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462956,
+          "nanoseconds": 517000000,
+          "ms": 1795462956517
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462956,
+          "nanoseconds": 517000000,
+          "ms": 1795462956517
+        },
+        "email": "ui_1795462956195@example.com"
+      },
+      "usr_70803062a641c069b321e0fc": {
+        "uid": "usr_70803062a641c069b321e0fc",
+        "displayName": "UI Tester",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript",
+          "HTML/CSS"
+        ],
+        "learningGoals": [
+          "Build real-world projects"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-23",
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795463017,
+          "nanoseconds": 979000000,
+          "ms": 1795463017979
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795463026,
+          "nanoseconds": 14000000,
+          "ms": 1795463026014
+        },
+        "email": "ui_1795463017639@example.com",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "web",
+        "photoURL": "/api/profile/avatar/usr_70803062a641c069b321e0fc_469d28909c.jpg"
+      }
+    },
+    "publicProfiles": {
+      "usr_a3f8ba7ea79a268464483452": {
+        "uid": "usr_a3f8ba7ea79a268464483452",
+        "displayName": "Ayomide Jame",
+        "level": 1,
+        "xp": 0,
+        "streak": 1,
+        "badgesCount": 0,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795460373,
+          "nanoseconds": 257000000,
+          "ms": 1795460373257
+        }
+      },
+      "usr_3f7b72a2267e570131323f06": {
+        "uid": "usr_3f7b72a2267e570131323f06",
+        "displayName": "UI Tester",
+        "level": 1,
+        "xp": 0,
+        "streak": 1,
+        "badgesCount": 0,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462956,
+          "nanoseconds": 535000000,
+          "ms": 1795462956535
+        }
+      },
+      "usr_70803062a641c069b321e0fc": {
+        "uid": "usr_70803062a641c069b321e0fc",
+        "displayName": "UI Tester",
+        "level": 1,
+        "xp": 0,
+        "streak": 1,
+        "badgesCount": 0,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795463026,
+          "nanoseconds": 20000000,
+          "ms": 1795463026020
+        },
+        "photoURL": "/api/profile/avatar/usr_70803062a641c069b321e0fc_469d28909c.jpg"
+      }
+    },
+    "playgrounds": {
+      "pg_smoke_usr_665bdd5fb36fca06a8c766f7": {
+        "id": "pg_smoke_usr_665bdd5fb36fca06a8c766f7",
+        "ownerId": "usr_665bdd5fb36fca06a8c766f7",
+        "ownerName": "Smoke Tester",
+        "title": "Smoke PG",
+        "templateId": "blank",
+        "html": "<h1>Hi</h1>",
+        "css": "",
+        "js": "",
+        "visibility": "private",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462797,
+          "nanoseconds": 89000000,
+          "ms": 1795462797089
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462797,
+          "nanoseconds": 89000000,
+          "ms": 1795462797089
+        }
+      },
+      "pg_smoke_usr_e3b4040c66c69d242d6a5228": {
+        "id": "pg_smoke_usr_e3b4040c66c69d242d6a5228",
+        "ownerId": "usr_e3b4040c66c69d242d6a5228",
+        "ownerName": "Smoke Tester",
+        "title": "Smoke PG",
+        "templateId": "blank",
+        "html": "<h1>Hi</h1>",
+        "css": "",
+        "js": "",
+        "visibility": "private",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462821,
+          "nanoseconds": 500000000,
+          "ms": 1795462821500
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462821,
+          "nanoseconds": 500000000,
+          "ms": 1795462821500
+        }
+      },
+      "pg_smoke_usr_a97502129399ce368ec53489": {
+        "id": "pg_smoke_usr_a97502129399ce368ec53489",
+        "ownerId": "usr_a97502129399ce368ec53489",
+        "ownerName": "Smoke Tester",
+        "title": "Smoke PG",
+        "templateId": "blank",
+        "html": "<h1>Hi</h1>",
+        "css": "",
+        "js": "",
+        "visibility": "private",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462854,
+          "nanoseconds": 0,
+          "ms": 1795462854000
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462854,
+          "nanoseconds": 0,
+          "ms": 1795462854000
+        }
+      },
+      "pg_smoke_usr_3c30cd2eee3d8957f703a08c": {
+        "id": "pg_smoke_usr_3c30cd2eee3d8957f703a08c",
+        "ownerId": "usr_3c30cd2eee3d8957f703a08c",
+        "ownerName": "Smoke Tester",
+        "title": "Smoke PG",
+        "templateId": "blank",
+        "html": "<h1>Hi</h1>",
+        "css": "",
+        "js": "",
+        "visibility": "private",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462874,
+          "nanoseconds": 432000000,
+          "ms": 1795462874432
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462874,
+          "nanoseconds": 432000000,
+          "ms": 1795462874432
+        }
+      }
+    },
+    "architectures": {
+      "arch_smoke_usr_665bdd5fb36fca06a8c766f7": {
+        "id": "arch_smoke_usr_665bdd5fb36fca06a8c766f7",
+        "userId": "usr_665bdd5fb36fca06a8c766f7",
+        "title": "Smoke Arch",
+        "prompt": "test",
+        "overview": "test",
+        "frontendSpec": {},
+        "backendSpec": {},
+        "authSpec": {},
+        "techStack": [],
+        "modules": [],
+        "databaseTables": [],
+        "apiEndpoints": [],
+        "diagrams": [],
+        "versionNumber": 1,
+        "status": "draft",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462797,
+          "nanoseconds": 93000000,
+          "ms": 1795462797093
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462797,
+          "nanoseconds": 93000000,
+          "ms": 1795462797093
+        }
+      },
+      "arch_smoke_usr_e3b4040c66c69d242d6a5228": {
+        "id": "arch_smoke_usr_e3b4040c66c69d242d6a5228",
+        "userId": "usr_e3b4040c66c69d242d6a5228",
+        "title": "Smoke Arch",
+        "prompt": "test",
+        "overview": "test",
+        "frontendSpec": {},
+        "backendSpec": {},
+        "authSpec": {},
+        "techStack": [],
+        "modules": [],
+        "databaseTables": [],
+        "apiEndpoints": [],
+        "diagrams": [],
+        "versionNumber": 1,
+        "status": "draft",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462821,
+          "nanoseconds": 504000000,
+          "ms": 1795462821504
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462821,
+          "nanoseconds": 504000000,
+          "ms": 1795462821504
+        }
+      },
+      "arch_smoke_usr_a97502129399ce368ec53489": {
+        "id": "arch_smoke_usr_a97502129399ce368ec53489",
+        "userId": "usr_a97502129399ce368ec53489",
+        "title": "Smoke Arch",
+        "prompt": "test",
+        "overview": "test",
+        "frontendSpec": {},
+        "backendSpec": {},
+        "authSpec": {},
+        "techStack": [],
+        "modules": [],
+        "databaseTables": [],
+        "apiEndpoints": [],
+        "diagrams": [],
+        "versionNumber": 1,
+        "status": "draft",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462854,
+          "nanoseconds": 4000000,
+          "ms": 1795462854004
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462854,
+          "nanoseconds": 4000000,
+          "ms": 1795462854004
+        }
+      },
+      "arch_smoke_usr_3c30cd2eee3d8957f703a08c": {
+        "id": "arch_smoke_usr_3c30cd2eee3d8957f703a08c",
+        "userId": "usr_3c30cd2eee3d8957f703a08c",
+        "title": "Smoke Arch",
+        "prompt": "test",
+        "overview": "test",
+        "frontendSpec": {},
+        "backendSpec": {},
+        "authSpec": {},
+        "techStack": [],
+        "modules": [],
+        "databaseTables": [],
+        "apiEndpoints": [],
+        "diagrams": [],
+        "versionNumber": 1,
+        "status": "draft",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462874,
+          "nanoseconds": 437000000,
+          "ms": 1795462874437
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462874,
+          "nanoseconds": 437000000,
+          "ms": 1795462874437
+        }
+      }
+    },
+    "userProgress/usr_665bdd5fb36fca06a8c766f7/courses": {
+      "js-fundamentals": {
+        "userId": "usr_665bdd5fb36fca06a8c766f7",
+        "courseId": "js-fundamentals",
+        "completedLessonIds": [
+          "l1"
+        ],
+        "completedExerciseIds": [],
+        "quizScores": {},
+        "progressPercent": 10,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462797,
+          "nanoseconds": 97000000,
+          "ms": 1795462797097
+        }
+      }
+    },
+    "xpTransactions": {
+      "tx_smoke_usr_665bdd5fb36fca06a8c766f7": {
+        "id": "tx_smoke_usr_665bdd5fb36fca06a8c766f7",
+        "userId": "usr_665bdd5fb36fca06a8c766f7",
+        "sourceType": "lesson",
+        "sourceId": "l1",
+        "amount": 35,
+        "reason": "Lesson completed",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462797,
+          "nanoseconds": 107000000,
+          "ms": 1795462797107
+        }
+      },
+      "tx_smoke_usr_e3b4040c66c69d242d6a5228": {
+        "id": "tx_smoke_usr_e3b4040c66c69d242d6a5228",
+        "userId": "usr_e3b4040c66c69d242d6a5228",
+        "sourceType": "lesson",
+        "sourceId": "l1",
+        "amount": 35,
+        "reason": "Lesson completed",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462821,
+          "nanoseconds": 516000000,
+          "ms": 1795462821516
+        }
+      },
+      "tx_smoke_usr_a97502129399ce368ec53489": {
+        "id": "tx_smoke_usr_a97502129399ce368ec53489",
+        "userId": "usr_a97502129399ce368ec53489",
+        "sourceType": "lesson",
+        "sourceId": "l1",
+        "amount": 35,
+        "reason": "Lesson completed",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462854,
+          "nanoseconds": 17000000,
+          "ms": 1795462854017
+        }
+      },
+      "tx_smoke_usr_3c30cd2eee3d8957f703a08c": {
+        "id": "tx_smoke_usr_3c30cd2eee3d8957f703a08c",
+        "userId": "usr_3c30cd2eee3d8957f703a08c",
+        "sourceType": "lesson",
+        "sourceId": "l1",
+        "amount": 35,
+        "reason": "Lesson completed",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462874,
+          "nanoseconds": 452000000,
+          "ms": 1795462874452
+        }
+      }
+    },
+    "userProgress/usr_e3b4040c66c69d242d6a5228/courses": {
+      "js-fundamentals": {
+        "userId": "usr_e3b4040c66c69d242d6a5228",
+        "courseId": "js-fundamentals",
+        "completedLessonIds": [
+          "l1"
+        ],
+        "completedExerciseIds": [],
+        "quizScores": {},
+        "progressPercent": 10,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462821,
+          "nanoseconds": 508000000,
+          "ms": 1795462821508
+        }
+      }
+    },
+    "userProgress/usr_a97502129399ce368ec53489/courses": {
+      "js-fundamentals": {
+        "userId": "usr_a97502129399ce368ec53489",
+        "courseId": "js-fundamentals",
+        "completedLessonIds": [
+          "l1"
+        ],
+        "completedExerciseIds": [],
+        "quizScores": {},
+        "progressPercent": 10,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462854,
+          "nanoseconds": 9000000,
+          "ms": 1795462854009
+        }
+      }
+    },
+    "userProgress/usr_3c30cd2eee3d8957f703a08c/courses": {
+      "js-fundamentals": {
+        "userId": "usr_3c30cd2eee3d8957f703a08c",
+        "courseId": "js-fundamentals",
+        "completedLessonIds": [
+          "l1"
+        ],
+        "completedExerciseIds": [],
+        "quizScores": {},
+        "progressPercent": 10,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462874,
+          "nanoseconds": 441000000,
+          "ms": 1795462874441
+        }
+      }
+    },
+    "userSettings": {
+      "usr_3f7b72a2267e570131323f06": {
+        "userId": "usr_3f7b72a2267e570131323f06",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795462956,
+          "nanoseconds": 543000000,
+          "ms": 1795462956543
+        }
+      },
+      "usr_70803062a641c069b321e0fc": {
+        "userId": "usr_70803062a641c069b321e0fc",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795463021,
+          "nanoseconds": 257000000,
+          "ms": 1795463021257
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
+      }
+    },
+    "notifications": {
+      "welcome_usr_3f7b72a2267e5701": {
+        "id": "welcome_usr_3f7b72a2267e5701",
+        "userId": "usr_3f7b72a2267e570131323f06",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795462956,
+          "nanoseconds": 550000000,
+          "ms": 1795462956550
+        }
+      },
+      "welcome_usr_70803062a641c069": {
+        "id": "welcome_usr_70803062a641c069",
+        "userId": "usr_70803062a641c069b321e0fc",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795463018,
+          "nanoseconds": 3000000,
+          "ms": 1795463018003
+        }
+      }
+    },
+    "projects": {
+      "proj_1795463021267_6gd03": {
+        "id": "proj_1795463021267_6gd03",
+        "ownerId": "usr_70803062a641c069b321e0fc",
+        "ownerName": "UI Tester",
+        "title": "Web App Starter",
+        "description": "Personalized starter workspace (HTML/CSS/JS)",
+        "language": "web",
+        "visibility": "private",
+        "isPortfolio": false,
+        "milestonesCompleted": [],
+        "status": "active",
+        "version": 1,
+        "storageBytes": 1090,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795463021,
+          "nanoseconds": 269000000,
+          "ms": 1795463021269
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795463021,
+          "nanoseconds": 269000000,
+          "ms": 1795463021269
+        }
+      }
+    },
+    "projects/proj_1795463021267_6gd03/files": {
+      "file_1795463021271_0_x13d": {
+        "id": "file_1795463021271_0_x13d",
+        "projectId": "proj_1795463021267_6gd03",
+        "ownerId": "usr_70803062a641c069b321e0fc",
+        "name": "index.html",
+        "folder": "",
+        "language": "html",
+        "visibility": "private",
+        "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795463021,
+          "nanoseconds": 272000000,
+          "ms": 1795463021272
+        }
+      },
+      "file_1795463021274_1_0pwr": {
+        "id": "file_1795463021274_1_0pwr",
+        "projectId": "proj_1795463021267_6gd03",
+        "ownerId": "usr_70803062a641c069b321e0fc",
+        "name": "styles.css",
+        "folder": "",
+        "language": "css",
+        "visibility": "private",
+        "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795463021,
+          "nanoseconds": 276000000,
+          "ms": 1795463021276
+        }
+      },
+      "file_1795463021278_2_gsz3": {
+        "id": "file_1795463021278_2_gsz3",
+        "projectId": "proj_1795463021267_6gd03",
+        "ownerId": "usr_70803062a641c069b321e0fc",
+        "name": "app.js",
+        "folder": "",
+        "language": "javascript",
+        "visibility": "private",
+        "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795463021,
+          "nanoseconds": 280000000,
+          "ms": 1795463021280
+        }
+      }
+    },
+    "projects/proj_1795463021267_6gd03/versions": {
+      "v1_1795463021282": {
+        "id": "v1_1795463021282",
+        "projectId": "proj_1795463021267_6gd03",
+        "ownerId": "usr_70803062a641c069b321e0fc",
+        "versionNumber": 1,
+        "label": "Initial workspace snapshot",
+        "authorId": "usr_70803062a641c069b321e0fc",
+        "authorName": "UI Tester",
+        "changeType": "manual",
+        "changedFiles": [
+          "index.html",
+          "styles.css",
+          "app.js"
+        ],
+        "filesCount": 3,
+        "snapshot": [
+          {
+            "name": "index.html",
+            "folder": "",
+            "language": "html",
+            "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>"
+          },
+          {
+            "name": "styles.css",
+            "folder": "",
+            "language": "css",
+            "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}"
+          },
+          {
+            "name": "app.js",
+            "folder": "",
+            "language": "javascript",
+            "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});"
+          }
+        ],
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795463021,
+          "nanoseconds": 285000000,
+          "ms": 1795463021285
+        }
+      }
+    },
+    "activityEvents": {
+      "act_1795463021287_6nvu": {
+        "id": "act_1795463021287_6nvu",
+        "userId": "usr_70803062a641c069b321e0fc",
+        "category": "project",
+        "action": "Created project \"Web App Starter\"",
+        "language": "web",
+        "aiAssisted": false,
+        "projectId": "proj_1795463021267_6gd03",
+        "dayKey": "2026-11-23",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795463021,
+          "nanoseconds": 288000000,
+          "ms": 1795463021288
+        }
+      }
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Volume2, VolumeX, Music, CloudRain, Radio, Play, Square } from 'lucide-react';
+import { Volume2, VolumeX, Music, CloudRain, Radio } from 'lucide-react';
 import { focusSound } from '../utils/focusSound';
 
 export function FocusSoundWidget() {

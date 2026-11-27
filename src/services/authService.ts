@@ -237,10 +237,16 @@ export async function bootstrapAuthSession(): Promise<AppUser | null> {
         }
         return setSessionState(null, null);
       }
-      const data = (await res.json()) as {
-        user: ServerAuthUserPayload | null;
-        token: string | null;
-      };
+      const data = await tryReadJson<{
+        user?: ServerAuthUserPayload | null;
+        token?: string | null;
+      }>(res);
+      if (!data) {
+        if (localSession) {
+          return setSessionState(localSession.user, localSession.token);
+        }
+        return setSessionState(null, null);
+      }
       if (data.user && data.token) {
         return setSessionState(data.user, data.token);
       }
@@ -700,6 +706,30 @@ export async function fetchWithAuthAndRetry(
   }
 
   throw lastError instanceof Error ? lastError : new Error('Network request failed.');
+}
+
+export async function tryReadJson<T = unknown>(res: Response): Promise<T | null> {
+  try {
+    const raw = await res.text();
+    if (!raw || !raw.trim()) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+export async function readJsonSafe<T = unknown>(
+  res: Response,
+  fallbackError = 'Request failed.',
+): Promise<T> {
+  const data = await tryReadJson<T & { error?: string }>(res);
+  if (!res.ok) {
+    throw new Error(data?.error || `${fallbackError} (HTTP ${res.status})`);
+  }
+  if (data === null) {
+    throw new Error(fallbackError);
+  }
+  return data;
 }
 
 export async function resendVerificationEmailReal(_user: AppUser): Promise<void> {

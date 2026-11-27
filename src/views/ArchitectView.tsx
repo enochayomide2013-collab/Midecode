@@ -1434,21 +1434,25 @@ export function ArchitectView() {
               <button
                 type="button"
                 onClick={async () => {
-                  const snap = confirmRestoreVersion.snapshot;
-                  const saved = await saveArchitecturePlan(
-                    firebaseUser.uid,
-                    {
-                      ...snap,
-                      id: activePlan.id,
-                      projectId: activePlan.projectId,
-                      versionNumber: activePlan.versionNumber + 1,
-                    },
-                    `Restored from architecture v${confirmRestoreVersion.versionNumber}`,
-                  );
-                  setActivePlan(saved);
-                  setPlans((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
-                  setConfirmRestoreVersion(null);
-                  notify('success', `Restored v${confirmRestoreVersion.versionNumber} as v${saved.versionNumber}.`);
+                  try {
+                    const snap = confirmRestoreVersion.snapshot;
+                    const saved = await saveArchitecturePlan(
+                      firebaseUser.uid,
+                      {
+                        ...snap,
+                        id: activePlan.id,
+                        projectId: activePlan.projectId,
+                        versionNumber: activePlan.versionNumber + 1,
+                      },
+                      `Restored from architecture v${confirmRestoreVersion.versionNumber}`,
+                    );
+                    setActivePlan(saved);
+                    setPlans((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
+                    setConfirmRestoreVersion(null);
+                    notify('success', `Restored v${confirmRestoreVersion.versionNumber} as v${saved.versionNumber}.`);
+                  } catch (err) {
+                    notify('error', err instanceof Error ? err.message : 'Failed to restore architecture version.');
+                  }
                 }}
                 className="px-3.5 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold cursor-pointer"
               >
@@ -1479,14 +1483,18 @@ export function ArchitectView() {
               <button
                 type="button"
                 onClick={async () => {
-                  await deleteArchitecturePlan(confirmDeletePlan.id);
-                  const remaining = plans.filter((p) => p.id !== confirmDeletePlan.id);
-                  setPlans(remaining);
-                  if (activePlan?.id === confirmDeletePlan.id) {
-                    setActivePlan(remaining[0] || null);
+                  try {
+                    await deleteArchitecturePlan(confirmDeletePlan.id);
+                    const remaining = plans.filter((p) => p.id !== confirmDeletePlan.id);
+                    setPlans(remaining);
+                    if (activePlan?.id === confirmDeletePlan.id) {
+                      setActivePlan(remaining[0] || null);
+                    }
+                    setConfirmDeletePlan(null);
+                    notify('info', 'Architecture deleted.');
+                  } catch (err) {
+                    notify('error', err instanceof Error ? err.message : 'Failed to delete architecture.');
                   }
-                  setConfirmDeletePlan(null);
-                  notify('info', 'Architecture deleted.');
                 }}
                 className="px-3.5 py-2 rounded-lg bg-red-600 text-white text-xs font-semibold cursor-pointer"
               >
