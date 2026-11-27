@@ -97,6 +97,7 @@ export function AdminView() {
   const [videoUploadPct, setVideoUploadPct] = useState<number | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [sendingAnnouncement, setSendingAnnouncement] = useState(false);
+  const [brokenAvatarUids, setBrokenAvatarUids] = useState<Record<string, true>>({});
 
   const isAuthorizedAdmin = Boolean(
     (firebaseUser &&
@@ -1171,10 +1172,12 @@ export function AdminView() {
                           }}
                           className="group inline-flex items-center gap-2.5 text-left font-medium text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer"
                         >
-                          {u.photoURL ? (
+                          {u.photoURL && !brokenAvatarUids[u.uid] ? (
                             <img
                               src={u.photoURL}
                               alt={u.displayName}
+                              referrerPolicy="no-referrer"
+                              onError={() => setBrokenAvatarUids((prev) => ({ ...prev, [u.uid]: true }))}
                               className="w-6 h-6 rounded-md object-cover border border-slate-200 dark:border-slate-700 shrink-0"
                             />
                           ) : (
@@ -1245,10 +1248,14 @@ export function AdminView() {
               {/* Modal Header */}
               <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-start justify-between gap-4">
                 <div className="flex items-center gap-4 min-w-0">
-                  {selectedUser.photoURL ? (
+                  {selectedUser.photoURL && !brokenAvatarUids[selectedUser.uid] ? (
                     <img
                       src={selectedUser.photoURL}
                       alt={selectedUser.displayName}
+                      referrerPolicy="no-referrer"
+                      onError={() =>
+                        setBrokenAvatarUids((prev) => ({ ...prev, [selectedUser.uid]: true }))
+                      }
                       className="w-14 h-14 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
                     />
                   ) : (

@@ -15,6 +15,7 @@ export function MissionLeaderboard({ missionId }: MissionLeaderboardProps) {
   const [entries, setEntries] = useState<MissionLeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [brokenAvatarIds, setBrokenAvatarIds] = useState<Record<string, true>>({});
 
   // Backfill the signed-in learner's existing completed attempt if not yet on leaderboard
   useEffect(() => {
@@ -161,10 +162,14 @@ export function MissionLeaderboard({ missionId }: MissionLeaderboardProps) {
                 >
                   #{idx + 1}
                 </span>
-                {entry.photoURL ? (
+                {entry.photoURL && !brokenAvatarIds[entry.id] ? (
                   <img
                     src={entry.photoURL}
                     alt={entry.displayName}
+                    referrerPolicy="no-referrer"
+                    onError={() =>
+                      setBrokenAvatarIds((prev) => ({ ...prev, [entry.id]: true }))
+                    }
                     className="w-7 h-7 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
                   />
                 ) : (

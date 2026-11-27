@@ -292,6 +292,407 @@
         "defaultFocusAudio": "off",
         "starterTemplateId": "web",
         "photoURL": "/api/profile/avatar/usr_70803062a641c069b321e0fc_469d28909c.jpg"
+      },
+      "usr_e9759fba467ec9fb087087dc": {
+        "uid": "usr_e9759fba467ec9fb087087dc",
+        "displayName": "All Features User",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript",
+          "HTML/CSS"
+        ],
+        "learningGoals": [
+          "Build real-world projects"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771286,
+          "nanoseconds": 5000000,
+          "ms": 1795771286005
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771289,
+          "nanoseconds": 269000000,
+          "ms": 1795771289269
+        },
+        "email": "all_1795771285392@example.com",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "web",
+        "photoURL": "/api/profile/avatar/usr_e9759fba467ec9fb087087dc_469d28909c.jpg"
+      },
+      "usr_a9c92d347a7ebe2beb7b0502": {
+        "uid": "usr_a9c92d347a7ebe2beb7b0502",
+        "displayName": "All Features User",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript",
+          "HTML/CSS"
+        ],
+        "learningGoals": [
+          "Build real-world projects"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771315,
+          "nanoseconds": 119000000,
+          "ms": 1795771315119
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771318,
+          "nanoseconds": 380000000,
+          "ms": 1795771318380
+        },
+        "email": "all_1795771314573@example.com",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "web",
+        "photoURL": "/api/profile/avatar/usr_a9c92d347a7ebe2beb7b0502_469d28909c.jpg"
+      },
+      "usr_efa8f5c4b43f19f10d8785bd": {
+        "uid": "usr_efa8f5c4b43f19f10d8785bd",
+        "displayName": "All Features User",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript",
+          "HTML/CSS"
+        ],
+        "learningGoals": [
+          "Build real-world projects"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771351,
+          "nanoseconds": 255000000,
+          "ms": 1795771351255
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771370,
+          "nanoseconds": 956000000,
+          "ms": 1795771370956
+        },
+        "email": "all_1795771350718@example.com",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "web",
+        "photoURL": "/api/profile/avatar/usr_efa8f5c4b43f19f10d8785bd_469d28909c.jpg"
+      },
+      "usr_f1e07d4596a89f6ad6e039db": {
+        "uid": "usr_f1e07d4596a89f6ad6e039db",
+        "displayName": "All Features User",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript",
+          "HTML/CSS"
+        ],
+        "learningGoals": [
+          "Build real-world projects"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "admin",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771443,
+          "nanoseconds": 495000000,
+          "ms": 1795771443495
+        },
+        "updatedAt": 1795771465869,
+        "email": "all_1795771442971@example.com",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "web",
+        "photoURL": "/api/profile/avatar/usr_f1e07d4596a89f6ad6e039db_469d28909c.jpg"
+      },
+      "usr_5937ff47422a3a2c92a6ab93": {
+        "uid": "usr_5937ff47422a3a2c92a6ab93",
+        "displayName": "All Features User",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript",
+          "HTML/CSS"
+        ],
+        "learningGoals": [
+          "Build real-world projects"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "admin",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771549,
+          "nanoseconds": 416000000,
+          "ms": 1795771549416
+        },
+        "updatedAt": 1795771571425,
+        "email": "all_1795771549011@example.com",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "web",
+        "photoURL": "/api/profile/avatar/usr_5937ff47422a3a2c92a6ab93_469d28909c.jpg"
+      },
+      "usr_c4e161db3c56cd1c048f05b4": {
+        "uid": "usr_c4e161db3c56cd1c048f05b4",
+        "displayName": "Probe",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript"
+        ],
+        "learningGoals": [
+          "Learn programming fundamentals"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771604,
+          "nanoseconds": 985000000,
+          "ms": 1795771604985
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771606,
+          "nanoseconds": 475000000,
+          "ms": 1795771606475
+        },
+        "email": "p_1795771604588@example.com",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "none"
+      },
+      "usr_5254e0a0c1ea949a28bd6bf8": {
+        "uid": "usr_5254e0a0c1ea949a28bd6bf8",
+        "displayName": "Probe2",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript"
+        ],
+        "learningGoals": [
+          "Learn programming fundamentals"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "admin",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771630,
+          "nanoseconds": 906000000,
+          "ms": 1795771630906
+        },
+        "updatedAt": 1795771634426,
+        "email": "p2_1795771630454@example.com",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "none"
+      },
+      "usr_0acdc67df1c7928c0f34ffe5": {
+        "uid": "usr_0acdc67df1c7928c0f34ffe5",
+        "displayName": "E2E Tester",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript",
+          "HTML/CSS"
+        ],
+        "learningGoals": [
+          "Build real-world projects"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": false,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771731,
+          "nanoseconds": 828000000,
+          "ms": 1795771731828
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771731,
+          "nanoseconds": 828000000,
+          "ms": 1795771731828
+        },
+        "email": "e2e_1795771727905@test.local"
+      },
+      "usr_efbdd983268a47fdfa66b961": {
+        "uid": "usr_efbdd983268a47fdfa66b961",
+        "displayName": "E2E Tester",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript",
+          "HTML/CSS"
+        ],
+        "learningGoals": [
+          "Build real-world projects"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "admin",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771786,
+          "nanoseconds": 741000000,
+          "ms": 1795771786741
+        },
+        "updatedAt": 1795771800894,
+        "email": "e2e_1795771783556@test.local",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "web",
+        "photoURL": "/api/profile/avatar/usr_efbdd983268a47fdfa66b961_56c38c46b1.jpg"
+      },
+      "usr_c2844c118a5742b3cba7c766": {
+        "uid": "usr_c2844c118a5742b3cba7c766",
+        "displayName": "E2E Tester",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript",
+          "HTML/CSS"
+        ],
+        "learningGoals": [
+          "Build real-world projects"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 0,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "admin",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771886,
+          "nanoseconds": 950000000,
+          "ms": 1795771886950
+        },
+        "updatedAt": 1795771908575,
+        "email": "e2e_1795771882764@test.local",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "web",
+        "photoURL": "/api/profile/avatar/usr_c2844c118a5742b3cba7c766_56c38c46b1.jpg"
       }
     },
     "publicProfiles": {
@@ -337,6 +738,153 @@
           "ms": 1795463026020
         },
         "photoURL": "/api/profile/avatar/usr_70803062a641c069b321e0fc_469d28909c.jpg"
+      },
+      "usr_e9759fba467ec9fb087087dc": {
+        "uid": "usr_e9759fba467ec9fb087087dc",
+        "displayName": "All Features User",
+        "level": 1,
+        "xp": 0,
+        "streak": 1,
+        "badgesCount": 0,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771289,
+          "nanoseconds": 281000000,
+          "ms": 1795771289281
+        },
+        "photoURL": "/api/profile/avatar/usr_e9759fba467ec9fb087087dc_469d28909c.jpg"
+      },
+      "usr_a9c92d347a7ebe2beb7b0502": {
+        "uid": "usr_a9c92d347a7ebe2beb7b0502",
+        "displayName": "All Features User",
+        "level": 1,
+        "xp": 0,
+        "streak": 1,
+        "badgesCount": 0,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771318,
+          "nanoseconds": 393000000,
+          "ms": 1795771318393
+        },
+        "photoURL": "/api/profile/avatar/usr_a9c92d347a7ebe2beb7b0502_469d28909c.jpg"
+      },
+      "usr_efa8f5c4b43f19f10d8785bd": {
+        "uid": "usr_efa8f5c4b43f19f10d8785bd",
+        "displayName": "All Features User",
+        "level": 1,
+        "xp": 0,
+        "streak": 1,
+        "badgesCount": 0,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771370,
+          "nanoseconds": 965000000,
+          "ms": 1795771370965
+        },
+        "photoURL": "/api/profile/avatar/usr_efa8f5c4b43f19f10d8785bd_469d28909c.jpg"
+      },
+      "usr_f1e07d4596a89f6ad6e039db": {
+        "uid": "usr_f1e07d4596a89f6ad6e039db",
+        "displayName": "All Features User",
+        "level": 1,
+        "xp": 0,
+        "streak": 1,
+        "badgesCount": 0,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771463,
+          "nanoseconds": 329000000,
+          "ms": 1795771463329
+        },
+        "photoURL": "/api/profile/avatar/usr_f1e07d4596a89f6ad6e039db_469d28909c.jpg"
+      },
+      "usr_5937ff47422a3a2c92a6ab93": {
+        "uid": "usr_5937ff47422a3a2c92a6ab93",
+        "displayName": "All Features User",
+        "level": 1,
+        "xp": 0,
+        "streak": 1,
+        "badgesCount": 0,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771568,
+          "nanoseconds": 815000000,
+          "ms": 1795771568815
+        },
+        "photoURL": "/api/profile/avatar/usr_5937ff47422a3a2c92a6ab93_469d28909c.jpg"
+      },
+      "usr_c4e161db3c56cd1c048f05b4": {
+        "uid": "usr_c4e161db3c56cd1c048f05b4",
+        "displayName": "Probe",
+        "level": 1,
+        "xp": 0,
+        "streak": 1,
+        "badgesCount": 0,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771606,
+          "nanoseconds": 485000000,
+          "ms": 1795771606485
+        }
+      },
+      "usr_5254e0a0c1ea949a28bd6bf8": {
+        "uid": "usr_5254e0a0c1ea949a28bd6bf8",
+        "displayName": "Probe2",
+        "level": 1,
+        "xp": 0,
+        "streak": 1,
+        "badgesCount": 0,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771632,
+          "nanoseconds": 380000000,
+          "ms": 1795771632380
+        }
+      },
+      "usr_0acdc67df1c7928c0f34ffe5": {
+        "uid": "usr_0acdc67df1c7928c0f34ffe5",
+        "displayName": "E2E Tester",
+        "level": 1,
+        "xp": 0,
+        "streak": 1,
+        "badgesCount": 0,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771731,
+          "nanoseconds": 840000000,
+          "ms": 1795771731840
+        }
+      },
+      "usr_efbdd983268a47fdfa66b961": {
+        "uid": "usr_efbdd983268a47fdfa66b961",
+        "displayName": "E2E Tester",
+        "level": 1,
+        "xp": 0,
+        "streak": 1,
+        "badgesCount": 0,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771798,
+          "nanoseconds": 639000000,
+          "ms": 1795771798639
+        },
+        "photoURL": "/api/profile/avatar/usr_efbdd983268a47fdfa66b961_56c38c46b1.jpg"
+      },
+      "usr_c2844c118a5742b3cba7c766": {
+        "uid": "usr_c2844c118a5742b3cba7c766",
+        "displayName": "E2E Tester",
+        "level": 1,
+        "xp": 0,
+        "streak": 1,
+        "badgesCount": 0,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771906,
+          "nanoseconds": 243000000,
+          "ms": 1795771906243
+        },
+        "photoURL": "/api/profile/avatar/usr_c2844c118a5742b3cba7c766_56c38c46b1.jpg"
       }
     },
     "playgrounds": {
@@ -713,6 +1261,182 @@
         "aiStylePreference": "balanced",
         "defaultFocusMode": false,
         "defaultFocusAudio": "off"
+      },
+      "usr_e9759fba467ec9fb087087dc": {
+        "userId": "usr_e9759fba467ec9fb087087dc",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771289,
+          "nanoseconds": 271000000,
+          "ms": 1795771289271
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
+      },
+      "usr_a9c92d347a7ebe2beb7b0502": {
+        "userId": "usr_a9c92d347a7ebe2beb7b0502",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771318,
+          "nanoseconds": 382000000,
+          "ms": 1795771318382
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
+      },
+      "usr_efa8f5c4b43f19f10d8785bd": {
+        "userId": "usr_efa8f5c4b43f19f10d8785bd",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771354,
+          "nanoseconds": 583000000,
+          "ms": 1795771354583
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
+      },
+      "usr_f1e07d4596a89f6ad6e039db": {
+        "userId": "usr_f1e07d4596a89f6ad6e039db",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771446,
+          "nanoseconds": 759000000,
+          "ms": 1795771446759
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
+      },
+      "usr_5937ff47422a3a2c92a6ab93": {
+        "userId": "usr_5937ff47422a3a2c92a6ab93",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771552,
+          "nanoseconds": 708000000,
+          "ms": 1795771552708
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
+      },
+      "usr_c4e161db3c56cd1c048f05b4": {
+        "userId": "usr_c4e161db3c56cd1c048f05b4",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771606,
+          "nanoseconds": 477000000,
+          "ms": 1795771606477
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
+      },
+      "usr_5254e0a0c1ea949a28bd6bf8": {
+        "userId": "usr_5254e0a0c1ea949a28bd6bf8",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771632,
+          "nanoseconds": 375000000,
+          "ms": 1795771632375
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
+      },
+      "usr_0acdc67df1c7928c0f34ffe5": {
+        "userId": "usr_0acdc67df1c7928c0f34ffe5",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771731,
+          "nanoseconds": 850000000,
+          "ms": 1795771731850
+        }
+      },
+      "usr_efbdd983268a47fdfa66b961": {
+        "userId": "usr_efbdd983268a47fdfa66b961",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771789,
+          "nanoseconds": 431000000,
+          "ms": 1795771789431
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
+      },
+      "usr_c2844c118a5742b3cba7c766": {
+        "userId": "usr_c2844c118a5742b3cba7c766",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771889,
+          "nanoseconds": 632000000,
+          "ms": 1795771889632
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
       }
     },
     "notifications": {
@@ -743,6 +1467,146 @@
           "nanoseconds": 3000000,
           "ms": 1795463018003
         }
+      },
+      "welcome_usr_e9759fba467ec9fb": {
+        "id": "welcome_usr_e9759fba467ec9fb",
+        "userId": "usr_e9759fba467ec9fb087087dc",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771286,
+          "nanoseconds": 71000000,
+          "ms": 1795771286071
+        }
+      },
+      "welcome_usr_a9c92d347a7ebe2b": {
+        "id": "welcome_usr_a9c92d347a7ebe2b",
+        "userId": "usr_a9c92d347a7ebe2beb7b0502",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771315,
+          "nanoseconds": 149000000,
+          "ms": 1795771315149
+        }
+      },
+      "welcome_usr_efa8f5c4b43f19f1": {
+        "id": "welcome_usr_efa8f5c4b43f19f1",
+        "userId": "usr_efa8f5c4b43f19f10d8785bd",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771351,
+          "nanoseconds": 311000000,
+          "ms": 1795771351311
+        }
+      },
+      "welcome_usr_f1e07d4596a89f6a": {
+        "id": "welcome_usr_f1e07d4596a89f6a",
+        "userId": "usr_f1e07d4596a89f6ad6e039db",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771443,
+          "nanoseconds": 527000000,
+          "ms": 1795771443527
+        }
+      },
+      "welcome_usr_5937ff47422a3a2c": {
+        "id": "welcome_usr_5937ff47422a3a2c",
+        "userId": "usr_5937ff47422a3a2c92a6ab93",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771549,
+          "nanoseconds": 459000000,
+          "ms": 1795771549459
+        }
+      },
+      "welcome_usr_c4e161db3c56cd1c": {
+        "id": "welcome_usr_c4e161db3c56cd1c",
+        "userId": "usr_c4e161db3c56cd1c048f05b4",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771605,
+          "nanoseconds": 17000000,
+          "ms": 1795771605017
+        }
+      },
+      "welcome_usr_5254e0a0c1ea949a": {
+        "id": "welcome_usr_5254e0a0c1ea949a",
+        "userId": "usr_5254e0a0c1ea949a28bd6bf8",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771630,
+          "nanoseconds": 937000000,
+          "ms": 1795771630937
+        }
+      },
+      "welcome_usr_0acdc67df1c7928c": {
+        "id": "welcome_usr_0acdc67df1c7928c",
+        "userId": "usr_0acdc67df1c7928c0f34ffe5",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771731,
+          "nanoseconds": 858000000,
+          "ms": 1795771731858
+        }
+      },
+      "welcome_usr_efbdd983268a47fd": {
+        "id": "welcome_usr_efbdd983268a47fd",
+        "userId": "usr_efbdd983268a47fdfa66b961",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771786,
+          "nanoseconds": 787000000,
+          "ms": 1795771786787
+        }
+      },
+      "welcome_usr_c2844c118a5742b3": {
+        "id": "welcome_usr_c2844c118a5742b3",
+        "userId": "usr_c2844c118a5742b3cba7c766",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771886,
+          "nanoseconds": 997000000,
+          "ms": 1795771886997
+        }
       }
     },
     "projects": {
@@ -770,6 +1634,188 @@
           "seconds": 1795463021,
           "nanoseconds": 269000000,
           "ms": 1795463021269
+        }
+      },
+      "proj_1795771289285_m291m": {
+        "id": "proj_1795771289285_m291m",
+        "ownerId": "usr_e9759fba467ec9fb087087dc",
+        "ownerName": "All Features User",
+        "title": "Web App Starter",
+        "description": "Personalized starter workspace (HTML/CSS/JS)",
+        "language": "web",
+        "visibility": "private",
+        "isPortfolio": false,
+        "milestonesCompleted": [],
+        "status": "active",
+        "version": 1,
+        "storageBytes": 1090,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771289,
+          "nanoseconds": 288000000,
+          "ms": 1795771289288
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771289,
+          "nanoseconds": 288000000,
+          "ms": 1795771289288
+        }
+      },
+      "proj_1795771318396_l7vhi": {
+        "id": "proj_1795771318396_l7vhi",
+        "ownerId": "usr_a9c92d347a7ebe2beb7b0502",
+        "ownerName": "All Features User",
+        "title": "Web App Starter",
+        "description": "Personalized starter workspace (HTML/CSS/JS)",
+        "language": "web",
+        "visibility": "private",
+        "isPortfolio": false,
+        "milestonesCompleted": [],
+        "status": "active",
+        "version": 1,
+        "storageBytes": 1090,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771318,
+          "nanoseconds": 398000000,
+          "ms": 1795771318398
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771318,
+          "nanoseconds": 398000000,
+          "ms": 1795771318398
+        }
+      },
+      "proj_1795771354598_gshph": {
+        "id": "proj_1795771354598_gshph",
+        "ownerId": "usr_efa8f5c4b43f19f10d8785bd",
+        "ownerName": "All Features User",
+        "title": "Web App Starter",
+        "description": "Personalized starter workspace (HTML/CSS/JS)",
+        "language": "web",
+        "visibility": "private",
+        "isPortfolio": false,
+        "milestonesCompleted": [],
+        "status": "active",
+        "version": 1,
+        "storageBytes": 1090,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771354,
+          "nanoseconds": 600000000,
+          "ms": 1795771354600
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771354,
+          "nanoseconds": 600000000,
+          "ms": 1795771354600
+        }
+      },
+      "proj_1795771446773_j10pv": {
+        "id": "proj_1795771446773_j10pv",
+        "ownerId": "usr_f1e07d4596a89f6ad6e039db",
+        "ownerName": "All Features User",
+        "title": "Web App Starter",
+        "description": "Personalized starter workspace (HTML/CSS/JS)",
+        "language": "web",
+        "visibility": "private",
+        "isPortfolio": false,
+        "milestonesCompleted": [],
+        "status": "active",
+        "version": 1,
+        "storageBytes": 1090,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771446,
+          "nanoseconds": 775000000,
+          "ms": 1795771446775
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771446,
+          "nanoseconds": 775000000,
+          "ms": 1795771446775
+        }
+      },
+      "proj_1795771552719_i38kg": {
+        "id": "proj_1795771552719_i38kg",
+        "ownerId": "usr_5937ff47422a3a2c92a6ab93",
+        "ownerName": "All Features User",
+        "title": "Web App Starter",
+        "description": "Personalized starter workspace (HTML/CSS/JS)",
+        "language": "web",
+        "visibility": "private",
+        "isPortfolio": false,
+        "milestonesCompleted": [],
+        "status": "active",
+        "version": 1,
+        "storageBytes": 1090,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771552,
+          "nanoseconds": 721000000,
+          "ms": 1795771552721
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771552,
+          "nanoseconds": 721000000,
+          "ms": 1795771552721
+        }
+      },
+      "proj_1795771789446_j8k4f": {
+        "id": "proj_1795771789446_j8k4f",
+        "ownerId": "usr_efbdd983268a47fdfa66b961",
+        "ownerName": "E2E Tester",
+        "title": "Web App Starter",
+        "description": "Personalized starter workspace (HTML/CSS/JS)",
+        "language": "web",
+        "visibility": "private",
+        "isPortfolio": false,
+        "milestonesCompleted": [],
+        "status": "active",
+        "version": 1,
+        "storageBytes": 1090,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771789,
+          "nanoseconds": 448000000,
+          "ms": 1795771789448
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771789,
+          "nanoseconds": 448000000,
+          "ms": 1795771789448
+        }
+      },
+      "proj_1795771889649_7we6q": {
+        "id": "proj_1795771889649_7we6q",
+        "ownerId": "usr_c2844c118a5742b3cba7c766",
+        "ownerName": "E2E Tester",
+        "title": "Web App Starter",
+        "description": "Personalized starter workspace (HTML/CSS/JS)",
+        "language": "web",
+        "visibility": "private",
+        "isPortfolio": false,
+        "milestonesCompleted": [],
+        "status": "active",
+        "version": 1,
+        "storageBytes": 1090,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771889,
+          "nanoseconds": 651000000,
+          "ms": 1795771889651
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771889,
+          "nanoseconds": 651000000,
+          "ms": 1795771889651
         }
       }
     },
@@ -882,6 +1928,776 @@
           "seconds": 1795463021,
           "nanoseconds": 288000000,
           "ms": 1795463021288
+        }
+      },
+      "act_1795771289321_fgsg": {
+        "id": "act_1795771289321_fgsg",
+        "userId": "usr_e9759fba467ec9fb087087dc",
+        "category": "project",
+        "action": "Created project \"Web App Starter\"",
+        "language": "web",
+        "aiAssisted": false,
+        "projectId": "proj_1795771289285_m291m",
+        "dayKey": "2026-11-27",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771289,
+          "nanoseconds": 325000000,
+          "ms": 1795771289325
+        }
+      },
+      "act_1795771318421_49yt": {
+        "id": "act_1795771318421_49yt",
+        "userId": "usr_a9c92d347a7ebe2beb7b0502",
+        "category": "project",
+        "action": "Created project \"Web App Starter\"",
+        "language": "web",
+        "aiAssisted": false,
+        "projectId": "proj_1795771318396_l7vhi",
+        "dayKey": "2026-11-27",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771318,
+          "nanoseconds": 423000000,
+          "ms": 1795771318423
+        }
+      },
+      "act_1795771354623_8opf": {
+        "id": "act_1795771354623_8opf",
+        "userId": "usr_efa8f5c4b43f19f10d8785bd",
+        "category": "project",
+        "action": "Created project \"Web App Starter\"",
+        "language": "web",
+        "aiAssisted": false,
+        "projectId": "proj_1795771354598_gshph",
+        "dayKey": "2026-11-27",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771354,
+          "nanoseconds": 626000000,
+          "ms": 1795771354626
+        }
+      },
+      "act_1795771446799_azvn": {
+        "id": "act_1795771446799_azvn",
+        "userId": "usr_f1e07d4596a89f6ad6e039db",
+        "category": "project",
+        "action": "Created project \"Web App Starter\"",
+        "language": "web",
+        "aiAssisted": false,
+        "projectId": "proj_1795771446773_j10pv",
+        "dayKey": "2026-11-27",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771446,
+          "nanoseconds": 802000000,
+          "ms": 1795771446802
+        }
+      },
+      "act_1795771552752_yiwv": {
+        "id": "act_1795771552752_yiwv",
+        "userId": "usr_5937ff47422a3a2c92a6ab93",
+        "category": "project",
+        "action": "Created project \"Web App Starter\"",
+        "language": "web",
+        "aiAssisted": false,
+        "projectId": "proj_1795771552719_i38kg",
+        "dayKey": "2026-11-27",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771552,
+          "nanoseconds": 754000000,
+          "ms": 1795771552754
+        }
+      },
+      "act_1795771789467_s5ol": {
+        "id": "act_1795771789467_s5ol",
+        "userId": "usr_efbdd983268a47fdfa66b961",
+        "category": "project",
+        "action": "Created project \"Web App Starter\"",
+        "language": "web",
+        "aiAssisted": false,
+        "projectId": "proj_1795771789446_j8k4f",
+        "dayKey": "2026-11-27",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771789,
+          "nanoseconds": 469000000,
+          "ms": 1795771789469
+        }
+      },
+      "act_1795771889675_xdrp": {
+        "id": "act_1795771889675_xdrp",
+        "userId": "usr_c2844c118a5742b3cba7c766",
+        "category": "project",
+        "action": "Created project \"Web App Starter\"",
+        "language": "web",
+        "aiAssisted": false,
+        "projectId": "proj_1795771889649_7we6q",
+        "dayKey": "2026-11-27",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771889,
+          "nanoseconds": 678000000,
+          "ms": 1795771889678
+        }
+      }
+    },
+    "projects/proj_1795771289285_m291m/files": {
+      "file_1795771289294_0_a9bb": {
+        "id": "file_1795771289294_0_a9bb",
+        "projectId": "proj_1795771289285_m291m",
+        "ownerId": "usr_e9759fba467ec9fb087087dc",
+        "name": "index.html",
+        "folder": "",
+        "language": "html",
+        "visibility": "private",
+        "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771289,
+          "nanoseconds": 298000000,
+          "ms": 1795771289298
+        }
+      },
+      "file_1795771289301_1_w2s6": {
+        "id": "file_1795771289301_1_w2s6",
+        "projectId": "proj_1795771289285_m291m",
+        "ownerId": "usr_e9759fba467ec9fb087087dc",
+        "name": "styles.css",
+        "folder": "",
+        "language": "css",
+        "visibility": "private",
+        "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771289,
+          "nanoseconds": 304000000,
+          "ms": 1795771289304
+        }
+      },
+      "file_1795771289307_2_4z1l": {
+        "id": "file_1795771289307_2_4z1l",
+        "projectId": "proj_1795771289285_m291m",
+        "ownerId": "usr_e9759fba467ec9fb087087dc",
+        "name": "app.js",
+        "folder": "",
+        "language": "javascript",
+        "visibility": "private",
+        "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771289,
+          "nanoseconds": 310000000,
+          "ms": 1795771289310
+        }
+      }
+    },
+    "projects/proj_1795771289285_m291m/versions": {
+      "v1_1795771289313": {
+        "id": "v1_1795771289313",
+        "projectId": "proj_1795771289285_m291m",
+        "ownerId": "usr_e9759fba467ec9fb087087dc",
+        "versionNumber": 1,
+        "label": "Initial workspace snapshot",
+        "authorId": "usr_e9759fba467ec9fb087087dc",
+        "authorName": "All Features User",
+        "changeType": "manual",
+        "changedFiles": [
+          "index.html",
+          "styles.css",
+          "app.js"
+        ],
+        "filesCount": 3,
+        "snapshot": [
+          {
+            "name": "index.html",
+            "folder": "",
+            "language": "html",
+            "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>"
+          },
+          {
+            "name": "styles.css",
+            "folder": "",
+            "language": "css",
+            "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}"
+          },
+          {
+            "name": "app.js",
+            "folder": "",
+            "language": "javascript",
+            "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});"
+          }
+        ],
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771289,
+          "nanoseconds": 316000000,
+          "ms": 1795771289316
+        }
+      }
+    },
+    "projects/proj_1795771318396_l7vhi/files": {
+      "file_1795771318400_0_aed7": {
+        "id": "file_1795771318400_0_aed7",
+        "projectId": "proj_1795771318396_l7vhi",
+        "ownerId": "usr_a9c92d347a7ebe2beb7b0502",
+        "name": "index.html",
+        "folder": "",
+        "language": "html",
+        "visibility": "private",
+        "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771318,
+          "nanoseconds": 403000000,
+          "ms": 1795771318403
+        }
+      },
+      "file_1795771318406_1_xql0": {
+        "id": "file_1795771318406_1_xql0",
+        "projectId": "proj_1795771318396_l7vhi",
+        "ownerId": "usr_a9c92d347a7ebe2beb7b0502",
+        "name": "styles.css",
+        "folder": "",
+        "language": "css",
+        "visibility": "private",
+        "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771318,
+          "nanoseconds": 408000000,
+          "ms": 1795771318408
+        }
+      },
+      "file_1795771318411_2_19he": {
+        "id": "file_1795771318411_2_19he",
+        "projectId": "proj_1795771318396_l7vhi",
+        "ownerId": "usr_a9c92d347a7ebe2beb7b0502",
+        "name": "app.js",
+        "folder": "",
+        "language": "javascript",
+        "visibility": "private",
+        "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771318,
+          "nanoseconds": 412000000,
+          "ms": 1795771318412
+        }
+      }
+    },
+    "projects/proj_1795771318396_l7vhi/versions": {
+      "v1_1795771318415": {
+        "id": "v1_1795771318415",
+        "projectId": "proj_1795771318396_l7vhi",
+        "ownerId": "usr_a9c92d347a7ebe2beb7b0502",
+        "versionNumber": 1,
+        "label": "Initial workspace snapshot",
+        "authorId": "usr_a9c92d347a7ebe2beb7b0502",
+        "authorName": "All Features User",
+        "changeType": "manual",
+        "changedFiles": [
+          "index.html",
+          "styles.css",
+          "app.js"
+        ],
+        "filesCount": 3,
+        "snapshot": [
+          {
+            "name": "index.html",
+            "folder": "",
+            "language": "html",
+            "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>"
+          },
+          {
+            "name": "styles.css",
+            "folder": "",
+            "language": "css",
+            "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}"
+          },
+          {
+            "name": "app.js",
+            "folder": "",
+            "language": "javascript",
+            "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});"
+          }
+        ],
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771318,
+          "nanoseconds": 418000000,
+          "ms": 1795771318418
+        }
+      }
+    },
+    "projects/proj_1795771354598_gshph/files": {
+      "file_1795771354603_0_piya": {
+        "id": "file_1795771354603_0_piya",
+        "projectId": "proj_1795771354598_gshph",
+        "ownerId": "usr_efa8f5c4b43f19f10d8785bd",
+        "name": "index.html",
+        "folder": "",
+        "language": "html",
+        "visibility": "private",
+        "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771354,
+          "nanoseconds": 606000000,
+          "ms": 1795771354606
+        }
+      },
+      "file_1795771354608_1_ldid": {
+        "id": "file_1795771354608_1_ldid",
+        "projectId": "proj_1795771354598_gshph",
+        "ownerId": "usr_efa8f5c4b43f19f10d8785bd",
+        "name": "styles.css",
+        "folder": "",
+        "language": "css",
+        "visibility": "private",
+        "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771354,
+          "nanoseconds": 610000000,
+          "ms": 1795771354610
+        }
+      },
+      "file_1795771354613_2_cru9": {
+        "id": "file_1795771354613_2_cru9",
+        "projectId": "proj_1795771354598_gshph",
+        "ownerId": "usr_efa8f5c4b43f19f10d8785bd",
+        "name": "app.js",
+        "folder": "",
+        "language": "javascript",
+        "visibility": "private",
+        "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771354,
+          "nanoseconds": 615000000,
+          "ms": 1795771354615
+        }
+      }
+    },
+    "projects/proj_1795771354598_gshph/versions": {
+      "v1_1795771354618": {
+        "id": "v1_1795771354618",
+        "projectId": "proj_1795771354598_gshph",
+        "ownerId": "usr_efa8f5c4b43f19f10d8785bd",
+        "versionNumber": 1,
+        "label": "Initial workspace snapshot",
+        "authorId": "usr_efa8f5c4b43f19f10d8785bd",
+        "authorName": "All Features User",
+        "changeType": "manual",
+        "changedFiles": [
+          "index.html",
+          "styles.css",
+          "app.js"
+        ],
+        "filesCount": 3,
+        "snapshot": [
+          {
+            "name": "index.html",
+            "folder": "",
+            "language": "html",
+            "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>"
+          },
+          {
+            "name": "styles.css",
+            "folder": "",
+            "language": "css",
+            "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}"
+          },
+          {
+            "name": "app.js",
+            "folder": "",
+            "language": "javascript",
+            "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});"
+          }
+        ],
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771354,
+          "nanoseconds": 620000000,
+          "ms": 1795771354620
+        }
+      }
+    },
+    "projects/proj_1795771446773_j10pv/files": {
+      "file_1795771446777_0_blz8": {
+        "id": "file_1795771446777_0_blz8",
+        "projectId": "proj_1795771446773_j10pv",
+        "ownerId": "usr_f1e07d4596a89f6ad6e039db",
+        "name": "index.html",
+        "folder": "",
+        "language": "html",
+        "visibility": "private",
+        "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771446,
+          "nanoseconds": 780000000,
+          "ms": 1795771446780
+        }
+      },
+      "file_1795771446782_1_puv0": {
+        "id": "file_1795771446782_1_puv0",
+        "projectId": "proj_1795771446773_j10pv",
+        "ownerId": "usr_f1e07d4596a89f6ad6e039db",
+        "name": "styles.css",
+        "folder": "",
+        "language": "css",
+        "visibility": "private",
+        "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771446,
+          "nanoseconds": 784000000,
+          "ms": 1795771446784
+        }
+      },
+      "file_1795771446786_2_mjug": {
+        "id": "file_1795771446786_2_mjug",
+        "projectId": "proj_1795771446773_j10pv",
+        "ownerId": "usr_f1e07d4596a89f6ad6e039db",
+        "name": "app.js",
+        "folder": "",
+        "language": "javascript",
+        "visibility": "private",
+        "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771446,
+          "nanoseconds": 788000000,
+          "ms": 1795771446788
+        }
+      }
+    },
+    "projects/proj_1795771446773_j10pv/versions": {
+      "v1_1795771446792": {
+        "id": "v1_1795771446792",
+        "projectId": "proj_1795771446773_j10pv",
+        "ownerId": "usr_f1e07d4596a89f6ad6e039db",
+        "versionNumber": 1,
+        "label": "Initial workspace snapshot",
+        "authorId": "usr_f1e07d4596a89f6ad6e039db",
+        "authorName": "All Features User",
+        "changeType": "manual",
+        "changedFiles": [
+          "index.html",
+          "styles.css",
+          "app.js"
+        ],
+        "filesCount": 3,
+        "snapshot": [
+          {
+            "name": "index.html",
+            "folder": "",
+            "language": "html",
+            "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>"
+          },
+          {
+            "name": "styles.css",
+            "folder": "",
+            "language": "css",
+            "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}"
+          },
+          {
+            "name": "app.js",
+            "folder": "",
+            "language": "javascript",
+            "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});"
+          }
+        ],
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771446,
+          "nanoseconds": 795000000,
+          "ms": 1795771446795
+        }
+      }
+    },
+    "projects/proj_1795771552719_i38kg/files": {
+      "file_1795771552724_0_bfm9": {
+        "id": "file_1795771552724_0_bfm9",
+        "projectId": "proj_1795771552719_i38kg",
+        "ownerId": "usr_5937ff47422a3a2c92a6ab93",
+        "name": "index.html",
+        "folder": "",
+        "language": "html",
+        "visibility": "private",
+        "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771552,
+          "nanoseconds": 727000000,
+          "ms": 1795771552727
+        }
+      },
+      "file_1795771552730_1_i7qr": {
+        "id": "file_1795771552730_1_i7qr",
+        "projectId": "proj_1795771552719_i38kg",
+        "ownerId": "usr_5937ff47422a3a2c92a6ab93",
+        "name": "styles.css",
+        "folder": "",
+        "language": "css",
+        "visibility": "private",
+        "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771552,
+          "nanoseconds": 734000000,
+          "ms": 1795771552734
+        }
+      },
+      "file_1795771552737_2_ai0y": {
+        "id": "file_1795771552737_2_ai0y",
+        "projectId": "proj_1795771552719_i38kg",
+        "ownerId": "usr_5937ff47422a3a2c92a6ab93",
+        "name": "app.js",
+        "folder": "",
+        "language": "javascript",
+        "visibility": "private",
+        "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771552,
+          "nanoseconds": 741000000,
+          "ms": 1795771552741
+        }
+      }
+    },
+    "projects/proj_1795771552719_i38kg/versions": {
+      "v1_1795771552744": {
+        "id": "v1_1795771552744",
+        "projectId": "proj_1795771552719_i38kg",
+        "ownerId": "usr_5937ff47422a3a2c92a6ab93",
+        "versionNumber": 1,
+        "label": "Initial workspace snapshot",
+        "authorId": "usr_5937ff47422a3a2c92a6ab93",
+        "authorName": "All Features User",
+        "changeType": "manual",
+        "changedFiles": [
+          "index.html",
+          "styles.css",
+          "app.js"
+        ],
+        "filesCount": 3,
+        "snapshot": [
+          {
+            "name": "index.html",
+            "folder": "",
+            "language": "html",
+            "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>"
+          },
+          {
+            "name": "styles.css",
+            "folder": "",
+            "language": "css",
+            "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}"
+          },
+          {
+            "name": "app.js",
+            "folder": "",
+            "language": "javascript",
+            "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});"
+          }
+        ],
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771552,
+          "nanoseconds": 748000000,
+          "ms": 1795771552748
+        }
+      }
+    },
+    "projects/proj_1795771789446_j8k4f/files": {
+      "file_1795771789450_0_wm6a": {
+        "id": "file_1795771789450_0_wm6a",
+        "projectId": "proj_1795771789446_j8k4f",
+        "ownerId": "usr_efbdd983268a47fdfa66b961",
+        "name": "index.html",
+        "folder": "",
+        "language": "html",
+        "visibility": "private",
+        "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771789,
+          "nanoseconds": 452000000,
+          "ms": 1795771789452
+        }
+      },
+      "file_1795771789454_1_mqy1": {
+        "id": "file_1795771789454_1_mqy1",
+        "projectId": "proj_1795771789446_j8k4f",
+        "ownerId": "usr_efbdd983268a47fdfa66b961",
+        "name": "styles.css",
+        "folder": "",
+        "language": "css",
+        "visibility": "private",
+        "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771789,
+          "nanoseconds": 456000000,
+          "ms": 1795771789456
+        }
+      },
+      "file_1795771789459_2_7p1o": {
+        "id": "file_1795771789459_2_7p1o",
+        "projectId": "proj_1795771789446_j8k4f",
+        "ownerId": "usr_efbdd983268a47fdfa66b961",
+        "name": "app.js",
+        "folder": "",
+        "language": "javascript",
+        "visibility": "private",
+        "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771789,
+          "nanoseconds": 460000000,
+          "ms": 1795771789460
+        }
+      }
+    },
+    "projects/proj_1795771789446_j8k4f/versions": {
+      "v1_1795771789462": {
+        "id": "v1_1795771789462",
+        "projectId": "proj_1795771789446_j8k4f",
+        "ownerId": "usr_efbdd983268a47fdfa66b961",
+        "versionNumber": 1,
+        "label": "Initial workspace snapshot",
+        "authorId": "usr_efbdd983268a47fdfa66b961",
+        "authorName": "E2E Tester",
+        "changeType": "manual",
+        "changedFiles": [
+          "index.html",
+          "styles.css",
+          "app.js"
+        ],
+        "filesCount": 3,
+        "snapshot": [
+          {
+            "name": "index.html",
+            "folder": "",
+            "language": "html",
+            "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>"
+          },
+          {
+            "name": "styles.css",
+            "folder": "",
+            "language": "css",
+            "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}"
+          },
+          {
+            "name": "app.js",
+            "folder": "",
+            "language": "javascript",
+            "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});"
+          }
+        ],
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771789,
+          "nanoseconds": 464000000,
+          "ms": 1795771789464
+        }
+      }
+    },
+    "projects/proj_1795771889649_7we6q/files": {
+      "file_1795771889654_0_7nar": {
+        "id": "file_1795771889654_0_7nar",
+        "projectId": "proj_1795771889649_7we6q",
+        "ownerId": "usr_c2844c118a5742b3cba7c766",
+        "name": "index.html",
+        "folder": "",
+        "language": "html",
+        "visibility": "private",
+        "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771889,
+          "nanoseconds": 656000000,
+          "ms": 1795771889656
+        }
+      },
+      "file_1795771889661_1_4vee": {
+        "id": "file_1795771889661_1_4vee",
+        "projectId": "proj_1795771889649_7we6q",
+        "ownerId": "usr_c2844c118a5742b3cba7c766",
+        "name": "styles.css",
+        "folder": "",
+        "language": "css",
+        "visibility": "private",
+        "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771889,
+          "nanoseconds": 663000000,
+          "ms": 1795771889663
+        }
+      },
+      "file_1795771889666_2_0frk": {
+        "id": "file_1795771889666_2_0frk",
+        "projectId": "proj_1795771889649_7we6q",
+        "ownerId": "usr_c2844c118a5742b3cba7c766",
+        "name": "app.js",
+        "folder": "",
+        "language": "javascript",
+        "visibility": "private",
+        "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});",
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795771889,
+          "nanoseconds": 667000000,
+          "ms": 1795771889667
+        }
+      }
+    },
+    "projects/proj_1795771889649_7we6q/versions": {
+      "v1_1795771889670": {
+        "id": "v1_1795771889670",
+        "projectId": "proj_1795771889649_7we6q",
+        "ownerId": "usr_c2844c118a5742b3cba7c766",
+        "versionNumber": 1,
+        "label": "Initial workspace snapshot",
+        "authorId": "usr_c2844c118a5742b3cba7c766",
+        "authorName": "E2E Tester",
+        "changeType": "manual",
+        "changedFiles": [
+          "index.html",
+          "styles.css",
+          "app.js"
+        ],
+        "filesCount": 3,
+        "snapshot": [
+          {
+            "name": "index.html",
+            "folder": "",
+            "language": "html",
+            "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <title>My MideoCode App</title>\n    <link rel=\"stylesheet\" href=\"styles.css\" />\n  </head>\n  <body>\n    <main class=\"card\">\n      <h1>Hello, MideoCode!</h1>\n      <p id=\"status\">Ready to build something great.</p>\n      <button id=\"btn\">Click me</button>\n    </main>\n    <script src=\"app.js\"></script>\n  </body>\n</html>"
+          },
+          {
+            "name": "styles.css",
+            "folder": "",
+            "language": "css",
+            "content": "body {\n  font-family: system-ui, sans-serif;\n  background: #0b1120;\n  color: #f8fafc;\n  display: grid;\n  place-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  padding: 2rem;\n  border-radius: 1rem;\n  background: #111827;\n  border: 1px solid #1e293b;\n  text-align: center;\n}\nbutton {\n  margin-top: 1rem;\n  padding: 0.6rem 1.2rem;\n  border-radius: 0.5rem;\n  border: none;\n  background: #2563eb;\n  color: white;\n  cursor: pointer;\n}"
+          },
+          {
+            "name": "app.js",
+            "folder": "",
+            "language": "javascript",
+            "content": "let clicks = 0;\nconst btn = document.getElementById('btn');\nconst status = document.getElementById('status');\n\nbtn?.addEventListener('click', () => {\n  clicks += 1;\n  if (status) status.textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}!`;\n});"
+          }
+        ],
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795771889,
+          "nanoseconds": 673000000,
+          "ms": 1795771889673
         }
       }
     }

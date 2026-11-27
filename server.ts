@@ -18,6 +18,7 @@ import {
   dbSetDocument,
   dbUpdateDocument,
   elevateUserToAdmin,
+  getPublicAvatarInitial,
   isOwnerAdminCredentials,
   loginLocalAccount,
   registerLocalAccount,
@@ -1115,7 +1116,12 @@ async function startServer() {
     }
     const filePath = path.join(avatarsDir, filename);
     if (!fs.existsSync(filePath)) {
-      res.status(404).json({ error: 'Avatar not found.' });
+      const uidPart = filename.replace(/_[a-f0-9]+\.(jpg|png|webp|gif)$/i, '');
+      const initial = getPublicAvatarInitial(uidPart);
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" rx="24" fill="#2563EB"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#FFFFFF" font-family="system-ui,-apple-system,sans-serif" font-size="60" font-weight="700">${initial}</text></svg>`;
+      res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(svg);
       return;
     }
     const ext = path.extname(filename).toLowerCase();

@@ -1004,3 +1004,15 @@ export function dbCommitBatch(ctx: AuthContext, ops: BatchOp[]): void {
     throw err;
   }
 }
+
+export function getPublicAvatarInitial(uid: string): string {
+  const cleanUid = String(uid || '').trim();
+  const acc = accountsCache[cleanUid];
+  const pub = storeCache.collections.publicProfiles?.[cleanUid];
+  const rawName =
+    (acc && typeof acc.displayName === 'string' && acc.displayName.trim()) ||
+    (pub && typeof pub.displayName === 'string' && pub.displayName.trim()) ||
+    'MideoCode';
+  const first = rawName.charAt(0).toUpperCase();
+  return /^[A-Z0-9]$/.test(first) ? first : 'M';
+}

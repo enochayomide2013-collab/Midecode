@@ -164,9 +164,17 @@ export function MideoCodeEditorSurface({
     const cssFiles = files.filter((f) => f.name.toLowerCase().endsWith('.css'));
     const jsFiles = files.filter((f) => f.name.toLowerCase().endsWith('.js'));
 
-    const rawHtml = htmlFile ? htmlFile.content : '<div id="app" style="padding:16px;font-family:system-ui,sans-serif;color:#64748b;">No HTML file in workspace. Use Run to execute JavaScript or Python.</div>';
-    const cssText = cssFiles.map((f) => f.content).join('\n');
-    const jsText = jsFiles.map((f) => f.content).join('\n');
+    const rawHtmlSource = htmlFile
+      ? htmlFile.content
+      : '<div id="app" style="padding:16px;font-family:system-ui,sans-serif;color:#64748b;">No HTML file in workspace. Use Run to execute JavaScript or Python.</div>';
+
+    // Strip relative local stylesheet/script tags because all workspace CSS & JS files are inlined directly below.
+    const rawHtml = rawHtmlSource
+      .replace(/<link\b[^>]*href=["'](?!(?:https?:|\/\/|data:|blob:))[^"']*\.css(?:\?[^"']*)?["'][^>]*\/?>/gi, '')
+      .replace(/<script\b[^>]*src=["'](?!(?:https?:|\/\/|data:|blob:))[^"']*\.js(?:\?[^"']*)?["'][^>]*>\s*<\/script>/gi, '');
+
+    const cssText = cssFiles.map((f) => f.content).join('\n').replace(/<\/style>/gi, '<\\/style>');
+    const jsText = jsFiles.map((f) => f.content).join('\n').replace(/<\/script>/gi, '<\\/script>');
 
     const consoleBridge = `<script>
       (function(){
