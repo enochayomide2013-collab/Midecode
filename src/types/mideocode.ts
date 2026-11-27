@@ -5,6 +5,8 @@ export type EditorTheme = 'oneDark' | 'githubLight';
 export type WorkspaceStartMode = 'dashboard' | 'academy' | 'ide' | 'missions' | 'challenges';
 export type AiStylePreference = 'fast' | 'balanced' | 'deep';
 export type FocusAudioPreference = 'off' | 'lofi' | 'rain' | 'whitenoise';
+export type EditorFontFamily = 'jetbrains' | 'fira' | 'source' | 'system';
+export type CodingLayoutDensity = 'comfortable' | 'compact';
 
 export type NavSection =
   | 'dashboard'
@@ -52,6 +54,8 @@ export interface UserProfile {
   aiStylePreference?: AiStylePreference;
   defaultFocusMode?: boolean;
   defaultFocusAudio?: FocusAudioPreference;
+  editorFontFamily?: EditorFontFamily;
+  codingLayoutDensity?: CodingLayoutDensity;
   starterTemplateId?: string;
   xp: number;
   level: number;
@@ -84,6 +88,8 @@ export interface UserSettings {
   aiStylePreference?: AiStylePreference;
   defaultFocusMode?: boolean;
   defaultFocusAudio?: FocusAudioPreference;
+  editorFontFamily?: EditorFontFamily;
+  codingLayoutDensity?: CodingLayoutDensity;
   updatedAt: unknown;
 }
 

@@ -712,6 +712,8 @@ export async function saveUserSettings(
       | 'aiStylePreference'
       | 'defaultFocusMode'
       | 'defaultFocusAudio'
+      | 'editorFontFamily'
+      | 'codingLayoutDensity'
     >
   >,
 ): Promise<void> {
@@ -737,6 +739,8 @@ export async function saveUserSettings(
         aiStylePreference: 'balanced',
         defaultFocusMode: false,
         defaultFocusAudio: 'off',
+        editorFontFamily: 'jetbrains',
+        codingLayoutDensity: 'comfortable',
         ...cleanPartial,
         updatedAt: serverTimestamp(),
       });

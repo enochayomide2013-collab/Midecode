@@ -16,6 +16,7 @@ import {
   FileCode2,
   Flag,
   FlaskConical,
+  Flame,
   FolderGit2,
   GitBranch,
   Home,
@@ -811,6 +812,17 @@ function WorkspaceShell() {
                 </div>
               )}
             </div>
+
+            {profile && (
+              <button
+                onClick={() => setActiveView('dashboard')}
+                title="Daily Coding Streak"
+                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-500/30 bg-amber-500/10 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 text-xs font-mono tabular-nums cursor-pointer hover:border-amber-500 transition-colors"
+              >
+                <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500 animate-pulse" />
+                <span>{profile.streak || 1}d streak</span>
+              </button>
+            )}
 
             <button
               onClick={() => setActiveView('profile')}
