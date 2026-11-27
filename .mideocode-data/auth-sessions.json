@@ -194,5 +194,12 @@
     "rememberMe": true,
     "createdAt": 1795774067892,
     "expiresAt": 1798366067892
+  },
+  "137e0a1792ac0c961715662fa4381a79246fe511d16c7cbaeaf917a8252325c4": {
+    "tokenHash": "137e0a1792ac0c961715662fa4381a79246fe511d16c7cbaeaf917a8252325c4",
+    "uid": "usr_530164172ae94e356bb6ba52",
+    "rememberMe": true,
+    "createdAt": 1795790535035,
+    "expiresAt": 1798382535035
   }
 }

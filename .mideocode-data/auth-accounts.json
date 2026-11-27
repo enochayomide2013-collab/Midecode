@@ -273,5 +273,16 @@
     "emailVerified": true,
     "createdAt": 1795774067745,
     "updatedAt": 1795774069755
+  },
+  "usr_530164172ae94e356bb6ba52": {
+    "uid": "usr_530164172ae94e356bb6ba52",
+    "email": "prog_test_1795790534593@mideotest.dev",
+    "displayName": "Progress Tester",
+    "phoneNumber": "",
+    "passwordHash": "scrypt:ec7f59f8bcade053d6e90b65d76f0b9c:8a403e124218683e771bdd8476ef667893f9f1ff34b3af3fc778a96ab87b41d21050c3423ea2111a0051ed703a641b32ff28e9dcfa0bc25fc95e00baad380189",
+    "role": "member",
+    "emailVerified": true,
+    "createdAt": 1795790534944,
+    "updatedAt": 1795790537509
   }
 }

@@ -144,6 +144,9 @@ function WorkspaceShell() {
     setActiveView,
     notifications,
     missions,
+    courseProgress,
+    missionAttempts,
+    challengeAttempts,
     openMissionDetails,
     openCourse,
     openDoc,
@@ -264,6 +267,52 @@ function WorkspaceShell() {
     }
     return results.slice(0, 8);
   }, [globalQuery, missions, openMissionDetails, openCourse, openDoc, openChallenge, openInIde, setActiveView]);
+
+  const navProgressMap = useMemo(() => {
+    let totalLessons = 0;
+    let completedLessons = 0;
+    for (const course of ACADEMY_COURSES) {
+      const courseLessons = course.modules.flatMap((m) => m.lessons);
+      totalLessons += courseLessons.length;
+      const doneSet = new Set(courseProgress[course.id]?.completedLessonIds || []);
+      for (const l of courseLessons) {
+        if (doneSet.has(l.id)) completedLessons += 1;
+      }
+    }
+
+    const publishedMissions = missions.filter((m) => m.status === 'published');
+    const publishedIds = new Set(publishedMissions.map((m) => m.id));
+    const completedMissionIds = new Set(
+      missionAttempts
+        .filter((a) => a.status === 'completed' && publishedIds.has(a.missionId))
+        .map((a) => a.missionId),
+    );
+
+    const challengeIds = new Set(CHALLENGES.map((c) => c.id));
+    const solvedChallengeIds = new Set(
+      challengeAttempts
+        .filter((a) => a.passed && challengeIds.has(a.challengeId))
+        .map((a) => a.challengeId),
+    );
+
+    return {
+      academy: {
+        completed: completedLessons,
+        total: totalLessons,
+        unit: 'lessons',
+      },
+      missions: {
+        completed: completedMissionIds.size,
+        total: publishedMissions.length,
+        unit: 'missions',
+      },
+      challenges: {
+        completed: solvedChallengeIds.size,
+        total: CHALLENGES.length,
+        unit: 'challenges',
+      },
+    } as Partial<Record<NavSection, { completed: number; total: number; unit: string }>>;
+  }, [courseProgress, missions, missionAttempts, challengeAttempts]);
 
   if (authLoading) {
     return (
@@ -424,19 +473,73 @@ function WorkspaceShell() {
           {PRIMARY_NAV.map((item) => {
             const Icon = item.icon;
             const active = activeView === item.id;
+            const prog = navProgressMap[item.id];
+            const pct = prog && prog.total > 0 ? Math.min(100, Math.round((prog.completed / prog.total) * 100)) : 0;
+            const progDone = Boolean(prog && prog.total > 0 && prog.completed >= prog.total);
+            const labelTitle = prog
+              ? `${item.label} (${prog.completed}/${prog.total} ${prog.unit})`
+              : item.label;
             return (
               <button
                 key={item.id}
                 onClick={() => setActiveView(item.id)}
-                title={item.label}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                title={labelTitle}
+                aria-label={labelTitle}
+                className={`w-full flex flex-col gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
                   active
                     ? 'bg-blue-600 text-white'
                     : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70'
                 }`}
               >
-                <Icon className="w-4 h-4 shrink-0" />
-                {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+                <div className="w-full flex items-center gap-3 min-w-0">
+                  <Icon className="w-4 h-4 shrink-0" />
+                  {!sidebarCollapsed && (
+                    <>
+                      <span className="truncate flex-1 text-left">{item.label}</span>
+                      {prog && prog.total > 0 && (
+                        <span
+                          data-testid={`sidebar-progress-${item.id}`}
+                          className={`font-mono tabular-nums text-[10px] shrink-0 ${
+                            active
+                              ? 'text-blue-100'
+                              : progDone
+                                ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                                : 'text-slate-500 dark:text-slate-400'
+                          }`}
+                        >
+                          {prog.completed}/{prog.total}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+                {prog && prog.total > 0 && (
+                  <div
+                    role="progressbar"
+                    aria-label={`${item.label} progress`}
+                    aria-valuemin={0}
+                    aria-valuemax={prog.total}
+                    aria-valuenow={prog.completed}
+                    className={`w-full rounded-full overflow-hidden ${
+                      sidebarCollapsed ? 'h-[3px]' : 'h-1'
+                    } ${
+                      active
+                        ? 'bg-blue-500/50'
+                        : 'bg-slate-200 dark:bg-slate-800'
+                    }`}
+                  >
+                    <div
+                      className={`h-full rounded-full transition-all duration-200 ${
+                        active
+                          ? 'bg-white'
+                          : progDone
+                            ? 'bg-emerald-500'
+                            : 'bg-blue-600 dark:bg-blue-500'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                )}
               </button>
             );
           })}
@@ -506,6 +609,9 @@ function WorkspaceShell() {
               {PRIMARY_NAV.map((item) => {
                 const Icon = item.icon;
                 const active = activeView === item.id;
+                const prog = navProgressMap[item.id];
+                const pct = prog && prog.total > 0 ? Math.min(100, Math.round((prog.completed / prog.total) * 100)) : 0;
+                const progDone = Boolean(prog && prog.total > 0 && prog.completed >= prog.total);
                 return (
                   <button
                     key={item.id}
@@ -513,14 +619,43 @@ function WorkspaceShell() {
                       setActiveView(item.id);
                       setMobileNavOpen(false);
                     }}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer ${
+                    className={`w-full flex flex-col gap-1.5 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer ${
                       active
                         ? 'bg-blue-600 text-white'
                         : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                     }`}
                   >
-                    <Icon className="w-4 h-4" />
-                    <span>{item.label}</span>
+                    <div className="w-full flex items-center gap-3 min-w-0">
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span className="truncate flex-1 text-left">{item.label}</span>
+                      {prog && prog.total > 0 && (
+                        <span
+                          className={`font-mono tabular-nums text-[10px] shrink-0 ${
+                            active
+                              ? 'text-blue-100'
+                              : progDone
+                                ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                                : 'text-slate-500 dark:text-slate-400'
+                          }`}
+                        >
+                          {prog.completed}/{prog.total}
+                        </span>
+                      )}
+                    </div>
+                    {prog && prog.total > 0 && (
+                      <div
+                        className={`w-full h-1 rounded-full overflow-hidden ${
+                          active ? 'bg-blue-500/50' : 'bg-slate-200 dark:bg-slate-800'
+                        }`}
+                      >
+                        <div
+                          className={`h-full rounded-full transition-all duration-200 ${
+                            active ? 'bg-white' : progDone ? 'bg-emerald-500' : 'bg-blue-600 dark:bg-blue-500'
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    )}
                   </button>
                 );
               })}

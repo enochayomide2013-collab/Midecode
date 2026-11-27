@@ -861,6 +861,48 @@
         "defaultFocusMode": false,
         "defaultFocusAudio": "off",
         "starterTemplateId": "none"
+      },
+      "usr_530164172ae94e356bb6ba52": {
+        "uid": "usr_530164172ae94e356bb6ba52",
+        "displayName": "Progress Tester",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript"
+        ],
+        "learningGoals": [
+          "Learn programming fundamentals"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 95,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795790535,
+          "nanoseconds": 84000000,
+          "ms": 1795790535084
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795790537,
+          "nanoseconds": 509000000,
+          "ms": 1795790537509
+        },
+        "email": "prog_test_1795790534593@mideotest.dev",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "none"
       }
     },
     "publicProfiles": {
@@ -1108,6 +1150,20 @@
           "seconds": 1795774069,
           "nanoseconds": 781000000,
           "ms": 1795774069781
+        }
+      },
+      "usr_530164172ae94e356bb6ba52": {
+        "uid": "usr_530164172ae94e356bb6ba52",
+        "displayName": "Progress Tester",
+        "level": 1,
+        "xp": 95,
+        "streak": 1,
+        "badgesCount": 2,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795790537,
+          "nanoseconds": 540000000,
+          "ms": 1795790537540
         }
       }
     },
@@ -1453,6 +1509,34 @@
           "nanoseconds": 754000000,
           "ms": 1795774069754
         }
+      },
+      "usr_530164172ae94e356bb6ba52_lesson_lesson-semantic-landmarks": {
+        "id": "usr_530164172ae94e356bb6ba52_lesson_lesson-semantic-landmarks",
+        "userId": "usr_530164172ae94e356bb6ba52",
+        "sourceType": "lesson",
+        "sourceId": "lesson-semantic-landmarks",
+        "amount": 35,
+        "reason": "Completed lesson: Semantic Landmarks & Accessible Structure",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795790536,
+          "nanoseconds": 865000000,
+          "ms": 1795790536865
+        }
+      },
+      "usr_530164172ae94e356bb6ba52_challenge_two-sum-indices": {
+        "id": "usr_530164172ae94e356bb6ba52_challenge_two-sum-indices",
+        "userId": "usr_530164172ae94e356bb6ba52",
+        "sourceType": "challenge",
+        "sourceId": "two-sum-indices",
+        "amount": 60,
+        "reason": "Solved challenge: Two Sum Indices",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795790537,
+          "nanoseconds": 508000000,
+          "ms": 1795790537508
+        }
       }
     },
     "userProgress/usr_e3b4040c66c69d242d6a5228/courses": {
@@ -1789,6 +1873,24 @@
         "aiStylePreference": "balanced",
         "defaultFocusMode": false,
         "defaultFocusAudio": "off"
+      },
+      "usr_530164172ae94e356bb6ba52": {
+        "userId": "usr_530164172ae94e356bb6ba52",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795790536,
+          "nanoseconds": 96000000,
+          "ms": 1795790536096
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
       }
     },
     "notifications": {
@@ -2014,6 +2116,20 @@
           "seconds": 1795774067,
           "nanoseconds": 954000000,
           "ms": 1795774067954
+        }
+      },
+      "welcome_usr_530164172ae94e35": {
+        "id": "welcome_usr_530164172ae94e35",
+        "userId": "usr_530164172ae94e356bb6ba52",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795790535,
+          "nanoseconds": 126000000,
+          "ms": 1795790535126
         }
       }
     },
@@ -2508,6 +2624,21 @@
           "seconds": 1795774069,
           "nanoseconds": 876000000,
           "ms": 1795774069876
+        }
+      },
+      "act_1795790536979_abl5": {
+        "id": "act_1795790536979_abl5",
+        "userId": "usr_530164172ae94e356bb6ba52",
+        "category": "lesson",
+        "action": "Completed lesson: Semantic Landmarks & Accessible Structure",
+        "language": "HTML / CSS",
+        "aiAssisted": false,
+        "dayKey": "2026-11-27",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795790536,
+          "nanoseconds": 983000000,
+          "ms": 1795790536983
         }
       }
     },
@@ -3236,6 +3367,30 @@
           "nanoseconds": 770000000,
           "ms": 1795774069770
         }
+      },
+      "usr_530164172ae94e356bb6ba52_first_lesson": {
+        "id": "usr_530164172ae94e356bb6ba52_first_lesson",
+        "userId": "usr_530164172ae94e356bb6ba52",
+        "badgeId": "first_lesson",
+        "title": "First Concept Mastered",
+        "unlockedAt": {
+          "__type": "timestamp",
+          "seconds": 1795790536,
+          "nanoseconds": 876000000,
+          "ms": 1795790536876
+        }
+      },
+      "usr_530164172ae94e356bb6ba52_challenge_solver": {
+        "id": "usr_530164172ae94e356bb6ba52_challenge_solver",
+        "userId": "usr_530164172ae94e356bb6ba52",
+        "badgeId": "challenge_solver",
+        "title": "Algorithm Problem Solver",
+        "unlockedAt": {
+          "__type": "timestamp",
+          "seconds": 1795790537,
+          "nanoseconds": 529000000,
+          "ms": 1795790537529
+        }
       }
     },
     "userProgress/usr_e9a2cf519102b34f68ff0081/courses": {
@@ -3292,6 +3447,44 @@
           "seconds": 1795774069,
           "nanoseconds": 727000000,
           "ms": 1795774069727
+        }
+      }
+    },
+    "userProgress/usr_530164172ae94e356bb6ba52/courses": {
+      "html-css-architecture": {
+        "userId": "usr_530164172ae94e356bb6ba52",
+        "courseId": "html-css-architecture",
+        "completedLessonIds": [
+          "lesson-semantic-landmarks"
+        ],
+        "completedExerciseIds": [],
+        "quizScores": {},
+        "lastLessonId": "lesson-semantic-landmarks",
+        "progressPercent": 50,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795790536,
+          "nanoseconds": 840000000,
+          "ms": 1795790536840
+        }
+      }
+    },
+    "challengeAttempts": {
+      "att_1795790537384_pggjv": {
+        "id": "att_1795790537384_pggjv",
+        "userId": "usr_530164172ae94e356bb6ba52",
+        "challengeId": "two-sum-indices",
+        "language": "javascript",
+        "code": "function twoSum(nums, target) {\n  const seen = new Map();\n  for (let i = 0; i < nums.length; i++) {\n    const complement = target - nums[i];\n    if (seen.has(complement)) {\n      return [seen.get(complement), i];\n    }\n    seen.set(nums[i], i);\n  }\n  return [];\n}",
+        "passed": true,
+        "passedCount": 5,
+        "totalCount": 5,
+        "executionMs": 8,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795790537,
+          "nanoseconds": 386000000,
+          "ms": 1795790537386
         }
       }
     }

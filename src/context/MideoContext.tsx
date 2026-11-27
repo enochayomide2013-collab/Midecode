@@ -17,6 +17,7 @@ import {
   listSharedProjects,
   listNotifications,
   listBookmarks,
+  listChallengeAttempts,
   listUserAchievements,
   awardVerifiedXp,
   createProjectWithFiles,
@@ -35,6 +36,7 @@ import type {
   Project,
   NotificationItem,
   BookmarkItem,
+  ChallengeAttempt,
   AchievementItem,
   NavSection,
   ThemeMode,
@@ -115,6 +117,7 @@ interface MideoContextValue {
   capabilities: RuntimeCapabilities | null;
   missions: Mission[];
   missionAttempts: MissionAttempt[];
+  challengeAttempts: ChallengeAttempt[];
   selectedMissionId: string | null;
   missionSubView: MissionSubView;
   openMissionCatalog: () => void;
@@ -261,6 +264,7 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
 
   const [missions, setMissions] = useState<Mission[]>(CURATED_MISSIONS);
   const [missionAttempts, setMissionAttempts] = useState<MissionAttempt[]>([]);
+  const [challengeAttempts, setChallengeAttempts] = useState<ChallengeAttempt[]>([]);
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(initialRoute.missionId);
   const [missionSubView, setMissionSubView] = useState<MissionSubView>(initialRoute.missionSubView);
 
@@ -438,6 +442,7 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
         listUserAchievements(user.uid),
         listPublishedMissions(isAdmin),
         listUserMissionAttempts(user.uid),
+        listChallengeAttempts(user.uid),
       ]);
 
       const userSet = results[0].status === 'fulfilled' ? results[0].value : null;
@@ -449,6 +454,7 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
       const achs = results[6].status === 'fulfilled' ? results[6].value : [];
       const loadedMissions = results[7].status === 'fulfilled' ? results[7].value : CURATED_MISSIONS;
       const loadedAttempts = results[8].status === 'fulfilled' ? results[8].value : [];
+      const loadedChallengeAttempts = results[9].status === 'fulfilled' ? results[9].value : [];
 
       if (userSet) {
         setSettings(userSet);
@@ -466,6 +472,7 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
       setAchievements(achs);
       setMissions(loadedMissions);
       setMissionAttempts(loadedAttempts);
+      setChallengeAttempts(loadedChallengeAttempts);
 
       // Apply user's preferred starting view on initial workspace load
       const preferredStart = userSet?.startingView || prof?.startingView;
@@ -891,6 +898,7 @@ export function MideoProvider({ children }: { children: React.ReactNode }) {
         capabilities,
         missions,
         missionAttempts,
+        challengeAttempts,
         selectedMissionId,
         missionSubView,
         openMissionCatalog,

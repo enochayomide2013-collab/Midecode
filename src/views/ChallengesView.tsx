@@ -24,6 +24,7 @@ export function ChallengesView() {
     openChallenge,
     openCourse,
     grantXp,
+    refreshUserData,
     notify,
   } = useMideo();
 
@@ -107,6 +108,7 @@ export function ChallengesView() {
 
       if (data.passed) {
         await grantXp('challenge', challenge.id, `Solved challenge: ${challenge.title}`);
+        await refreshUserData();
         listPublicLeaderboard().then(setLeaderboard).catch(() => {});
       } else {
         notify('info', `${data.passedCount}/${data.totalCount} test cases passed. Review failures below.`);
