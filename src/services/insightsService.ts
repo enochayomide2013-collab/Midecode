@@ -9,21 +9,32 @@ import {
   writeBatch,
 } from './appDb';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { listAiConversations, listChallengeAttempts, listProjectVersions } from './dataService';
+import {
+  getTodayKey,
+  listAiConversations,
+  listChallengeAttempts,
+  listProjectVersions,
+  listUserXpTransactions,
+} from './dataService';
+import { listMissionSubmissionsAndEvaluations } from './missionService';
 import { listTestRunsForUser } from './testLabService';
 import { listUserArchitectures } from './architectService';
 import type {
   ActivityEvent,
+  ContributionDayBreakdown,
+  ContributionDayCell,
+  ContributionHeatmapData,
   CourseProgress,
   DeveloperInsightsSnapshot,
+  MissionAttempt,
   Project,
   SkillEvidenceTier,
   SkillProgressionItem,
 } from '../types/mideocode';
 
-export async function listUserActivityEvents(uid: string): Promise<ActivityEvent[]> {
+export async function listUserActivityEvents(uid: string, maxItems = 250): Promise<ActivityEvent[]> {
   try {
-    const q = query(collection(db, 'activityEvents'), where('userId', '==', uid), limit(250));
+    const q = query(collection(db, 'activityEvents'), where('userId', '==', uid), limit(maxItems));
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as ActivityEvent);
   } catch (err) {
@@ -365,5 +376,342 @@ export async function buildDeveloperInsights(
       skills,
       recommendations,
     },
+  };
+}
+
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function toUtcDayKey(ts: unknown): string {
+  const ms = toMs(ts);
+  if (!ms) return '';
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+function emptyBreakdown(): ContributionDayBreakdown {
+  return {
+    lessons: 0,
+    challenges: 0,
+    missions: 0,
+    projects: 0,
+    tests: 0,
+    ai: 0,
+  };
+}
+
+export async function buildContributionHeatmap(
+  uid: string,
+  courseProgress: Record<string, CourseProgress>,
+  projects: Project[],
+  missionAttempts: MissionAttempt[],
+): Promise<ContributionHeatmapData> {
+  const [activityEvents, xpTransactions, challengeAttempts, missionSubRes, testRuns, aiConversations, architectures] =
+    await Promise.all([
+      listUserActivityEvents(uid, 500),
+      listUserXpTransactions(uid),
+      listChallengeAttempts(uid),
+      listMissionSubmissionsAndEvaluations(uid).catch(() => ({ submissions: [], evaluations: [] })),
+      listTestRunsForUser(uid).catch(() => []),
+      listAiConversations(uid).catch(() => []),
+      listUserArchitectures(uid).catch(() => []),
+    ]);
+
+  const todayKey = getTodayKey();
+  const [ty, tm, td] = todayKey.split('-').map(Number);
+  const todayUtc = new Date(Date.UTC(ty, tm - 1, td));
+  const todayDow = todayUtc.getUTCDay(); // 0 = Sun ... 6 = Sat
+
+  // 53-week GitHub-style calendar ending on the Saturday of the current week
+  const endGridUtc = new Date(todayUtc.getTime() + (6 - todayDow) * 86_400_000);
+  const totalGridDays = 53 * 7;
+  const startGridUtc = new Date(endGridUtc.getTime() - (totalGridDays - 1) * 86_400_000);
+  const startDateKey = startGridUtc.toISOString().slice(0, 10);
+
+  const dayMap = new Map<
+    string,
+    {
+      breakdown: ContributionDayBreakdown;
+      actions: string[];
+      seenKeys: Set<string>;
+      seenCategories: Set<keyof ContributionDayBreakdown>;
+    }
+  >();
+
+  for (let i = 0; i < totalGridDays; i++) {
+    const key = new Date(startGridUtc.getTime() + i * 86_400_000).toISOString().slice(0, 10);
+    dayMap.set(key, {
+      breakdown: emptyBreakdown(),
+      actions: [],
+      seenKeys: new Set<string>(),
+      seenCategories: new Set<keyof ContributionDayBreakdown>(),
+    });
+  }
+
+  const addContribution = (
+    dayKey: string,
+    bucket: keyof ContributionDayBreakdown,
+    label: string,
+    dedupeKey?: string,
+  ) => {
+    if (!dayKey || dayKey > todayKey) return;
+    const entry = dayMap.get(dayKey);
+    if (!entry) return;
+    const uniqueKey = dedupeKey || `${bucket}:${label.toLowerCase()}`;
+    if (entry.seenKeys.has(uniqueKey)) return;
+    entry.seenKeys.add(uniqueKey);
+    entry.seenCategories.add(bucket);
+    entry.breakdown[bucket] += 1;
+    if (label && entry.actions.length < 10 && !entry.actions.includes(label)) {
+      entry.actions.push(label);
+    }
+  };
+
+  // 1. Primary domain collections (captures full historical progress even before activityEvents existed)
+  for (const ch of challengeAttempts) {
+    const key = toUtcDayKey(ch.createdAt);
+    if (!key) continue;
+    addContribution(
+      key,
+      'challenges',
+      ch.passed ? `Passed ${ch.language} challenge (${ch.challengeId})` : `Attempted ${ch.language} challenge`,
+      `challenge:${ch.id || `${ch.challengeId}:${key}`}`,
+    );
+  }
+
+  for (const sub of missionSubRes.submissions) {
+    const key = toUtcDayKey(sub.createdAt);
+    if (!key) continue;
+    addContribution(
+      key,
+      'missions',
+      `Submitted mission solution (${sub.missionId})`,
+      `missionSub:${sub.id}`,
+    );
+  }
+
+  for (const att of missionAttempts) {
+    const actKey = toUtcDayKey(att.completedAt || att.lastActivityAt || att.startedAt);
+    if (actKey) {
+      const doneCount = att.completedCheckpointIds?.length || 0;
+      const label =
+        att.status === 'completed'
+          ? `Completed mission (${att.missionId})`
+          : doneCount > 0
+            ? `Mission progress: ${doneCount} checkpoint${doneCount === 1 ? '' : 's'} (${att.missionId})`
+            : `Started mission (${att.missionId})`;
+      addContribution(actKey, 'missions', label, `missionAtt:${att.id}:${actKey}`);
+    }
+  }
+
+  const ownedProjects = projects.filter((p) => p.ownerId === uid);
+  for (const p of ownedProjects) {
+    const createdKey = toUtcDayKey(p.createdAt);
+    if (createdKey) {
+      addContribution(createdKey, 'projects', `Created workspace: ${p.title}`, `projCreate:${p.id}`);
+    }
+    const updatedKey = toUtcDayKey(p.updatedAt);
+    if (updatedKey && updatedKey !== createdKey) {
+      addContribution(updatedKey, 'projects', `Updated workspace: ${p.title}`, `projUpd:${p.id}:${updatedKey}`);
+    }
+  }
+
+  for (const r of testRuns) {
+    const key = toUtcDayKey(r.createdAt);
+    if (!key) continue;
+    addContribution(
+      key,
+      'tests',
+      `Ran tests: ${r.passedTests}/${r.totalTests} passed`,
+      `testRun:${r.id}`,
+    );
+  }
+
+  for (const arch of architectures) {
+    const key = toUtcDayKey(arch.createdAt);
+    if (!key) continue;
+    addContribution(
+      key,
+      'projects',
+      `Designed architecture: ${arch.title || 'System Blueprint'}`,
+      `arch:${arch.id}`,
+    );
+  }
+
+  for (const conv of aiConversations) {
+    const key = toUtcDayKey(conv.updatedAt || conv.createdAt);
+    if (!key) continue;
+    addContribution(key, 'ai', `Mideo AI session: ${conv.title || 'Coding help'}`, `aiConv:${conv.id}:${key}`);
+  }
+
+  // 2. XP transactions (captures historical Academy lessons, quizzes, challenges, missions with timestamps)
+  for (const tx of xpTransactions) {
+    const key = toUtcDayKey(tx.createdAt);
+    if (!key) continue;
+    const entry = dayMap.get(key);
+    if (!entry) continue;
+    if (tx.sourceType === 'challenge' && entry.breakdown.challenges > 0) continue;
+    if (tx.sourceType === 'mission' && entry.breakdown.missions > 0) continue;
+    if (tx.sourceType === 'project' && entry.breakdown.projects > 0) continue;
+    const bucket: keyof ContributionDayBreakdown =
+      tx.sourceType === 'lesson' || tx.sourceType === 'quiz'
+        ? 'lessons'
+        : tx.sourceType === 'challenge'
+          ? 'challenges'
+          : tx.sourceType === 'mission'
+            ? 'missions'
+            : 'projects';
+    const label = tx.reason || `${tx.sourceType} (+${tx.amount} XP)`;
+    addContribution(key, bucket, label, `${bucket}:${label.trim().toLowerCase()}`);
+  }
+
+  // Fallback for legacy courseProgress docs that have completions without xpTransactions or activityEvents
+  for (const cp of Object.values(courseProgress)) {
+    const count = (cp.completedLessonIds?.length || 0) + (cp.completedExerciseIds?.length || 0);
+    if (count === 0) continue;
+    const key = toUtcDayKey(cp.updatedAt);
+    if (!key) continue;
+    const entry = dayMap.get(key);
+    if (entry && entry.breakdown.lessons === 0) {
+      addContribution(
+        key,
+        'lessons',
+        `Course progress updated (${cp.courseId})`,
+        `course:${cp.courseId}:${key}`,
+      );
+    }
+  }
+
+  // 3. Explicit ActivityEvents (deduplicate against primary collections & xpTransactions)
+  for (const ev of activityEvents) {
+    const key = ev.dayKey || toUtcDayKey(ev.createdAt);
+    if (!key) continue;
+    const bucket: keyof ContributionDayBreakdown =
+      ev.category === 'lesson' || ev.category === 'exercise'
+        ? 'lessons'
+        : ev.category === 'challenge'
+          ? 'challenges'
+          : ev.category === 'testlab'
+            ? 'tests'
+            : ev.category === 'ai'
+              ? 'ai'
+              : 'projects';
+
+    const entry = dayMap.get(key);
+    if (!entry) continue;
+    if (
+      (ev.category === 'testlab' && entry.breakdown.tests > 0) ||
+      (ev.category === 'architect' && entry.breakdown.projects > 0) ||
+      (ev.category === 'challenge' && entry.breakdown.challenges > 0) ||
+      (ev.category === 'ai' && entry.breakdown.ai > 0) ||
+      (ev.category === 'project' &&
+        entry.breakdown.projects > 0 &&
+        ev.action?.toLowerCase().startsWith('created'))
+    ) {
+      continue;
+    }
+    const label = ev.action || `${ev.category} activity`;
+    const dedupeKey =
+      ev.category === 'lesson' || ev.category === 'exercise'
+        ? `${bucket}:${label.trim().toLowerCase()}`
+        : `ev:${ev.id}`;
+    addContribution(key, bucket, label, dedupeKey);
+  }
+
+  // Build 53 week columns (Sunday -> Saturday) and month labels
+  const weeks: ContributionDayCell[][] = [];
+  const monthLabels: { label: string; weekIndex: number }[] = [];
+  let lastMonth = -1;
+
+  let totalContributions = 0;
+  let activeDays = 0;
+  let bestDay: { dateKey: string; count: number } | null = null;
+  const dayCountsAscending: { dateKey: string; count: number; isFuture: boolean }[] = [];
+
+  for (let w = 0; w < 53; w++) {
+    const col: ContributionDayCell[] = [];
+    for (let d = 0; d < 7; d++) {
+      const idx = w * 7 + d;
+      const cellDate = new Date(startGridUtc.getTime() + idx * 86_400_000);
+      const dateKey = cellDate.toISOString().slice(0, 10);
+      const isFuture = dateKey > todayKey;
+      const entry = dayMap.get(dateKey);
+      const bd = entry ? entry.breakdown : emptyBreakdown();
+      const count = isFuture
+        ? 0
+        : bd.lessons + bd.challenges + bd.missions + bd.projects + bd.tests + bd.ai;
+
+      if (!isFuture && count > 0) {
+        totalContributions += count;
+        activeDays += 1;
+        if (!bestDay || count > bestDay.count) {
+          bestDay = { dateKey, count };
+        }
+      }
+
+      dayCountsAscending.push({ dateKey, count, isFuture });
+
+      // Month label when the 1st of a month falls in this week (or on week 0)
+      if (d === 0) {
+        const m = cellDate.getUTCMonth();
+        if (m !== lastMonth) {
+          lastMonth = m;
+          // Avoid cramped label at week 0 if month changes right away on week 1
+          if (w === 0) {
+            const nextWeekDate = new Date(startGridUtc.getTime() + 7 * 86_400_000);
+            if (nextWeekDate.getUTCMonth() === m) {
+              monthLabels.push({ label: MONTH_SHORT[m], weekIndex: w });
+            }
+          } else {
+            monthLabels.push({ label: MONTH_SHORT[m], weekIndex: w });
+          }
+        }
+      }
+
+      col.push({
+        dateKey,
+        count,
+        breakdown: bd,
+        actions: entry ? entry.actions : [],
+        isFuture,
+      });
+    }
+    weeks.push(col);
+  }
+
+  // Compute longest & current streaks up to todayKey
+  let longestStreak = 0;
+  let runningStreak = 0;
+  const nonFutureDays = dayCountsAscending.filter((d) => !d.isFuture);
+  for (const day of nonFutureDays) {
+    if (day.count > 0) {
+      runningStreak += 1;
+      if (runningStreak > longestStreak) longestStreak = runningStreak;
+    } else {
+      runningStreak = 0;
+    }
+  }
+
+  // Current streak: consecutive active days ending today or yesterday
+  let currentStreak = 0;
+  for (let i = nonFutureDays.length - 1; i >= 0; i--) {
+    if (nonFutureDays[i].count > 0) {
+      currentStreak += 1;
+    } else if (i === nonFutureDays.length - 1) {
+      // Allow today to have 0 contributions so far while keeping yesterday's active streak alive
+      continue;
+    } else {
+      break;
+    }
+  }
+
+  return {
+    startDateKey,
+    endDateKey: todayKey,
+    weeks,
+    monthLabels,
+    totalContributions,
+    activeDays,
+    currentStreak,
+    longestStreak,
+    bestDay,
   };
 }

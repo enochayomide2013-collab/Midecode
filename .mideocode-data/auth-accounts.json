@@ -229,5 +229,49 @@
     "createdAt": 1795771886837,
     "updatedAt": 1795771908574,
     "photoURL": "/api/profile/avatar/usr_c2844c118a5742b3cba7c766_56c38c46b1.jpg"
+  },
+  "usr_39388d43f136b9060226eaea": {
+    "uid": "usr_39388d43f136b9060226eaea",
+    "email": "heatmap_test_1795773945707@mideotest.dev",
+    "displayName": "Heatmap Tester",
+    "phoneNumber": "",
+    "passwordHash": "scrypt:59704d961d81af1a97e4d6f2f81bf75f:c773ff9ab421026928cca9daf829455a0b400d57a68684a775851f8df07f02972878ea9ba86f8bad9c5a822d52de817aeb35bab0892eee2f2b60dc76311abca0",
+    "role": "member",
+    "emailVerified": true,
+    "createdAt": 1795773946055,
+    "updatedAt": 1795773947944
+  },
+  "usr_e9a2cf519102b34f68ff0081": {
+    "uid": "usr_e9a2cf519102b34f68ff0081",
+    "email": "heatmap_test_1795773993302@mideotest.dev",
+    "displayName": "Heatmap Tester",
+    "phoneNumber": "",
+    "passwordHash": "scrypt:8f07eb2926a960a2f9a9343bdd0e7d9c:6de5096e83da7568d310e56d8dc6c5899e8b8518ec6564e221ec92d44bb1eed9c9273caf7ebb86f6d3ddd7d39d8fe7bc859cf5e9f95b764c1f80cbe110aa3ee5",
+    "role": "member",
+    "emailVerified": true,
+    "createdAt": 1795773993655,
+    "updatedAt": 1795773995539
+  },
+  "usr_26e85b888b6ec18b370b448b": {
+    "uid": "usr_26e85b888b6ec18b370b448b",
+    "email": "heatmap_diag_1795774029299@mideotest.dev",
+    "displayName": "Heatmap Tester",
+    "phoneNumber": "",
+    "passwordHash": "scrypt:86722108b0bd135812b90b001c03986c:16597f7656ac9bc9def07ea6fbec7e3effcc45940c95756cb138c90905b13bd1fc0aedcea0ca5c698e2f3a4cb3d8f797f0f96b180807ca731482f4a99f84b702",
+    "role": "member",
+    "emailVerified": true,
+    "createdAt": 1795774029620,
+    "updatedAt": 1795774031543
+  },
+  "usr_e32c400c63cfca6a697b9cd6": {
+    "uid": "usr_e32c400c63cfca6a697b9cd6",
+    "email": "heatmap_test_1795774067350@mideotest.dev",
+    "displayName": "Heatmap Tester",
+    "phoneNumber": "",
+    "passwordHash": "scrypt:54822411429549b34c32d5c2d34e28de:55d8221a4839d9465127bde384f60c9f35bb7f1490b86f749555b0a45f6816aa1f2857cbf5b84b0dbf3c7ba912155ea0a11ae3ed2de6bbc4758b5897564e1253",
+    "role": "member",
+    "emailVerified": true,
+    "createdAt": 1795774067745,
+    "updatedAt": 1795774069755
   }
 }

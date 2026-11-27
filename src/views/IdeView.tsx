@@ -27,6 +27,7 @@ import {
   deleteProjectFile,
   forceOverwriteProjectFile,
   getProjectFiles,
+  recordDeveloperActivity,
   renameProjectFile,
   saveProjectFileContent,
 } from '../services/dataService';
@@ -86,6 +87,7 @@ export function IdeView() {
   const [fullScreen, setFullScreen] = useState(false);
   const [showDocsDrawer, setShowDocsDrawer] = useState(false);
   const fileImportRef = useRef<HTMLInputElement | null>(null);
+  const lastIdeActivityRef = useRef<number>(0);
 
   useEffect(() => {
     if (!ideFocusMode) return;
@@ -380,6 +382,19 @@ export function IdeView() {
           `Saved ${activeFile.name} (v${result.newVersion})`,
           { targetName: activeFile.name, collaboratorIds: activeProject.collaboratorIds },
         ).catch(() => {});
+      }
+      if (firebaseUser) {
+        const nowMs = Date.now();
+        if (nowMs - lastIdeActivityRef.current >= 5 * 60_000) {
+          lastIdeActivityRef.current = nowMs;
+          recordDeveloperActivity(firebaseUser.uid, {
+            category: 'ide',
+            action: `Edited ${activeFile.name} in ${activeProject.title}`,
+            language: activeProject.language,
+            aiAssisted: false,
+            projectId: activeProject.id,
+          }).catch(() => {});
+        }
       }
       await refreshUserData();
     } catch (err) {

@@ -693,6 +693,174 @@
         "defaultFocusAudio": "off",
         "starterTemplateId": "web",
         "photoURL": "/api/profile/avatar/usr_c2844c118a5742b3cba7c766_56c38c46b1.jpg"
+      },
+      "usr_39388d43f136b9060226eaea": {
+        "uid": "usr_39388d43f136b9060226eaea",
+        "displayName": "Heatmap Tester",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript"
+        ],
+        "learningGoals": [
+          "Learn programming fundamentals"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 35,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795773946,
+          "nanoseconds": 144000000,
+          "ms": 1795773946144
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795773947,
+          "nanoseconds": 944000000,
+          "ms": 1795773947944
+        },
+        "email": "heatmap_test_1795773945707@mideotest.dev",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "none"
+      },
+      "usr_e9a2cf519102b34f68ff0081": {
+        "uid": "usr_e9a2cf519102b34f68ff0081",
+        "displayName": "Heatmap Tester",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript"
+        ],
+        "learningGoals": [
+          "Learn programming fundamentals"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 35,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795773993,
+          "nanoseconds": 747000000,
+          "ms": 1795773993747
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795773995,
+          "nanoseconds": 539000000,
+          "ms": 1795773995539
+        },
+        "email": "heatmap_test_1795773993302@mideotest.dev",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "none"
+      },
+      "usr_26e85b888b6ec18b370b448b": {
+        "uid": "usr_26e85b888b6ec18b370b448b",
+        "displayName": "Heatmap Tester",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript"
+        ],
+        "learningGoals": [
+          "Learn programming fundamentals"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 35,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795774029,
+          "nanoseconds": 711000000,
+          "ms": 1795774029711
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795774031,
+          "nanoseconds": 543000000,
+          "ms": 1795774031543
+        },
+        "email": "heatmap_diag_1795774029299@mideotest.dev",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "none"
+      },
+      "usr_e32c400c63cfca6a697b9cd6": {
+        "uid": "usr_e32c400c63cfca6a697b9cd6",
+        "displayName": "Heatmap Tester",
+        "experienceLevel": "beginner",
+        "preferredLanguages": [
+          "JavaScript"
+        ],
+        "learningGoals": [
+          "Learn programming fundamentals"
+        ],
+        "interests": [
+          "Web Development"
+        ],
+        "onboardingComplete": true,
+        "xp": 35,
+        "level": 1,
+        "streak": 1,
+        "lastActivityDate": "2026-11-27",
+        "role": "member",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795774067,
+          "nanoseconds": 919000000,
+          "ms": 1795774067919
+        },
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795774069,
+          "nanoseconds": 755000000,
+          "ms": 1795774069755
+        },
+        "email": "heatmap_test_1795774067350@mideotest.dev",
+        "hearAboutUs": "Google Search",
+        "primaryFocus": "Full-Stack Web Development",
+        "codingCommitment": "15 - 35 hours / week",
+        "activeCareerPathId": "frontend-developer",
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off",
+        "starterTemplateId": "none"
       }
     },
     "publicProfiles": {
@@ -885,6 +1053,62 @@
           "ms": 1795771906243
         },
         "photoURL": "/api/profile/avatar/usr_c2844c118a5742b3cba7c766_56c38c46b1.jpg"
+      },
+      "usr_39388d43f136b9060226eaea": {
+        "uid": "usr_39388d43f136b9060226eaea",
+        "displayName": "Heatmap Tester",
+        "level": 1,
+        "xp": 35,
+        "streak": 1,
+        "badgesCount": 1,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795773947,
+          "nanoseconds": 961000000,
+          "ms": 1795773947961
+        }
+      },
+      "usr_e9a2cf519102b34f68ff0081": {
+        "uid": "usr_e9a2cf519102b34f68ff0081",
+        "displayName": "Heatmap Tester",
+        "level": 1,
+        "xp": 35,
+        "streak": 1,
+        "badgesCount": 1,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795773995,
+          "nanoseconds": 563000000,
+          "ms": 1795773995563
+        }
+      },
+      "usr_26e85b888b6ec18b370b448b": {
+        "uid": "usr_26e85b888b6ec18b370b448b",
+        "displayName": "Heatmap Tester",
+        "level": 1,
+        "xp": 35,
+        "streak": 1,
+        "badgesCount": 1,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795774031,
+          "nanoseconds": 574000000,
+          "ms": 1795774031574
+        }
+      },
+      "usr_e32c400c63cfca6a697b9cd6": {
+        "uid": "usr_e32c400c63cfca6a697b9cd6",
+        "displayName": "Heatmap Tester",
+        "level": 1,
+        "xp": 35,
+        "streak": 1,
+        "badgesCount": 1,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795774069,
+          "nanoseconds": 781000000,
+          "ms": 1795774069781
+        }
       }
     },
     "playgrounds": {
@@ -1173,6 +1397,62 @@
           "nanoseconds": 452000000,
           "ms": 1795462874452
         }
+      },
+      "usr_39388d43f136b9060226eaea_lesson_lesson-semantic-landmarks": {
+        "id": "usr_39388d43f136b9060226eaea_lesson_lesson-semantic-landmarks",
+        "userId": "usr_39388d43f136b9060226eaea",
+        "sourceType": "lesson",
+        "sourceId": "lesson-semantic-landmarks",
+        "amount": 35,
+        "reason": "Completed lesson: Semantic Landmarks & Accessible Structure",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795773947,
+          "nanoseconds": 943000000,
+          "ms": 1795773947943
+        }
+      },
+      "usr_e9a2cf519102b34f68ff0081_lesson_lesson-semantic-landmarks": {
+        "id": "usr_e9a2cf519102b34f68ff0081_lesson_lesson-semantic-landmarks",
+        "userId": "usr_e9a2cf519102b34f68ff0081",
+        "sourceType": "lesson",
+        "sourceId": "lesson-semantic-landmarks",
+        "amount": 35,
+        "reason": "Completed lesson: Semantic Landmarks & Accessible Structure",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795773995,
+          "nanoseconds": 538000000,
+          "ms": 1795773995538
+        }
+      },
+      "usr_26e85b888b6ec18b370b448b_lesson_lesson-semantic-landmarks": {
+        "id": "usr_26e85b888b6ec18b370b448b_lesson_lesson-semantic-landmarks",
+        "userId": "usr_26e85b888b6ec18b370b448b",
+        "sourceType": "lesson",
+        "sourceId": "lesson-semantic-landmarks",
+        "amount": 35,
+        "reason": "Completed lesson: Semantic Landmarks & Accessible Structure",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795774031,
+          "nanoseconds": 542000000,
+          "ms": 1795774031542
+        }
+      },
+      "usr_e32c400c63cfca6a697b9cd6_lesson_lesson-semantic-landmarks": {
+        "id": "usr_e32c400c63cfca6a697b9cd6_lesson_lesson-semantic-landmarks",
+        "userId": "usr_e32c400c63cfca6a697b9cd6",
+        "sourceType": "lesson",
+        "sourceId": "lesson-semantic-landmarks",
+        "amount": 35,
+        "reason": "Completed lesson: Semantic Landmarks & Accessible Structure",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795774069,
+          "nanoseconds": 754000000,
+          "ms": 1795774069754
+        }
       }
     },
     "userProgress/usr_e3b4040c66c69d242d6a5228/courses": {
@@ -1437,6 +1717,78 @@
         "aiStylePreference": "balanced",
         "defaultFocusMode": false,
         "defaultFocusAudio": "off"
+      },
+      "usr_39388d43f136b9060226eaea": {
+        "userId": "usr_39388d43f136b9060226eaea",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795773947,
+          "nanoseconds": 190000000,
+          "ms": 1795773947190
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
+      },
+      "usr_e9a2cf519102b34f68ff0081": {
+        "userId": "usr_e9a2cf519102b34f68ff0081",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795774000,
+          "nanoseconds": 896000000,
+          "ms": 1795774000896
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
+      },
+      "usr_26e85b888b6ec18b370b448b": {
+        "userId": "usr_26e85b888b6ec18b370b448b",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795774030,
+          "nanoseconds": 808000000,
+          "ms": 1795774030808
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
+      },
+      "usr_e32c400c63cfca6a697b9cd6": {
+        "userId": "usr_e32c400c63cfca6a697b9cd6",
+        "theme": "dark",
+        "editorTheme": "oneDark",
+        "editorFontSize": 14,
+        "tabSize": 2,
+        "autosave": true,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795774075,
+          "nanoseconds": 50000000,
+          "ms": 1795774075050
+        },
+        "startingView": "dashboard",
+        "aiStylePreference": "balanced",
+        "defaultFocusMode": false,
+        "defaultFocusAudio": "off"
       }
     },
     "notifications": {
@@ -1606,6 +1958,62 @@
           "seconds": 1795771886,
           "nanoseconds": 997000000,
           "ms": 1795771886997
+        }
+      },
+      "welcome_usr_39388d43f136b906": {
+        "id": "welcome_usr_39388d43f136b906",
+        "userId": "usr_39388d43f136b9060226eaea",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795773946,
+          "nanoseconds": 210000000,
+          "ms": 1795773946210
+        }
+      },
+      "welcome_usr_e9a2cf519102b34f": {
+        "id": "welcome_usr_e9a2cf519102b34f",
+        "userId": "usr_e9a2cf519102b34f68ff0081",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795773993,
+          "nanoseconds": 809000000,
+          "ms": 1795773993809
+        }
+      },
+      "welcome_usr_26e85b888b6ec18b": {
+        "id": "welcome_usr_26e85b888b6ec18b",
+        "userId": "usr_26e85b888b6ec18b370b448b",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795774029,
+          "nanoseconds": 744000000,
+          "ms": 1795774029744
+        }
+      },
+      "welcome_usr_e32c400c63cfca6a": {
+        "id": "welcome_usr_e32c400c63cfca6a",
+        "userId": "usr_e32c400c63cfca6a697b9cd6",
+        "title": "Welcome to MideoCode",
+        "body": "Your workspace, cloud storage, and academy roadmap are ready.",
+        "linkView": "academy",
+        "read": false,
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795774067,
+          "nanoseconds": 954000000,
+          "ms": 1795774067954
         }
       }
     },
@@ -2040,6 +2448,66 @@
           "seconds": 1795771889,
           "nanoseconds": 678000000,
           "ms": 1795771889678
+        }
+      },
+      "act_1795773948032_tqev": {
+        "id": "act_1795773948032_tqev",
+        "userId": "usr_39388d43f136b9060226eaea",
+        "category": "lesson",
+        "action": "Completed lesson: Semantic Landmarks & Accessible Structure",
+        "language": "HTML / CSS",
+        "aiAssisted": false,
+        "dayKey": "2026-11-27",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795773948,
+          "nanoseconds": 35000000,
+          "ms": 1795773948035
+        }
+      },
+      "act_1795773995633_qifw": {
+        "id": "act_1795773995633_qifw",
+        "userId": "usr_e9a2cf519102b34f68ff0081",
+        "category": "lesson",
+        "action": "Completed lesson: Semantic Landmarks & Accessible Structure",
+        "language": "HTML / CSS",
+        "aiAssisted": false,
+        "dayKey": "2026-11-27",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795773995,
+          "nanoseconds": 635000000,
+          "ms": 1795773995635
+        }
+      },
+      "act_1795774031653_w8yz": {
+        "id": "act_1795774031653_w8yz",
+        "userId": "usr_26e85b888b6ec18b370b448b",
+        "category": "lesson",
+        "action": "Completed lesson: Semantic Landmarks & Accessible Structure",
+        "language": "HTML / CSS",
+        "aiAssisted": false,
+        "dayKey": "2026-11-27",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795774031,
+          "nanoseconds": 658000000,
+          "ms": 1795774031658
+        }
+      },
+      "act_1795774069869_qwij": {
+        "id": "act_1795774069869_qwij",
+        "userId": "usr_e32c400c63cfca6a697b9cd6",
+        "category": "lesson",
+        "action": "Completed lesson: Semantic Landmarks & Accessible Structure",
+        "language": "HTML / CSS",
+        "aiAssisted": false,
+        "dayKey": "2026-11-27",
+        "createdAt": {
+          "__type": "timestamp",
+          "seconds": 1795774069,
+          "nanoseconds": 876000000,
+          "ms": 1795774069876
         }
       }
     },
@@ -2698,6 +3166,132 @@
           "seconds": 1795771889,
           "nanoseconds": 673000000,
           "ms": 1795771889673
+        }
+      }
+    },
+    "userProgress/usr_39388d43f136b9060226eaea/courses": {
+      "html-css-architecture": {
+        "userId": "usr_39388d43f136b9060226eaea",
+        "courseId": "html-css-architecture",
+        "completedLessonIds": [
+          "lesson-semantic-landmarks"
+        ],
+        "completedExerciseIds": [],
+        "quizScores": {},
+        "lastLessonId": "lesson-semantic-landmarks",
+        "progressPercent": 50,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795773947,
+          "nanoseconds": 921000000,
+          "ms": 1795773947921
+        }
+      }
+    },
+    "achievements": {
+      "usr_39388d43f136b9060226eaea_first_lesson": {
+        "id": "usr_39388d43f136b9060226eaea_first_lesson",
+        "userId": "usr_39388d43f136b9060226eaea",
+        "badgeId": "first_lesson",
+        "title": "First Concept Mastered",
+        "unlockedAt": {
+          "__type": "timestamp",
+          "seconds": 1795773947,
+          "nanoseconds": 953000000,
+          "ms": 1795773947953
+        }
+      },
+      "usr_e9a2cf519102b34f68ff0081_first_lesson": {
+        "id": "usr_e9a2cf519102b34f68ff0081_first_lesson",
+        "userId": "usr_e9a2cf519102b34f68ff0081",
+        "badgeId": "first_lesson",
+        "title": "First Concept Mastered",
+        "unlockedAt": {
+          "__type": "timestamp",
+          "seconds": 1795773995,
+          "nanoseconds": 551000000,
+          "ms": 1795773995551
+        }
+      },
+      "usr_26e85b888b6ec18b370b448b_first_lesson": {
+        "id": "usr_26e85b888b6ec18b370b448b_first_lesson",
+        "userId": "usr_26e85b888b6ec18b370b448b",
+        "badgeId": "first_lesson",
+        "title": "First Concept Mastered",
+        "unlockedAt": {
+          "__type": "timestamp",
+          "seconds": 1795774031,
+          "nanoseconds": 555000000,
+          "ms": 1795774031555
+        }
+      },
+      "usr_e32c400c63cfca6a697b9cd6_first_lesson": {
+        "id": "usr_e32c400c63cfca6a697b9cd6_first_lesson",
+        "userId": "usr_e32c400c63cfca6a697b9cd6",
+        "badgeId": "first_lesson",
+        "title": "First Concept Mastered",
+        "unlockedAt": {
+          "__type": "timestamp",
+          "seconds": 1795774069,
+          "nanoseconds": 770000000,
+          "ms": 1795774069770
+        }
+      }
+    },
+    "userProgress/usr_e9a2cf519102b34f68ff0081/courses": {
+      "html-css-architecture": {
+        "userId": "usr_e9a2cf519102b34f68ff0081",
+        "courseId": "html-css-architecture",
+        "completedLessonIds": [
+          "lesson-semantic-landmarks"
+        ],
+        "completedExerciseIds": [],
+        "quizScores": {},
+        "lastLessonId": "lesson-semantic-landmarks",
+        "progressPercent": 50,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795773995,
+          "nanoseconds": 517000000,
+          "ms": 1795773995517
+        }
+      }
+    },
+    "userProgress/usr_26e85b888b6ec18b370b448b/courses": {
+      "html-css-architecture": {
+        "userId": "usr_26e85b888b6ec18b370b448b",
+        "courseId": "html-css-architecture",
+        "completedLessonIds": [
+          "lesson-semantic-landmarks"
+        ],
+        "completedExerciseIds": [],
+        "quizScores": {},
+        "lastLessonId": "lesson-semantic-landmarks",
+        "progressPercent": 50,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795774031,
+          "nanoseconds": 517000000,
+          "ms": 1795774031517
+        }
+      }
+    },
+    "userProgress/usr_e32c400c63cfca6a697b9cd6/courses": {
+      "html-css-architecture": {
+        "userId": "usr_e32c400c63cfca6a697b9cd6",
+        "courseId": "html-css-architecture",
+        "completedLessonIds": [
+          "lesson-semantic-landmarks"
+        ],
+        "completedExerciseIds": [],
+        "quizScores": {},
+        "lastLessonId": "lesson-semantic-landmarks",
+        "progressPercent": 50,
+        "updatedAt": {
+          "__type": "timestamp",
+          "seconds": 1795774069,
+          "nanoseconds": 727000000,
+          "ms": 1795774069727
         }
       }
     }

@@ -1296,6 +1296,43 @@ export interface DeveloperInsightsSnapshot {
   }[];
 }
 
+export type ContributionCategoryFilter =
+  | 'all'
+  | 'lessons'
+  | 'challenges'
+  | 'missions'
+  | 'projects'
+  | 'tests';
+
+export interface ContributionDayBreakdown {
+  lessons: number;
+  challenges: number;
+  missions: number;
+  projects: number;
+  tests: number;
+  ai: number;
+}
+
+export interface ContributionDayCell {
+  dateKey: string;
+  count: number;
+  breakdown: ContributionDayBreakdown;
+  actions: string[];
+  isFuture: boolean;
+}
+
+export interface ContributionHeatmapData {
+  startDateKey: string;
+  endDateKey: string;
+  weeks: ContributionDayCell[][];
+  monthLabels: { label: string; weekIndex: number }[];
+  totalContributions: number;
+  activeDays: number;
+  currentStreak: number;
+  longestStreak: number;
+  bestDay: { dateKey: string; count: number } | null;
+}
+
 // ---------------------------------------------------------------------------
 // 6. MideoCode Project Rescue AI Domain Types
 // ---------------------------------------------------------------------------

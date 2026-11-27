@@ -18,6 +18,7 @@ import {
   listNotes,
   saveNote,
   deleteNote,
+  recordDeveloperActivity,
 } from '../services/dataService';
 import { extractReadableError } from '../services/firebase';
 import type { NoteItem } from '../types/mideocode';
@@ -94,6 +95,11 @@ export function AcademyView() {
         progressPercent: pct,
       });
       await grantXp('lesson', lesson.id, `Completed lesson: ${lesson.title}`);
+      recordDeveloperActivity(firebaseUser.uid, {
+        category: 'lesson',
+        action: `Completed lesson: ${lesson.title}`,
+        language: course.language,
+      }).catch(() => {});
       await refreshUserData();
     } catch (err) {
       notify('error', extractReadableError(err, 'Unable to save lesson completion.'));
@@ -129,6 +135,11 @@ export function AcademyView() {
           progressPercent: Math.round((nextLessons.length / allLessons.length) * 100),
         });
         await grantXp('lesson', `ex_${lesson.exercise.id}`, `Solved exercise: ${lesson.exercise.title}`);
+        recordDeveloperActivity(firebaseUser.uid, {
+          category: 'exercise',
+          action: `Solved exercise: ${lesson.exercise.title}`,
+          language: course.language,
+        }).catch(() => {});
         await refreshUserData();
       } catch (err) {
         notify('error', extractReadableError(err, 'Unable to record exercise progress.'));
@@ -157,6 +168,12 @@ export function AcademyView() {
         } else {
           notify('info', `Quiz scored ${scorePct}%. Review explanations below and retry for XP.`);
         }
+        recordDeveloperActivity(firebaseUser.uid, {
+          category: 'lesson',
+          action: `Completed quiz: ${lesson.title} (${scorePct}%)`,
+          language: course.language,
+          scorePct,
+        }).catch(() => {});
         await refreshUserData();
       } catch (err) {
         notify('error', extractReadableError(err, 'Unable to save quiz result.'));

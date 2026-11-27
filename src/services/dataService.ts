@@ -761,11 +761,11 @@ export async function listPublicLeaderboard(): Promise<PublicProfile[]> {
 // ---------------------------------------------------------------------------
 export async function listUserXpTransactions(
   uid: string,
-): Promise<{ id: string; sourceType: string; sourceId: string; amount: number; reason: string }[]> {
+): Promise<{ id: string; sourceType: string; sourceId: string; amount: number; reason: string; createdAt?: unknown }[]> {
   try {
-    const q = query(collection(db, 'xpTransactions'), where('userId', '==', uid), limit(100));
+    const q = query(collection(db, 'xpTransactions'), where('userId', '==', uid), limit(250));
     const snap = await getDocs(q);
-    return snap.docs.map((d) => d.data() as { id: string; sourceType: string; sourceId: string; amount: number; reason: string });
+    return snap.docs.map((d) => d.data() as { id: string; sourceType: string; sourceId: string; amount: number; reason: string; createdAt?: unknown });
   } catch (err) {
     handleFirestoreError(err, OperationType.LIST, 'xpTransactions');
   }

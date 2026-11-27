@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Award,
   BarChart3,
@@ -23,6 +23,10 @@ import { GUIDED_PROJECTS } from '../data/projectsData';
 import { CHALLENGES, CAREER_PATHWAYS } from '../data/challengesData';
 import { resendVerificationEmailReal } from '../services/authService';
 import { buildMissionRecommendations } from '../services/missionService';
+import { buildContributionHeatmap } from '../services/insightsService';
+import { extractReadableError } from '../services/firebase';
+import { ContributionHeatmap } from '../components/ContributionHeatmap';
+import type { ContributionHeatmapData } from '../types/mideocode';
 
 export function DashboardView() {
   const {
@@ -46,6 +50,33 @@ export function DashboardView() {
   } = useMideo();
 
   const [verifying, setVerifying] = useState(false);
+  const [heatmapData, setHeatmapData] = useState<ContributionHeatmapData | null>(null);
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
+  const [heatmapError, setHeatmapError] = useState<string | null>(null);
+  const [heatmapReloadKey, setHeatmapReloadKey] = useState(0);
+
+  const loadHeatmap = useCallback(async () => {
+    if (!firebaseUser?.uid) return;
+    setHeatmapLoading(true);
+    setHeatmapError(null);
+    try {
+      const data = await buildContributionHeatmap(
+        firebaseUser.uid,
+        courseProgress,
+        projects,
+        missionAttempts,
+      );
+      setHeatmapData(data);
+    } catch (err) {
+      setHeatmapError(extractReadableError(err, 'Unable to load coding activity from Firestore.'));
+    } finally {
+      setHeatmapLoading(false);
+    }
+  }, [firebaseUser?.uid, courseProgress, projects, missionAttempts, profile?.xp, heatmapReloadKey]);
+
+  useEffect(() => {
+    void loadHeatmap();
+  }, [loadHeatmap]);
 
   if (!profile) return null;
 
@@ -234,6 +265,17 @@ export function DashboardView() {
           </p>
         </div>
       </div>
+
+      {/* GitHub-Style Coding Contribution Heatmap */}
+      <ContributionHeatmap
+        data={heatmapData}
+        loading={heatmapLoading}
+        error={heatmapError}
+        onRetry={() => setHeatmapReloadKey((k) => k + 1)}
+        onNavigateInsights={() => setActiveView('insights')}
+        onOpenIde={() => setActiveView('ide')}
+        onOpenAcademy={() => setActiveView('academy')}
+      />
 
       {/* Your Next Mission Flagship Section */}
       {nextMissionRec && (
