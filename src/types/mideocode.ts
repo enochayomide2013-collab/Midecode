@@ -1800,3 +1800,34 @@ export interface MockInterviewSession {
   createdAt: unknown;
 }
 
+export interface VersusBattle {
+  id: string;
+  challengeId: string;
+  challengeTitle: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  language: string;
+  creatorId: string;
+  creatorName: string;
+  creatorPhotoURL?: string;
+  opponentId?: string;
+  opponentName?: string;
+  opponentPhotoURL?: string;
+  status: 'waiting' | 'active' | 'completed';
+  winnerId?: string;
+  creatorProgress: {
+    testsPassed: number;
+    totalTests: number;
+    statusText: string;
+    completedAt?: unknown;
+  };
+  opponentProgress: {
+    testsPassed: number;
+    totalTests: number;
+    statusText: string;
+    completedAt?: unknown;
+  };
+  createdAt: unknown;
+  updatedAt: unknown;
+}
+
+

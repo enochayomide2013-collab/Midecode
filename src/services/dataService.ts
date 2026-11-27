@@ -54,6 +54,7 @@ import type {
   WorkspaceStartMode,
   AiStylePreference,
   FocusAudioPreference,
+  VersusBattle,
 } from '../types/mideocode';
 
 const utf8Encoder = new TextEncoder();
@@ -2366,3 +2367,109 @@ export async function adminSendCommunityAnnouncement(
   }
   return post;
 }
+
+export async function listVersusBattles(): Promise<VersusBattle[]> {
+  try {
+    const q = query(collection(db, 'versusBattles'), limit(50));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as VersusBattle);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'versusBattles');
+  }
+}
+
+export async function createVersusBattle(
+  uid: string,
+  creatorName: string,
+  creatorPhotoURL: string | undefined,
+  challengeId: string,
+  challengeTitle: string,
+  difficulty: 'easy' | 'medium' | 'hard',
+  language: string,
+): Promise<VersusBattle> {
+  const id = `battle_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const ref = doc(db, 'versusBattles', id);
+  try {
+    const payload = sanitizeForFirestore<Record<string, unknown>>({
+      id,
+      challengeId,
+      challengeTitle,
+      difficulty,
+      language,
+      creatorId: uid,
+      creatorName: creatorName.slice(0, 80),
+      creatorPhotoURL: creatorPhotoURL ? creatorPhotoURL.slice(0, 500) : undefined,
+      status: 'waiting',
+      creatorProgress: {
+        testsPassed: 0,
+        totalTests: 3,
+        statusText: 'Waiting for opponent...',
+      },
+      opponentProgress: {
+        testsPassed: 0,
+        totalTests: 3,
+        statusText: 'Not joined',
+      },
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    await setDoc(ref, payload);
+    const snap = await getDoc(ref);
+    return snap.data() as VersusBattle;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, `versusBattles/${id}`);
+  }
+}
+
+export async function joinVersusBattle(
+  battleId: string,
+  uid: string,
+  opponentName: string,
+  opponentPhotoURL: string | undefined,
+): Promise<VersusBattle> {
+  const ref = doc(db, 'versusBattles', battleId);
+  try {
+    await updateDoc(ref, {
+      opponentId: uid,
+      opponentName: opponentName.slice(0, 80),
+      opponentPhotoURL: opponentPhotoURL ? opponentPhotoURL.slice(0, 500) : undefined,
+      status: 'active',
+      'creatorProgress.statusText': 'Battling in progress...',
+      'opponentProgress.statusText': 'Battling in progress...',
+      updatedAt: serverTimestamp(),
+    });
+    const snap = await getDoc(ref);
+    return snap.data() as VersusBattle;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `versusBattles/${battleId}`);
+  }
+}
+
+export async function updateVersusProgress(
+  battleId: string,
+  isCreator: boolean,
+  testsPassed: number,
+  totalTests: number,
+  statusText: string,
+  won?: boolean,
+  winnerId?: string,
+): Promise<void> {
+  const ref = doc(db, 'versusBattles', battleId);
+  try {
+    const prefix = isCreator ? 'creatorProgress' : 'opponentProgress';
+    const patch: Record<string, unknown> = {
+      [`${prefix}.testsPassed`]: testsPassed,
+      [`${prefix}.totalTests`]: totalTests,
+      [`${prefix}.statusText`]: statusText.slice(0, 100),
+      updatedAt: serverTimestamp(),
+    };
+    if (won) {
+      patch.status = 'completed';
+      if (winnerId) patch.winnerId = winnerId;
+    }
+    await updateDoc(ref, patch);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `versusBattles/${battleId}`);
+  }
+}
+

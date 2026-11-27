@@ -1756,6 +1756,17 @@ service cloud.firestore {
       }
     }
 
+    // Versus Code Battles
+    match /versusBattles/{battleId} {
+      allow get: if isValidId(battleId) && isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isValidId(battleId) && isSignedIn() &&
+        incoming().creatorId == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if isValidId(battleId) && isSignedIn();
+      allow delete: if isValidId(battleId) && isSignedIn() && (resource.data.creatorId == request.auth.uid || isAdmin());
+    }
+
     // Moderation Reports
     match /reports/{reportId} {
       allow get: if isValidId(reportId) && isSignedIn() && (resource == null || existing().reporterId == request.auth.uid || isAdmin());
